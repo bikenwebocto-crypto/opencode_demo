@@ -1,7 +1,4 @@
 import { prisma } from '@/lib/prisma';
-import { hash, compare } from 'bcryptjs';
-import { sign, verify } from 'jsonwebtoken';
-import { v4 as uuidv4 } from 'uuid';
 import type { AuthUser, JWTPayload, LoginRequest, LoginResponse, UserType } from '@/types';
 
 const JWT_SECRET = process.env.JWT_SECRET!;
@@ -23,7 +20,8 @@ export class AuthService {
 
   generateAccessToken(payload: JWTPayload): string {
     const jwt = require('jsonwebtoken');
-    return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+    const { exp, ...claims } = payload;
+    return jwt.sign(claims, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
   }
 
   generateRefreshToken(): string {
@@ -70,14 +68,14 @@ export class AuthService {
     const accessToken = this.generateAccessToken(payload);
     const refreshToken = this.generateRefreshToken();
 
-    // Store session
+    // Store session (polymorphic FK: set the correct ID field per user type)
     await prisma.loginSession.create({
       data: {
-        userId: user.id,
+        ...this.sessionIdField(user.id, userType),
         userType,
         refreshToken,
         accessToken,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
 
@@ -101,8 +99,10 @@ export class AuthService {
       return null;
     }
 
-    // Find user
-    const user = await this.findUserById(session.userId, session.userType);
+    const sessionUserId = this.getSessionUserId(session);
+    if (!sessionUserId) return null;
+
+    const user = await this.findUserById(sessionUserId, session.userType);
     if (!user || !user.isActive) return null;
 
     const userType = session.userType as UserType;
@@ -143,8 +143,9 @@ export class AuthService {
   }
 
   async invalidateAllSessions(userId: string, userType: UserType): Promise<void> {
+    const idField = this.sessionIdField(userId, userType);
     await prisma.loginSession.updateMany({
-      where: { userId, userType, isActive: true },
+      where: { ...idField, userType, isActive: true },
       data: { isActive: false },
     });
   }
@@ -216,6 +217,35 @@ export class AuthService {
       name: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim(),
       isActive: user.isActive,
     };
+  }
+
+  // Map userType + userId to the correct polymorphic FK field
+  private sessionIdField(
+    userId: string,
+    userType: string
+  ): Record<string, string> {
+    const map: Record<string, string> = {
+      admin: 'adminId',
+      merchant: 'merchantId',
+      company_admin: 'companyAdminId',
+      employee: 'employeeId',
+    };
+    const field = map[userType];
+    return field ? { [field]: userId } : {};
+  }
+
+  // Extract user ID from a LoginSession row regardless of which FK is set
+  private getSessionUserId(session: {
+    adminId?: string | null;
+    merchantId?: string | null;
+    companyAdminId?: string | null;
+    employeeId?: string | null;
+  }): string | null {
+    return session.adminId
+      ?? session.merchantId
+      ?? session.companyAdminId
+      ?? session.employeeId
+      ?? null;
   }
 }
 

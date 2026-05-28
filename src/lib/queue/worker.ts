@@ -14,8 +14,6 @@
  */
 
 import { prisma } from '@/lib/prisma';
-import { aggregateDailyRedemptionAnalytics } from '@/lib/analytics/aggregator';
-import { sendNotification } from '@/lib/notifications/sender';
 
 interface QueueMessage {
   id: string;

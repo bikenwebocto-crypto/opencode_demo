@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -25,6 +25,7 @@ import {
   Upload,
   LogOut,
 } from 'lucide-react'
+import { supabase } from '@/lib/supabase/client'
 
 interface NavItem {
   label: string
@@ -80,6 +81,19 @@ const navConfig: Record<string, NavItem[]> = {
 export function Sidebar({ userType, userName, userEmail }: SidebarProps) {
   const pathname = usePathname()
   const navItems = navConfig[userType] ?? []
+  const router = useRouter()
+  const logout = async() => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+      })
+      await supabase.auth.signOut()
+      router.push('/login')
+    } 
+    catch (error) {
+      console.error('Logout failed:', error)
+    }
+  }
 
   return (
     <aside className="fixed left-0 top-0 z-40 flex h-screen w-64 flex-col border-r bg-card">
@@ -132,7 +146,7 @@ export function Sidebar({ userType, userName, userEmail }: SidebarProps) {
 
       {/* Logout */}
       <div className="border-t p-3">
-        <Button variant="ghost" className="w-full justify-start gap-3 text-muted-foreground" asChild>
+        <Button variant="ghost" onClick={logout} className="w-full justify-start gap-3 text-muted-foreground" asChild>
           <Link href="/login">
             <LogOut className="h-4 w-4" />
             Sign Out

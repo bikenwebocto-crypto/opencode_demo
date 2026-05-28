@@ -6,7 +6,7 @@ import './globals.css';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
-export const metadata: Metadata = {
+export const metadata: Metadata = { 
   title: {
     template: '%s | Perks Platform',
     default: 'Perks Platform - Employee Benefits Dashboard',
