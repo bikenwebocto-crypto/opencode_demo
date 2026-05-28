@@ -26,7 +26,7 @@ export class BaseRepository<T, CreateInput, UpdateInput> {
 
   async findMany(params?: {
     where?: Record<string, unknown>;
-    orderBy?: Record<string, 'asc' | 'desc'>;
+    orderBy?: Record<string, 'asc' | 'desc'> | Record<string, 'asc' | 'desc'>[];
     include?: Record<string, unknown>;
     skip?: number;
     take?: number;
@@ -36,7 +36,7 @@ export class BaseRepository<T, CreateInput, UpdateInput> {
 
   async findManyPaginated(params: {
     where?: Record<string, unknown>;
-    orderBy?: Record<string, 'asc' | 'desc'>;
+    orderBy?: Record<string, 'asc' | 'desc'> | Record<string, 'asc' | 'desc'>[];
     include?: Record<string, unknown>;
     page?: number;
     pageSize?: number;

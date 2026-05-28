@@ -33,5 +33,6 @@ export async function getCurrentUser() {
     email: session.user.email!,
     userType: session.user.user_metadata?.user_type as string,
     role: session.user.user_metadata?.admin_role as string | undefined,
+    companyId: session.user.user_metadata?.company_id as string | undefined,
   }
 }

@@ -24,7 +24,6 @@ export async function aggregateDailyRedemptionAnalytics(date?: Date): Promise<vo
     _count: { id: true },
     _sum: { discountAmount: true, savingsAmount: true },
     _avg: { discountAmount: true },
-    _count: { employeeId: true },
   });
 
   // For each merchant, also get unique employee count

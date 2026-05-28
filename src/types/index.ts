@@ -397,5 +397,7 @@ export interface ColumnDef<T> {
   header: string;
   sortable?: boolean;
   filterable?: boolean;
+  align?: 'left' | 'center' | 'right';
+  width?: string;
   render?: (item: T) => React.ReactNode;
 }

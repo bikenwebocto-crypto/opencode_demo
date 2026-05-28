@@ -29,6 +29,11 @@ export class AuthService {
     return crypto.randomBytes(REFRESH_TOKEN_BYTES).toString('hex');
   }
 
+  private isUserActive(user: any, userType: string): boolean {
+    if (user.isActive !== undefined) return user.isActive === true
+    return user.status === 'ACTIVE'
+  }
+
   verifyAccessToken(token: string): JWTPayload | null {
     try {
       const jwt = require('jsonwebtoken');
@@ -49,7 +54,7 @@ export class AuthService {
     const valid = await this.verifyPassword(password, user.passwordHash);
     if (!valid) return null;
 
-    if (!user.isActive) return null;
+    if (!this.isUserActive(user, userType)) return null;
 
     // Generate tokens
     const payload: JWTPayload = {
@@ -103,9 +108,8 @@ export class AuthService {
     if (!sessionUserId) return null;
 
     const user = await this.findUserById(sessionUserId, session.userType);
-    if (!user || !user.isActive) return null;
-
     const userType = session.userType as UserType;
+    if (!user || !this.isUserActive(user, userType)) return null;
     const payload: JWTPayload = {
       sub: user.id,
       email: user.email,
@@ -193,9 +197,6 @@ export class AuthService {
     switch (userType) {
       case 'admin':
         await prisma.adminUser.update({ where: { id: userId }, data: { lastLoginAt: now } });
-        break;
-      case 'merchant':
-        await prisma.merchant.update({ where: { id: userId }, data: { lastLoginAt: now } });
         break;
       case 'company_admin':
         await prisma.companyAdmin.update({ where: { id: userId }, data: { lastLoginAt: now } });

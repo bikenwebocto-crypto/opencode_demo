@@ -39,7 +39,7 @@ prisma.$use(async (params, next) => {
     prisma.auditLog
       .create({
         data: {
-          actorId: 'system',
+          adminId: 'system',
           actorType: 'system',
           action: `${params.model?.toLowerCase()}.${params.action}`,
           entityType: params.model?.toLowerCase() ?? 'unknown',

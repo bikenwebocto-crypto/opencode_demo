@@ -64,6 +64,7 @@
     "react-hook-form": "^7.53.2",
     "recharts": "^2.13.3",
     "sharp": "^0.33.5",
+    "slugify": "^1.6.9",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^14.0.0",

@@ -43,7 +43,7 @@ interface SidebarProps {
 
 const navConfig: Record<string, NavItem[]> = {
   admin: [
-    { label: 'Overview', href: '/admin', icon: LayoutDashboard },
+      { label: 'Overview', href: '/admin', icon: LayoutDashboard },
     { label: 'Action Queue', href: '/admin/action-queue', icon: ClipboardList },
     { label: 'Merchants', href: '/admin/merchants', icon: Store },
     { label: 'Companies', href: '/admin/companies', icon: Building2 },
@@ -96,7 +96,7 @@ export function Sidebar({ userType, userName, userEmail }: SidebarProps) {
   }
 
   return (
-    <aside className="fixed left-0 top-0 z-40 flex h-screen w-64 flex-col border-r bg-card">
+    <aside className="sticky fixed left-0 top-0 z-40 flex h-dvh w-64 flex-col border-r bg-card">
       {/* Logo */}
       <div className="flex h-14 items-center gap-2 border-b px-6">
         <Gift className="h-6 w-6 text-primary" />
@@ -115,18 +115,19 @@ export function Sidebar({ userType, userName, userEmail }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto p-3">
+      <nav className="flex-1 p-3">
         <ul className="space-y-1">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
-            return (
+            {navItems.map((item) => {
+                const isActive = pathname === item.href
+
+              return (
               <li key={item.href}>
                 <Link
                   href={item.href}
                   className={cn(
                     'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                     isActive
-                      ? 'bg-primary/10 text-primary'
+                      ? 'bg-primary/10 text-primary demo'
                       : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                   )}
                 >

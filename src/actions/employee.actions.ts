@@ -21,7 +21,7 @@ export async function createRedemptionAction(formData: FormData) {
   });
 
   if (!offer) throw new Error('Offer not found or no longer active');
-  if (offer.maxRedemptions > 0 && offer.currentRedemptions >= offer.maxRedemptions) {
+  if ((offer.maxRedemptions ?? 0) > 0 && (offer.currentRedemptions ?? 0) >= (offer.maxRedemptions ?? 0)) {
     throw new Error('Offer has reached maximum redemptions');
   }
 

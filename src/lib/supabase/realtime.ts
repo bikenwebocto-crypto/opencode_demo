@@ -117,12 +117,12 @@ export function subscribeToChannel(
       table: config.table,
       filter: config.filter,
     },
-    (payload) => {
+    (payload: RealtimePostgresChangesPayload<any>) => {
       onPayload(payload);
     }
   );
 
-  channel.subscribe((status) => {
+  channel.subscribe((status: string) => {
     onStatus?.(status as any);
   });
 

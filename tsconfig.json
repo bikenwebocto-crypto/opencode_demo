@@ -23,7 +23,6 @@
       "@/*": ["src/*"]
     },
 
-    "ignoreDeprecations": "6.0",
 
     "forceConsistentCasingInFileNames": true,
     "noUncheckedIndexedAccess": true,
@@ -40,5 +39,5 @@
     ".next/types/**/*.ts"
   ],
 
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "supabase/functions"]
 }
