@@ -188,6 +188,7 @@ model Company {
   @@index([status])
   @@index([slug])
   @@index([email])
+  @@index([status, deletedAt])
   @@map("companies")
 }
 
@@ -327,6 +328,7 @@ model Merchant {
   @@index([slug])
   @@index([categoryId])
   @@index([status, categoryId])
+  @@index([status, deletedAt])
   @@map("merchants")
 }
 
@@ -501,6 +503,7 @@ model Redemption {
   @@index([merchantId, redeemedAt])
   @@index([companyId, redeemedAt])
   @@index([offerId, redeemedAt])
+  @@index([redeemedAt, discountAmount, savingsAmount])
   @@map("redemptions")
 }
 

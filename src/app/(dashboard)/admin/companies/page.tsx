@@ -2,21 +2,20 @@
 import { useState, useMemo } from 'react'
 import { PageHeader } from '@/components/shared/page-header'
 import { FilterBar } from '@/components/shared/filter-bar'
+import { DataTable } from '@/components/shared/data-table'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
-import { CompanyTable } from '@/features/companies/components/company-table'
+import { StatusBadge } from '@/components/shared/status-badge'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Plus } from 'lucide-react'
+import Link from 'next/link'
+import { useCompanies, useUpdateCompanyStatus, useDeleteCompany } from '@/hooks/queries/use-companies'
+import { useTablePagination } from '@/hooks/use-table-pagination'
+import { showToast } from '@/hooks/use-toast'
+import type { ColumnDef } from '@/types'
 
-type StatusFilter = 'ALL' | 'ACTIVE' | 'INACTIVE' | 'SUSPENDED'
-
-const mockCompanies = [
-  { id: 'com-001', name: 'TechCorp Inc.', email: 'admin@techcorp.com', status: 'ACTIVE', employeeCount: 245, activeRedemptions: 1205, joinedAt: '2025-06-01' },
-  { id: 'com-002', name: 'Global Solutions Ltd', email: 'info@globalsolutions.com', status: 'ACTIVE', employeeCount: 89, activeRedemptions: 432, joinedAt: '2025-08-15' },
-  { id: 'com-003', name: 'InnovateX', email: 'hello@innovatex.io', status: 'ACTIVE', employeeCount: 512, activeRedemptions: 2890, joinedAt: '2025-03-20' },
-  { id: 'com-004', name: 'BlueOcean Corp', email: 'contact@blueocean.com', status: 'INACTIVE', employeeCount: 34, activeRedemptions: 78, joinedAt: '2025-11-10' },
-  { id: 'com-005', name: 'Pinnacle Partners', email: 'info@pinnaclepartners.com', status: 'SUSPENDED', employeeCount: 0, activeRedemptions: 0, joinedAt: '2026-01-05' },
-  { id: 'com-006', name: 'NorthStar Enterprises', email: 'admin@northstar.com', status: 'ACTIVE', employeeCount: 178, activeRedemptions: 654, joinedAt: '2025-09-22' },
-]
+type StatusFilter = 'ALL' | 'ACTIVE' | 'PAUSED' | 'SUSPENDED' | 'CANCELLED'
 
 export default function CompaniesPage() {
   const [search, setSearch] = useState('')
@@ -24,32 +23,124 @@ export default function CompaniesPage() {
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
 
-  const filtered = useMemo(() => {
-    return mockCompanies.filter((c) => {
-      if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false
-      if (statusFilter !== 'ALL' && c.status !== statusFilter) return false
-      return true
-    })
-  }, [search, statusFilter])
+  const { page, setPage, pageSize } = useTablePagination({ defaultPageSize: 10 })
+
+  const { data, isLoading } = useCompanies({
+    status: statusFilter !== 'ALL' ? statusFilter : undefined,
+    q: search || undefined,
+    page,
+    pageSize,
+  })
+
+  const updateStatus = useUpdateCompanyStatus()
+  const deleteCompany = useDeleteCompany()
+
+  const companies = data?.data ?? []
+  const meta = data?.meta
+
+  const tableCompanies = useMemo(() =>
+    companies.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      email: c.email,
+      status: c.status,
+      employeeCount: c._count?.employees ?? 0,
+      activeRedemptions: c._count?.redemptions ?? 0,
+      joinedAt: c.createdAt,
+    })),
+  [companies])
+
+  const companyColumns: ColumnDef<any>[] = [
+    {
+      key: 'name',
+      header: 'Company',
+      render: (c: any) => (
+        <div className="flex items-center gap-2">
+          <Avatar className="h-8 w-8">
+            <AvatarFallback className="text-xs">{(c.name ?? '?').charAt(0)}</AvatarFallback>
+          </Avatar>
+          <div>
+            <p className="font-medium">{c.name}</p>
+            <p className="text-xs text-muted-foreground">{c.email}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (c: any) => <StatusBadge status={c.status} />,
+    },
+    { key: 'employeeCount', header: 'Employees', align: 'center' },
+    { key: 'activeRedemptions', header: 'Active Redemptions', align: 'center' },
+    {
+      key: 'joinedAt',
+      header: 'Joined',
+      render: (c: any) => new Date(c.joinedAt).toLocaleDateString(),
+    },
+  ]
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Companies" description="Manage company accounts and subscriptions" actions={<Button><Plus className="mr-1 h-4 w-4" />Add Company</Button>} />
+      <PageHeader
+        title="Companies"
+        description="Manage company accounts and subscriptions"
+        actions={(
+          <Link href="/admin/companies/add">
+            <Button><Plus className="mr-1 h-4 w-4" />Add Company</Button>
+          </Link>
+        )}
+      />
       <FilterBar
         searchValue={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search companies..."
         filters={[
-          { key: 'status', label: 'All Statuses', options: [{ label: 'Active', value: 'ACTIVE' }, { label: 'Inactive', value: 'INACTIVE' }, { label: 'Suspended', value: 'SUSPENDED' }], value: statusFilter, onChange: (v) => setStatusFilter(v as StatusFilter) },
+          {
+            key: 'status',
+            label: 'All Statuses',
+            options: [
+              { label: 'Active', value: 'ACTIVE' },
+              { label: 'Paused', value: 'PAUSED' },
+              { label: 'Suspended', value: 'SUSPENDED' },
+              { label: 'Cancelled', value: 'CANCELLED' },
+            ],
+            value: statusFilter,
+            onChange: (v) => setStatusFilter(v as StatusFilter),
+          },
         ]}
       />
-      <CompanyTable companies={filtered} onRowClick={(c) => { setSelectedCompany(c.id); setConfirmOpen(true) }} />
+      <DataTable
+        columns={companyColumns}
+        data={tableCompanies}
+        keyExtractor={(c: any) => c.id}
+        isLoading={isLoading}
+        emptyMessage="No companies found"
+        onRowClick={(c) => { setSelectedCompany(c.id); setConfirmOpen(true) }}
+        pagination={{
+          page,
+          pageSize,
+          total: meta?.total ?? tableCompanies.length,
+          onPageChange: setPage,
+        }}
+      />
       <ConfirmDialog
         open={confirmOpen}
-        title="Change Status"
-        message="Are you sure you want to change the status of this company?"
-        confirmLabel="Confirm"
-        onConfirm={() => { setConfirmOpen(false); setSelectedCompany(null) }}
+        title="Change Company Status"
+        message="What action would you like to take on this company?"
+        confirmLabel="Toggle Status"
+        onConfirm={() => {
+          if (selectedCompany) {
+            updateStatus.mutate(
+              { companyId: selectedCompany, status: 'PAUSED' },
+              {
+                onSuccess: (res: any) => showToast({ type: 'success', title: res.message ?? 'Company status updated' }),
+                onError: (err: Error) => showToast({ type: 'error', title: 'Status update failed', description: err.message }),
+              },
+            )
+          }
+          setConfirmOpen(false); setSelectedCompany(null)
+        }}
         onCancel={() => { setConfirmOpen(false); setSelectedCompany(null) }}
       />
     </div>

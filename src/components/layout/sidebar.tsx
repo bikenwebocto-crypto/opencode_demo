@@ -84,11 +84,12 @@ export function Sidebar({ userType, userName, userEmail }: SidebarProps) {
   const router = useRouter()
   const logout = async() => {
     try {
-      await fetch('/api/auth/logout', {
-        method: 'POST',
-      })
-      await supabase.auth.signOut()
-      router.push('/login')
+      // await fetch('/api/auth/logout', {
+      //   method: 'POST',
+      // })
+     const res = await supabase.auth.signOut()
+     console.log('Logout response:', res) 
+     router.push('/login')
     } 
     catch (error) {
       console.error('Logout failed:', error)

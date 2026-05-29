@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Navbar } from '@/components/layout/navbar'
+import { Toaster } from '@/components/ui/toaster'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/utils/cn'
 
@@ -80,6 +81,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {children}
         </main>
       </div>
+      <Toaster />
     </div>
   )
 }

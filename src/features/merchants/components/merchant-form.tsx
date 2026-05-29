@@ -4,7 +4,10 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, Save } from 'lucide-react'
+import { ArrowLeft, Save, Upload } from 'lucide-react'
+import { CSVUploadDropzone } from '@/features/csv-uploads/components/csv-upload-dropzone'
+import { useCreateMerchant } from '@/hooks/queries/use-merchants'
+import { showToast } from '@/hooks/use-toast'
 
 interface FormData {
   businessName: string
@@ -29,8 +32,9 @@ interface FormErrors {
 
 export function MerchantForm() {
   const router = useRouter()
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const createMerchant = useCreateMerchant()
   const [errors, setErrors] = useState<FormErrors>({})
+  const [showBulk, setShowBulk] = useState(false)
 
   const [form, setForm] = useState<FormData>({
     businessName: '',
@@ -62,7 +66,6 @@ export function MerchantForm() {
 
   const validate = (): boolean => {
     const errs: FormErrors = {}
-
     if (!form.businessName.trim()) errs.businessName = 'Business name is required'
     if (!form.email.trim()) errs.email = 'Email is required'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.email = 'Invalid email address'
@@ -75,7 +78,6 @@ export function MerchantForm() {
     if (!form.city.trim()) errs.city = 'City is required'
     if (!form.postalCode.trim()) errs.postalCode = 'Postal code is required'
     if (!form.country.trim()) errs.country = 'Country is required'
-
     setErrors(errs)
     return Object.keys(errs).length === 0
   }
@@ -83,11 +85,89 @@ export function MerchantForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
-    setIsSubmitting(true)
-    // Simulate API call
-    await new Promise((r) => setTimeout(r, 1000))
-    setIsSubmitting(false)
-    router.push('/admin/merchants')
+
+    createMerchant.mutate(form as unknown as Record<string, unknown>, {
+      onSuccess: (res) => {
+        showToast({ type: 'success', title: res.message ?? 'Merchant created successfully' })
+        router.push('/admin/merchants')
+      },
+      onError: (err) => {
+        showToast({ type: 'error', title: 'Failed to create merchant', description: err.message })
+      },
+    })
+  }
+
+  const handleBulkUpload = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const text = e.target?.result as string
+      const lines = text.split('\n').filter(Boolean)
+      if (lines.length < 2) {
+        showToast({ type: 'error', title: 'CSV must have a header row and at least one data row' })
+        return
+      }
+
+      const headers = (lines[0] ?? '').split(',').map((h) => h.trim().toLowerCase())
+      const requiredFields = ['businessname', 'email', 'password', 'contactname']
+      const missing = requiredFields.filter((f) => !headers.includes(f))
+      if (missing.length > 0) {
+        showToast({ type: 'error', title: 'Missing required columns', description: `Required: ${requiredFields.join(', ')}. Missing: ${missing.join(', ')}` })
+        return
+      }
+
+      let successCount = 0
+      let errorCount = 0
+      const errors: string[] = []
+
+      const processLine = async (i: number) => {
+        if (i >= lines.length - 1) {
+          if (successCount > 0) showToast({ type: 'success', title: `Bulk upload complete`, description: `${successCount} created, ${errorCount} failed` })
+          if (errorCount > 0) showToast({ type: 'error', title: 'Some rows failed', description: errors.slice(0, 5).join('; ') })
+          router.refresh()
+          return
+        }
+
+        const vals = (lines[i + 1] ?? '').split(',').map((v) => v.trim())
+        const row: Record<string, string> = {}
+        headers.forEach((h, idx) => { row[h] = vals[idx] ?? '' })
+
+        try {
+          const res = await fetch('/api/admin/merchants/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              businessName: row.businessname,
+              email: row.email,
+              password: row.password,
+              contactName: row.contactname,
+              contactPhone: row.contactphone || '',
+              categoryId: row.categoryid || '',
+              description: row.description || '',
+              website: row.website || '',
+              addressLine1: row.addressline1 || '',
+              addressLine2: row.addressline2 || '',
+              city: row.city || '',
+              state: row.state || '',
+              postalCode: row.postalcode || '',
+              country: row.country || '',
+            }),
+          })
+          const json = await res.json()
+          if (res.ok) successCount++
+          else {
+            errorCount++
+            errors.push(`Row ${i + 2}: ${json.error?.message ?? 'Unknown error'}`)
+          }
+        } catch {
+          errorCount++
+          errors.push(`Row ${i + 2}: Network error`)
+        }
+        processLine(i + 1)
+      }
+
+      processLine(0)
+    }
+    reader.readAsText(file)
   }
 
   const inputClass = (field: string) =>
@@ -95,15 +175,24 @@ export function MerchantForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button type="button" variant="ghost" size="icon" onClick={() => router.back()}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Add Merchant</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Register a new merchant account</p>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button type="button" variant="ghost" size="icon" onClick={() => router.back()}>
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Add Merchant</h1>
+            <p className="mt-1 text-sm text-muted-foreground">Register a new merchant account</p>
+          </div>
         </div>
+        <Button type="button" variant="outline" onClick={() => setShowBulk(!showBulk)}>
+          <Upload className="mr-1 h-4 w-4" />Bulk Upload CSV
+        </Button>
       </div>
+
+      {showBulk && (
+        <CSVUploadDropzone onUpload={handleBulkUpload} isUploading={createMerchant.isPending} acceptedFormats=".csv" />
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
@@ -207,9 +296,9 @@ export function MerchantForm() {
 
       <div className="flex items-center justify-end gap-3">
         <Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>
-        <Button type="submit" disabled={isSubmitting}>
+        <Button type="submit" disabled={createMerchant.isPending}>
           <Save className="mr-1 h-4 w-4" />
-          {isSubmitting ? 'Saving...' : 'Save Merchant'}
+          {createMerchant.isPending ? 'Saving...' : 'Save Merchant'}
         </Button>
       </div>
     </form>

@@ -1,65 +1,161 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
+import {
+  useReactTable,
+  getCoreRowModel,
+  flexRender,
+  type SortingState,
+  type RowSelectionState,
+  type ColumnDef as TanStackColumnDef,
+} from '@tanstack/react-table'
 import { ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Checkbox } from '@/components/ui/checkbox'
 import type { ColumnDef, TableSortConfig } from '@/types'
 
 interface DataTableProps<T> {
   columns: ColumnDef<T>[]
   data: T[]
+  keyExtractor: (row: T) => string
+  isLoading?: boolean
+  emptyMessage?: string
+  emptyAction?: React.ReactNode
   sortable?: boolean
   sortConfig?: TableSortConfig
   onSort?: (config: TableSortConfig) => void
   onRowClick?: (row: T) => void
-  isLoading?: boolean
-  emptyMessage?: string
+  selectable?: boolean
+  selectedIds?: Set<string>
+  onSelectChange?: (ids: Set<string>) => void
   pagination?: {
     page: number
     pageSize: number
     total: number
     onPageChange: (page: number) => void
   }
-  keyExtractor: (row: T) => string
+}
+
+interface TanStackMeta {
+  align?: 'left' | 'center' | 'right'
+}
+
+function toTanStackCols<T>(columns: ColumnDef<T>[], selectable: boolean, onRowClick?: (row: T) => void): TanStackColumnDef<T>[] {
+  const result: TanStackColumnDef<T>[] = []
+
+  if (selectable) {
+    result.push({
+      id: '__select__',
+      header: '',
+      enableSorting: false,
+      size: 40,
+      meta: { align: undefined } as TanStackMeta,
+    })
+  }
+
+  for (const col of columns) {
+    result.push({
+      id: col.key,
+      accessorKey: col.key,
+      header: col.header,
+      enableSorting: col.sortable !== false,
+      size: col.width ? parseInt(col.width) : undefined,
+      cell: col.render ? (info) => col.render!(info.row.original) : undefined,
+      meta: { align: col.align } as TanStackMeta,
+    })
+  }
+
+  return result
 }
 
 export function DataTable<T extends Record<string, unknown>>({
-  columns,
+  columns: rawColumns,
   data,
+  keyExtractor,
+  isLoading,
+  emptyMessage = 'No data found',
+  emptyAction,
   sortable = true,
   sortConfig,
   onSort,
   onRowClick,
-  isLoading,
-  emptyMessage = 'No data found',
+  selectable = false,
+  selectedIds,
+  onSelectChange,
   pagination,
-  keyExtractor,
 }: DataTableProps<T>) {
-  const [localSort, setLocalSort] = useState<TableSortConfig | undefined>(sortConfig)
-  const activeSort = sortConfig ?? localSort
-  const setActiveSort = onSort ?? setLocalSort
+  const [localSorting, setLocalSorting] = useState<SortingState>([])
+  const isExternallySorted = sortConfig !== undefined && onSort !== undefined
+  const sorting: SortingState = isExternallySorted
+    ? [{ id: sortConfig!.key, desc: sortConfig!.direction === 'desc' }]
+    : localSorting
+
+  const handleSortingChange = useCallback(
+    (updater: SortingState | ((old: SortingState) => SortingState)) => {
+      const next = typeof updater === 'function' ? updater(sorting) : updater
+      if (isExternallySorted) {
+        const sort = next[0]
+        onSort?.({
+          key: sort?.id ?? '',
+          direction: sort ? (sort.desc ? 'desc' : 'asc') : 'asc',
+        })
+      } else {
+        setLocalSorting(next)
+      }
+    },
+    [sorting, isExternallySorted, onSort],
+  )
+
+  const rowSelection = useMemo(() => {
+    if (!selectable || !selectedIds) return {}
+    const sel: RowSelectionState = {}
+    for (const row of data) {
+      const id = keyExtractor(row)
+      if (selectedIds.has(id)) sel[id] = true
+    }
+    return sel
+  }, [selectable, selectedIds, data, keyExtractor])
+
+  const handleRowSelectionChange = useCallback(
+    (updater: RowSelectionState | ((old: RowSelectionState) => RowSelectionState)) => {
+      const next = typeof updater === 'function' ? updater(rowSelection) : updater
+      onSelectChange?.(new Set(Object.keys(next).filter((k) => next[k])))
+    },
+    [rowSelection, onSelectChange],
+  )
+
   const totalPages = pagination ? Math.ceil(pagination.total / pagination.pageSize) : 1
 
-  const handleSort = useCallback((key: string) => {
-    if (!sortable) return
-    setActiveSort({
-      key,
-      direction: activeSort?.key === key && activeSort.direction === 'asc' ? 'desc' : 'asc',
-    })
-  }, [sortable, activeSort, setActiveSort])
+  const columns = useMemo(() => toTanStackCols(rawColumns, selectable, onRowClick), [rawColumns, selectable, onRowClick])
 
-  const SortIcon = ({ column }: { column: string }) => {
-    if (activeSort?.key !== column) return <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
-    return activeSort.direction === 'asc'
-      ? <ChevronUp className="ml-1 h-3 w-3 shrink-0" />
-      : <ChevronDown className="ml-1 h-3 w-3 shrink-0" />
-  }
+  const table = useReactTable({
+    data,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    manualSorting: true,
+    manualPagination: true,
+    enableRowSelection: selectable,
+    enableSorting: sortable,
+    getRowId: (row) => keyExtractor(row),
+    state: {
+      sorting,
+      rowSelection,
+      pagination: pagination
+        ? { pageIndex: pagination.page - 1, pageSize: pagination.pageSize }
+        : undefined,
+    },
+    onSortingChange: handleSortingChange,
+    onRowSelectionChange: handleRowSelectionChange,
+    pageCount: pagination ? totalPages : undefined,
+  })
 
   if (isLoading) {
+    const skeletonCols = selectable ? rawColumns.length + 1 : rawColumns.length
     return (
       <div className="space-y-3">
         <div className="flex gap-4">
-          {columns.map((_, i) => (
+          {selectable && <Skeleton className="h-8 w-10 shrink-0" />}
+          {rawColumns.map((_, i) => (
             <Skeleton key={i} className="h-8 flex-1" />
           ))}
         </div>
@@ -74,6 +170,7 @@ export function DataTable<T extends Record<string, unknown>>({
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+        {emptyAction && <div className="mt-3">{emptyAction}</div>}
       </div>
     )
   }
@@ -83,57 +180,98 @@ export function DataTable<T extends Record<string, unknown>>({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b text-left text-muted-foreground">
-              {columns.map((col) => (
-                <th
-                  key={col.key}
-                  className={cn(
-                    'pb-3 font-medium',
-                    col.sortable !== false && sortable && 'cursor-pointer select-none hover:text-foreground',
-                    col.align === 'right' && 'text-right',
-                    col.align === 'center' && 'text-center',
-                  )}
-                  style={col.width ? { width: col.width } : undefined}
-                  onClick={() => col.sortable !== false && handleSort(col.key)}
-                >
-                  <span className="inline-flex items-center">
-                    {col.header}
-                    {col.sortable !== false && sortable && <SortIcon column={col.key} />}
-                  </span>
-                </th>
-              ))}
-            </tr>
+            {table.getHeaderGroups().map((headerGroup) => (
+              <tr key={headerGroup.id} className="border-b text-left text-muted-foreground">
+                {headerGroup.headers.map((header) => {
+                  const meta = header.column.columnDef.meta as TanStackMeta | undefined
+                  const isSelectCol = header.column.id === '__select__'
+                  return (
+                    <th
+                      key={header.id}
+                      className={cn(
+                        'pb-3 font-medium',
+                        !isSelectCol &&
+                          header.column.getCanSort() &&
+                          sortable &&
+                          'cursor-pointer select-none hover:text-foreground',
+                        meta?.align === 'right' && 'text-right',
+                        meta?.align === 'center' && 'text-center',
+                      )}
+                      style={{
+                        width: header.getSize() !== 150 ? header.getSize() : undefined,
+                      }}
+                      onClick={
+                        isSelectCol
+                          ? undefined
+                          : header.column.getToggleSortingHandler()
+                      }
+                    >
+                      {isSelectCol ? (
+                        <Checkbox
+                          checked={
+                            table.getIsAllRowsSelected() ||
+                            (table.getIsSomeRowsSelected() && !table.getIsAllRowsSelected())
+                          }
+                          indeterminate={
+                            table.getIsSomeRowsSelected() && !table.getIsAllRowsSelected()
+                          }
+                          onCheckedChange={() => table.toggleAllRowsSelected()}
+                        />
+                      ) : (
+                        <span className="inline-flex items-center">
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          {header.column.getCanSort() && sortable && (
+                            <>
+                              {header.column.getIsSorted() === 'asc' && <ChevronUp className="ml-1 h-3 w-3 shrink-0" />}
+                              {header.column.getIsSorted() === 'desc' && <ChevronDown className="ml-1 h-3 w-3 shrink-0" />}
+                              {!header.column.getIsSorted() && <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />}
+                            </>
+                          )}
+                        </span>
+                      )}
+                    </th>
+                  )
+                })}
+              </tr>
+            ))}
           </thead>
           <tbody>
-            {data.map((row) => {
-              const key = keyExtractor(row)
-              return (
-                <tr
-                  key={key}
-                  className={cn(
-                    'border-b transition-colors last:border-0 hover:bg-muted/50',
-                    onRowClick && 'cursor-pointer',
-                  )}
-                  onClick={() => onRowClick?.(row)}
-                >
-                  {columns.map((col) => {
-                    const cell = col.render ? col.render(row) : String(row[col.key] ?? '')
-                    return (
-                      <td
-                        key={col.key}
-                        className={cn(
-                          'py-3',
-                          col.align === 'right' && 'text-right',
-                          col.align === 'center' && 'text-center',
-                        )}
-                      >
-                        {cell}
-                      </td>
-                    )
-                  })}
-                </tr>
-              )
-            })}
+            {table.getRowModel().rows.map((row) => (
+              <tr
+                key={row.id}
+                className={cn(
+                  'border-b transition-colors last:border-0 hover:bg-muted/50',
+                  onRowClick && 'cursor-pointer',
+                  row.getIsSelected() && 'bg-muted/30',
+                )}
+                onClick={() => onRowClick?.(row.original)}
+              >
+                {row.getVisibleCells().map((cell) => {
+                  const meta = cell.column.columnDef.meta as TanStackMeta | undefined
+                  const isSelectCol = cell.column.id === '__select__'
+                  return (
+                    <td
+                      key={cell.id}
+                      className={cn(
+                        'py-3',
+                        meta?.align === 'right' && 'text-right',
+                        meta?.align === 'center' && 'text-center',
+                      )}
+                      onClick={(e) => isSelectCol && e.stopPropagation()}
+                    >
+                      {isSelectCol ? (
+                        <Checkbox
+                          checked={row.getIsSelected()}
+                          onCheckedChange={() => row.toggleSelected()}
+                        />
+                      ) : (
+                        flexRender(cell.column.columnDef.cell, cell.getContext())
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>

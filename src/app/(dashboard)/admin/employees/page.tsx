@@ -1,48 +1,24 @@
 'use client'
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { PageHeader } from '@/components/shared/page-header'
 import { FilterBar } from '@/components/shared/filter-bar'
+import { DataTable } from '@/components/shared/data-table'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
-import { EmployeeTable } from '@/features/employees/components/employee-table'
+import { StatusBadge } from '@/components/shared/status-badge'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { CSVUploadDropzone } from '@/features/csv-uploads/components/csv-upload-dropzone'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Plus, Upload, Trash2, CheckCircle, XCircle } from 'lucide-react'
 import Link from 'next/link'
+import { useEmployees, useBulkUpdateEmployees, useBulkDeleteEmployees } from '@/hooks/queries/use-employees'
+import { useCompanies } from '@/hooks/queries/use-companies'
+import { showToast } from '@/hooks/use-toast'
+import { useTablePagination } from '@/hooks/use-table-pagination'
+import type { ColumnDef } from '@/types'
 
-type StatusFilter = 'ALL' | 'ACTIVE' | 'INACTIVE' | 'INVITED'
-type CompanyFilter = 'ALL' | 'com-001' | 'com-002' | 'com-003' | 'com-004' | 'com-005' | 'com-006'
-
-interface MockEmployee {
-  id: string
-  name: string
-  email: string
-  companyId: string
-  companyName: string
-  department: string
-  status: string
-  totalRedemptions: number
-  joinedAt: string
-}
-
-const mockEmployees: MockEmployee[] = [
-  { id: 'emp-001', name: 'Alice Johnson', email: 'alice@techcorp.com', companyId: 'com-001', companyName: 'TechCorp Inc.', department: 'Engineering', status: 'ACTIVE', totalRedemptions: 23, joinedAt: '2025-07-01' },
-  { id: 'emp-002', name: 'Bob Smith', email: 'bob@techcorp.com', companyId: 'com-001', companyName: 'TechCorp Inc.', department: 'Marketing', status: 'ACTIVE', totalRedemptions: 45, joinedAt: '2025-08-15' },
-  { id: 'emp-003', name: 'Carol Davis', email: 'carol@globalsolutions.com', companyId: 'com-002', companyName: 'Global Solutions Ltd', department: 'Sales', status: 'INACTIVE', totalRedemptions: 12, joinedAt: '2025-09-10' },
-  { id: 'emp-004', name: 'David Wilson', email: 'david@innovatex.io', companyId: 'com-003', companyName: 'InnovateX', department: 'Engineering', status: 'ACTIVE', totalRedemptions: 67, joinedAt: '2025-04-20' },
-  { id: 'emp-005', name: 'Eve Martinez', email: 'eve@innovatex.io', companyId: 'com-003', companyName: 'InnovateX', department: 'Design', status: 'INVITED', totalRedemptions: 0, joinedAt: '2026-05-27' },
-  { id: 'emp-006', name: 'Frank Lee', email: 'frank@techcorp.com', companyId: 'com-001', companyName: 'TechCorp Inc.', department: 'Finance', status: 'ACTIVE', totalRedemptions: 8, joinedAt: '2025-11-01' },
-  { id: 'emp-007', name: 'Grace Kim', email: 'grace@northstar.com', companyId: 'com-006', companyName: 'NorthStar Enterprises', department: 'HR', status: 'ACTIVE', totalRedemptions: 31, joinedAt: '2025-10-05' },
-  { id: 'emp-008', name: 'Henry Brown', email: 'henry@globalsolutions.com', companyId: 'com-002', companyName: 'Global Solutions Ltd', department: 'Operations', status: 'INACTIVE', totalRedemptions: 5, joinedAt: '2026-01-12' },
-]
-
-const companyOptions = [
-  { label: 'TechCorp Inc.', value: 'com-001' },
-  { label: 'Global Solutions Ltd', value: 'com-002' },
-  { label: 'InnovateX', value: 'com-003' },
-  { label: 'BlueOcean Corp', value: 'com-004' },
-  { label: 'Pinnacle Partners', value: 'com-005' },
-  { label: 'NorthStar Enterprises', value: 'com-006' },
-]
+type StatusFilter = 'ALL' | 'ACTIVE' | 'INACTIVE' | 'INVITED' | 'SUSPENDED' | 'INELIGIBLE'
+type CompanyFilter = 'ALL' | string
 
 export default function EmployeesPage() {
   const [search, setSearch] = useState('')
@@ -53,39 +29,117 @@ export default function EmployeesPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmAction, setConfirmAction] = useState<'delete' | 'deactivate'>('delete')
   const [isProcessing, setIsProcessing] = useState(false)
-  const [employees, setEmployees] = useState<MockEmployee[]>(mockEmployees)
 
-  const filtered = useMemo(() => {
-    return employees.filter((e) => {
-      if (search && !e.name.toLowerCase().includes(search.toLowerCase()) && !e.email.toLowerCase().includes(search.toLowerCase())) return false
-      if (statusFilter !== 'ALL' && e.status !== statusFilter) return false
-      if (companyFilter !== 'ALL' && e.companyId !== companyFilter) return false
-      return true
-    })
-  }, [search, statusFilter, companyFilter, employees])
+  const { page, setPage, pageSize, resetPage } = useTablePagination({ defaultPageSize: 10 })
 
-  const handleSelectChange = useCallback((ids: Set<string>) => {
-    setSelectedIds(ids)
-  }, [])
+  const { data, isLoading } = useEmployees({
+    status: statusFilter,
+    companyId: companyFilter,
+    q: search || undefined,
+    page,
+    pageSize,
+  })
 
-  const clearSelection = useCallback(() => {
-    setSelectedIds(new Set())
-  }, [])
+  const { data: companiesData } = useCompanies()
+  const bulkUpdate = useBulkUpdateEmployees()
+  const bulkDelete = useBulkDeleteEmployees()
+
+  const employees = data?.data ?? []
+  const meta = data?.meta
+  const companies = companiesData?.data ?? []
+
+  const companyOptions = useMemo(
+    () => companies.map((c: any) => ({ label: c.name, value: c.id })),
+    [companies],
+  )
+
+  const tableEmployees = useMemo(() =>
+    employees.map((e: any) => ({
+      id: e.id,
+      name: `${e.firstName} ${e.lastName}`,
+      email: e.email,
+      companyId: e.companyId,
+      companyName: e.company?.name ?? '—',
+      department: e.department ?? '—',
+      status: e.status,
+      totalRedemptions: e._count?.redemptions ?? 0,
+      joinedAt: e.createdAt,
+    })),
+  [employees])
+
+  const selectedCount = selectedIds.size
+
+  const employeeColumns: ColumnDef<any>[] = [
+    {
+      key: 'name',
+      header: 'Employee',
+      render: (e: any) => (
+        <div className="flex items-center gap-2">
+          <Avatar className="h-8 w-8">
+            <AvatarFallback className="text-xs">{(e.name ?? '?').charAt(0)}</AvatarFallback>
+          </Avatar>
+          <div>
+            <p className="font-medium">{e.name}</p>
+            <p className="text-xs text-muted-foreground">{e.email}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'companyName',
+      header: 'Company',
+      render: (e: any) => <span className="text-muted-foreground">{e.companyName}</span>,
+    },
+    { key: 'department', header: 'Department' },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (e: any) => <StatusBadge status={e.status} />,
+    },
+    { key: 'totalRedemptions', header: 'Redemptions', align: 'center' },
+    {
+      key: 'joinedAt',
+      header: 'Joined',
+      render: (e: any) => new Date(e.joinedAt).toLocaleDateString(),
+    },
+  ]
+
+  const handleSelectChange = useCallback((ids: Set<string>) => setSelectedIds(ids), [])
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), [])
 
   const handleBulkActivate = useCallback(() => {
-    setEmployees((prev) => prev.map((e) => selectedIds.has(e.id) ? { ...e, status: 'ACTIVE' } : e))
+    bulkUpdate.mutate(
+      { employeeIds: Array.from(selectedIds), status: 'ACTIVE' },
+      {
+        onSuccess: () => showToast({ type: 'success', title: `${selectedCount} employee(s) activated` }),
+        onError: (err: Error) => showToast({ type: 'error', title: 'Activation failed', description: err.message }),
+      },
+    )
     clearSelection()
-  }, [selectedIds, clearSelection])
+  }, [selectedIds, bulkUpdate, clearSelection, selectedCount])
 
   const handleBulkDeactivate = useCallback(() => {
-    setEmployees((prev) => prev.map((e) => selectedIds.has(e.id) ? { ...e, status: 'INACTIVE' } : e))
+    bulkUpdate.mutate(
+      { employeeIds: Array.from(selectedIds), status: 'INACTIVE' },
+      {
+        onSuccess: () => showToast({ type: 'success', title: `${selectedCount} employee(s) deactivated` }),
+        onError: (err: Error) => showToast({ type: 'error', title: 'Deactivation failed', description: err.message }),
+      },
+    )
     clearSelection()
-  }, [selectedIds, clearSelection])
+  }, [selectedIds, bulkUpdate, clearSelection, selectedCount])
 
   const handleBulkDelete = useCallback(() => {
-    setEmployees((prev) => prev.filter((e) => !selectedIds.has(e.id)))
+    bulkDelete.mutate(
+      Array.from(selectedIds),
+      {
+        onSuccess: () => showToast({ type: 'success', title: `${selectedCount} employee(s) deleted` }),
+        onError: (err: Error) => showToast({ type: 'error', title: 'Delete failed', description: err.message }),
+      },
+    )
     clearSelection()
-  }, [selectedIds, clearSelection])
+  }, [selectedIds, bulkDelete, clearSelection, selectedCount])
 
   const handleCSVUpload = useCallback((_file: File) => {
     setIsProcessing(true)
@@ -99,8 +153,6 @@ export default function EmployeesPage() {
     setConfirmAction(action)
     setConfirmOpen(true)
   }, [])
-
-  const selectedCount = selectedIds.size
 
   return (
     <div className="space-y-6">
@@ -120,11 +172,7 @@ export default function EmployeesPage() {
       />
 
       {showUpload && (
-        <CSVUploadDropzone
-          onUpload={handleCSVUpload}
-          isUploading={isProcessing}
-          acceptedFormats=".csv"
-        />
+        <CSVUploadDropzone onUpload={handleCSVUpload} isUploading={isProcessing} acceptedFormats=".csv" />
       )}
 
       <FilterBar
@@ -132,8 +180,8 @@ export default function EmployeesPage() {
         onSearchChange={setSearch}
         searchPlaceholder="Search employees..."
         filters={[
-          { key: 'company', label: 'All Companies', options: companyOptions, value: companyFilter, onChange: (v) => setCompanyFilter(v as CompanyFilter) },
-          { key: 'status', label: 'All Statuses', options: [{ label: 'Active', value: 'ACTIVE' }, { label: 'Inactive', value: 'INACTIVE' }, { label: 'Invited', value: 'INVITED' }], value: statusFilter, onChange: (v) => setStatusFilter(v as StatusFilter) },
+          { key: 'company', label: 'All Companies', options: companyOptions, value: companyFilter, onChange: (v) => setCompanyFilter(v) },
+          { key: 'status', label: 'All Statuses', options: [{ label: 'Active', value: 'ACTIVE' }, { label: 'Inactive', value: 'INACTIVE' }, { label: 'Invited', value: 'INVITED' }, { label: 'Suspended', value: 'SUSPENDED' }, { label: 'Ineligible', value: 'INELIGIBLE' }], value: statusFilter, onChange: (v) => setStatusFilter(v as StatusFilter) },
         ]}
       />
 
@@ -154,10 +202,21 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      <EmployeeTable
-        employees={filtered}
+      <DataTable
+        columns={employeeColumns}
+        data={tableEmployees}
+        keyExtractor={(e: any) => e.id}
+        isLoading={isLoading}
+        emptyMessage="No employees found"
+        selectable
         selectedIds={selectedIds}
         onSelectChange={handleSelectChange}
+        pagination={{
+          page,
+          pageSize,
+          total: meta?.total ?? tableEmployees.length,
+          onPageChange: setPage,
+        }}
       />
 
       <ConfirmDialog

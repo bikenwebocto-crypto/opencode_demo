@@ -231,10 +231,10 @@ async function main() {
           companyId: company.id,
           email: `${prefix}.emp${i + 1}@${company.slug}.com`,
           passwordHash: pw,
-          firstName: firstNames[i % firstNames.length],
-          lastName: lastNames[i % lastNames.length],
+          firstName: firstNames[i % firstNames.length]!,
+          lastName: lastNames[i % lastNames.length]!,
           employeeId: `EMP-${prefix.toUpperCase()}-${String(i + 1).padStart(3, '0')}`,
-          department: depts[i % depts.length],
+          department: depts[i % depts.length]!,
           status: statuses[i] as any,
           invitedAt: statuses[i] === 'INVITED' ? new Date() : undefined,
           invitedBy: supportAdmin.id,
@@ -270,7 +270,7 @@ async function main() {
         passwordHash: pw,
         contactName: m.contactName,
         contactPhone: m.contactPhone,
-        categoryId: cat?.id ?? allCategories[0].id,
+        categoryId: cat?.id ?? allCategories[0]!.id,
         status: m.status,
         onboardingStep: m.status === 'PENDING' ? 'APPLICATION' : 'COMPLETE',
         isFeatured: ['ACTIVE', 'ACTIVE'].includes(m.status) && Math.random() > 0.6,
@@ -320,7 +320,7 @@ async function main() {
 
   for (const merchant of activeMerchants) {
     for (let i = 0; i < offerTemplates.length; i++) {
-      const tmpl = offerTemplates[i];
+      const tmpl = offerTemplates[i]!;
       const startDate = new Date('2026-01-01');
       const endDate = new Date('2027-01-01');
       await prisma.merchantOffer.create({
@@ -369,15 +369,15 @@ async function main() {
 
   // ── Redemptions ──────────────────────────────────────
   const techCorpEmployees = allEmployees.filter((e) => e.companyId === techCorp.id);
-  const firstMerchant = activeMerchants[0];
+  const firstMerchant = activeMerchants[0]!;
   const firstOffers = await prisma.merchantOffer.findMany({
     where: { merchantId: firstMerchant.id, status: 'LIVE' },
     take: 3,
   });
 
   for (let i = 0; i < 30; i++) {
-    const emp = techCorpEmployees[i % techCorpEmployees.length];
-    const offer = firstOffers[i % firstOffers.length];
+    const emp = techCorpEmployees[i % techCorpEmployees.length]!;
+    const offer = firstOffers[i % firstOffers.length]!;
     const discount = 5 + Math.floor(Math.random() * 45);
     const savings = discount + Math.floor(Math.random() * 20);
     const redeemedAt = new Date(Date.now() - Math.floor(Math.random() * 90 * 24 * 60 * 60 * 1000));
@@ -446,9 +446,9 @@ async function main() {
   ];
 
   for (let i = 0; i < 20; i++) {
-    const entry = auditActions[Math.floor(Math.random() * auditActions.length)];
-    const refMerchant = createdMerchants[i % createdMerchants.length];
-    const refCompany = companies[i % companies.length];
+    const entry = auditActions[Math.floor(Math.random() * auditActions.length)]!;
+    const refMerchant = createdMerchants[i % createdMerchants.length]!;
+    const refCompany = companies[i % companies.length]!;
     await prisma.auditLog.create({
       data: {
         actorType: 'admin',
@@ -465,17 +465,17 @@ async function main() {
 
   // ── Issue Reports ───────────────────────────────────
   for (let i = 0; i < 3; i++) {
-    const emp = techCorpEmployees[i];
+    const emp = techCorpEmployees[i]!;
     await prisma.issueReport.create({
       data: {
         merchantId: firstMerchant.id,
         employeeId: emp.id,
-        title: ['Redemption not honored', 'Discount not applied', 'Wrong amount charged'][i],
-        description: [
+        title: ['Redemption not honored', 'Discount not applied', 'Wrong amount charged'][i] ?? '',
+        description: ([
           'The merchant refused to honor the discount code at checkout.',
           'The discount was not applied even though I showed the offer.',
           'The amount charged was higher than expected by $10.',
-        ][i],
+        ][i] ?? ''),
         category: 'redemption',
         priority: i === 0 ? 'high' : 'normal',
         status: i === 0 ? 'OPEN' : 'UNDER_REVIEW',

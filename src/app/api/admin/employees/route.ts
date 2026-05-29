@@ -1,0 +1,260 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/supabase/server';
+import { adminEmployeeActionSchema } from '@/schemas';
+import * as bcrypt from 'bcryptjs';
+
+function unauthorized() {
+  return NextResponse.json(
+    { success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } },
+    { status: 401 },
+  );
+}
+
+function notFound(entity: string) {
+  return NextResponse.json(
+    { success: false, error: { code: 'NOT_FOUND', message: `${entity} not found` } },
+    { status: 404 },
+  );
+}
+
+function internalError(error: unknown) {
+  console.error('Employees API error:', error);
+  return NextResponse.json(
+    { success: false, error: { code: 'INTERNAL', message: 'Internal server error' } },
+    { status: 500 },
+  );
+}
+
+// GET /api/admin/employees — list employees with filters
+export async function GET(request: NextRequest) {
+  try {
+    const user = await getCurrentUser();
+    if (!user || user.userType !== 'admin') return unauthorized();
+
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get('status');
+    const companyId = searchParams.get('companyId');
+    const page = Math.max(1, parseInt(searchParams.get('page') ?? '1'));
+    const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get('pageSize') ?? '20')));
+    const q = searchParams.get('q');
+
+    const where: Record<string, unknown> = { deletedAt: null };
+    if (status && status !== 'ALL') where.status = status;
+    if (companyId && companyId !== 'ALL') where.companyId = companyId;
+    if (q) {
+      where.OR = [
+        { firstName: { contains: q, mode: 'insensitive' } },
+        { lastName: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+
+    const [employees, total] = await Promise.all([
+      prisma.employee.findMany({
+        where: where as any,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: {
+          company: { select: { id: true, name: true, slug: true } },
+          _count: { select: { redemptions: true } },
+        },
+      }),
+      prisma.employee.count({ where: where as any }),
+    ]);
+
+    return NextResponse.json({
+      success: true,
+      data: employees,
+      meta: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+        hasNextPage: page * pageSize < total,
+        hasPreviousPage: page > 1,
+      },
+    });
+  } catch (error) {
+    return internalError(error);
+  }
+}
+
+// POST /api/admin/employees — create a single employee
+export async function POST(request: NextRequest) {
+  try {
+    const user = await getCurrentUser();
+    if (!user || user.userType !== 'admin') return unauthorized();
+
+    const body = await request.json();
+    const { email, firstName, lastName, companyId, department, jobTitle, employeeId, phone } = body;
+
+    if (!email || !firstName || !lastName || !companyId) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION', message: 'Missing required fields: email, firstName, lastName, companyId' } },
+        { status: 400 },
+      );
+    }
+
+    const company = await prisma.company.findUnique({ where: { id: companyId } });
+    if (!company || company.deletedAt) {
+      return NextResponse.json(
+        { success: false, error: { code: 'NOT_FOUND', message: 'Company not found' } },
+        { status: 404 },
+      );
+    }
+
+    const existing = await prisma.employee.findUnique({ where: { email } });
+    if (existing) {
+      return NextResponse.json(
+        { success: false, error: { code: 'CONFLICT', message: 'An employee with this email already exists' } },
+        { status: 409 },
+      );
+    }
+
+    const passwordHash = await bcrypt.hash('Welcome@123', 10);
+
+    const employee = await prisma.employee.create({
+      data: {
+        companyId,
+        email,
+        passwordHash,
+        firstName,
+        lastName,
+        employeeId,
+        department,
+        jobTitle,
+        phone,
+        status: 'INVITED',
+        invitedAt: new Date(),
+        invitedBy: user.id,
+      },
+      include: {
+        company: { select: { id: true, name: true } },
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        actorType: 'admin',
+        adminId: user.id,
+        action: 'EMPLOYEE_CREATED',
+        entityType: 'employee',
+        entityId: employee.id,
+        changes: { email, companyId, department },
+      },
+    });
+
+    return NextResponse.json(
+      { success: true, data: employee, message: 'Employee created successfully' },
+      { status: 201 },
+    );
+  } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return NextResponse.json(
+        { success: false, error: { code: 'CONFLICT', message: 'An employee with this email already exists' } },
+        { status: 409 },
+      );
+    }
+    return internalError(error);
+  }
+}
+
+// PATCH /api/admin/employees — bulk update employee status
+export async function PATCH(request: NextRequest) {
+  try {
+    const user = await getCurrentUser();
+    if (!user || user.userType !== 'admin') return unauthorized();
+
+    const body = await request.json();
+    const { employeeIds, status, reason } = body;
+
+    if (!employeeIds || !Array.isArray(employeeIds) || employeeIds.length === 0) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION', message: 'employeeIds must be a non-empty array' } },
+        { status: 400 },
+      );
+    }
+
+    if (!status || !['ACTIVE', 'INACTIVE', 'SUSPENDED', 'INELIGIBLE'].includes(status)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION', message: 'Invalid status. Must be one of: ACTIVE, INACTIVE, SUSPENDED, INELIGIBLE' } },
+        { status: 400 },
+      );
+    }
+
+    const result = await prisma.employee.updateMany({
+      where: { id: { in: employeeIds }, deletedAt: null },
+      data: { status: status as any },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        actorType: 'admin',
+        adminId: user.id,
+        action: `EMPLOYEES_BULK_${status}`,
+        entityType: 'employee',
+        entityId: `bulk-${Date.now()}`,
+        changes: { employeeIds, status, reason, count: result.count },
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      data: { count: result.count },
+      message: `${result.count} employee(s) ${status.toLowerCase()} successfully`,
+    });
+  } catch (error) {
+    return internalError(error);
+  }
+}
+
+// DELETE /api/admin/employees — bulk soft-delete employees
+export async function DELETE(request: NextRequest) {
+  try {
+    const user = await getCurrentUser();
+    if (!user || user.userType !== 'admin') return unauthorized();
+
+    const { searchParams } = new URL(request.url);
+    const idsParam = searchParams.get('ids');
+    if (!idsParam) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION', message: 'Query parameter "ids" is required (comma-separated)' } },
+        { status: 400 },
+      );
+    }
+
+    const employeeIds = idsParam.split(',').filter(Boolean);
+    if (employeeIds.length === 0) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION', message: 'At least one employee ID is required' } },
+        { status: 400 },
+      );
+    }
+
+    const result = await prisma.employee.updateMany({
+      where: { id: { in: employeeIds }, deletedAt: null },
+      data: { deletedAt: new Date(), status: 'INACTIVE' },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        actorType: 'admin',
+        adminId: user.id,
+        action: 'EMPLOYEES_BULK_DELETED',
+        entityType: 'employee',
+        entityId: `bulk-${Date.now()}`,
+        changes: { employeeIds, count: result.count },
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      data: { count: result.count },
+      message: `${result.count} employee(s) deleted successfully`,
+    });
+  } catch (error) {
+    return internalError(error);
+  }
+}

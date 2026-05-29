@@ -25,7 +25,7 @@ export function PendingMerchantCard({ merchant, onApprove, onReject, isProcessin
     <Card>
       <CardContent className="flex items-center gap-4 p-4">
         <Avatar className="h-12 w-12">
-          <AvatarFallback className="text-sm font-semibold">{merchant.businessName.charAt(0)}</AvatarFallback>
+          <AvatarFallback className="text-sm font-semibold">{(merchant.businessName ?? '?').charAt(0)}</AvatarFallback>
         </Avatar>
         <div className="flex-1 min-w-0">
           <p className="font-semibold truncate">{merchant.businessName}</p>
