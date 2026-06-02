@@ -30,7 +30,8 @@ function internalError(error: unknown) {
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    if (!user || user.userType !== 'admin') return unauthorized();
+    console.log('Employee Current user:', user);
+    if (!user) return unauthorized();
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
@@ -211,22 +212,29 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-// DELETE /api/admin/employees — bulk soft-delete employees
+// DELETE /api/admin/employees — soft-delete employees (single via ?id= or bulk via ?ids=a,b,c)
 export async function DELETE(request: NextRequest) {
   try {
     const user = await getCurrentUser();
     if (!user || user.userType !== 'admin') return unauthorized();
 
     const { searchParams } = new URL(request.url);
+    const singleId = searchParams.get('id');
     const idsParam = searchParams.get('ids');
-    if (!idsParam) {
+
+    let employeeIds: string[];
+
+    if (singleId) {
+      employeeIds = [singleId];
+    } else if (idsParam) {
+      employeeIds = idsParam.split(',').filter(Boolean);
+    } else {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION', message: 'Query parameter "ids" is required (comma-separated)' } },
+        { success: false, error: { code: 'VALIDATION', message: 'Provide "id" for single delete or "ids" (comma-separated) for bulk delete' } },
         { status: 400 },
       );
     }
 
-    const employeeIds = idsParam.split(',').filter(Boolean);
     if (employeeIds.length === 0) {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION', message: 'At least one employee ID is required' } },
@@ -236,16 +244,16 @@ export async function DELETE(request: NextRequest) {
 
     const result = await prisma.employee.updateMany({
       where: { id: { in: employeeIds }, deletedAt: null },
-      data: { deletedAt: new Date(), status: 'INACTIVE' },
+      data: { deletedAt: new Date(), deletedById: user.id, status: 'INACTIVE' },
     });
 
     await prisma.auditLog.create({
       data: {
         actorType: 'admin',
         adminId: user.id,
-        action: 'EMPLOYEES_BULK_DELETED',
+        action: employeeIds.length === 1 ? 'EMPLOYEE_DELETED' : 'EMPLOYEES_BULK_DELETED',
         entityType: 'employee',
-        entityId: `bulk-${Date.now()}`,
+        entityId: employeeIds.length === 1 ? employeeIds[0]! : `bulk-${Date.now()}`,
         changes: { employeeIds, count: result.count },
       },
     });

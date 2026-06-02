@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { PageHeader } from '@/components/shared/page-header'
 import { FilterBar } from '@/components/shared/filter-bar'
 import { DataTable } from '@/components/shared/data-table'
@@ -8,8 +8,9 @@ import { StatusBadge } from '@/components/shared/status-badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plus } from 'lucide-react'
+import { Plus, ExternalLink, Trash2 } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useCompanies, useUpdateCompanyStatus, useDeleteCompany } from '@/hooks/queries/use-companies'
 import { useTablePagination } from '@/hooks/use-table-pagination'
 import { showToast } from '@/hooks/use-toast'
@@ -18,10 +19,12 @@ import type { ColumnDef } from '@/types'
 type StatusFilter = 'ALL' | 'ACTIVE' | 'PAUSED' | 'SUSPENDED' | 'CANCELLED'
 
 export default function CompaniesPage() {
+  const router = useRouter()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [confirmAction, setConfirmAction] = useState<'delete' | null>(null)
 
   const { page, setPage, pageSize } = useTablePagination({ defaultPageSize: 10 })
 
@@ -34,6 +37,28 @@ export default function CompaniesPage() {
 
   const updateStatus = useUpdateCompanyStatus()
   const deleteCompany = useDeleteCompany()
+
+  const handleDelete = useCallback((id: string) => {
+    setSelectedCompany(id)
+    setConfirmAction('delete')
+    setConfirmOpen(true)
+  }, [])
+
+  const confirmDelete = useCallback(() => {
+    if (!selectedCompany) return
+    deleteCompany.mutate(selectedCompany, {
+      onSuccess: (res: any) => {
+        showToast({ type: 'success', title: res.message ?? 'Company deleted' })
+        setConfirmOpen(false)
+        setSelectedCompany(null)
+      },
+      onError: (err: Error) => {
+        showToast({ type: 'error', title: 'Delete failed', description: err.message })
+        setConfirmOpen(false)
+        setSelectedCompany(null)
+      },
+    })
+  }, [selectedCompany, deleteCompany])
 
   const companies = data?.data ?? []
   const meta = data?.meta
@@ -78,6 +103,29 @@ export default function CompaniesPage() {
       header: 'Joined',
       render: (c: any) => new Date(c.joinedAt).toLocaleDateString(),
     },
+    {
+      key: 'actions',
+      header: '',
+      sortable: false,
+      render: (c: any) => (
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/admin/companies/${c.id}`}
+            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            View <ExternalLink className="h-3 w-3" />
+          </Link>
+          <button
+            onClick={(e) => { e.stopPropagation(); handleDelete(c.id) }}
+            className="text-sm text-destructive hover:underline"
+            title="Delete company"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ),
+    },
   ]
 
   return (
@@ -116,7 +164,7 @@ export default function CompaniesPage() {
         keyExtractor={(c: any) => c.id}
         isLoading={isLoading}
         emptyMessage="No companies found"
-        onRowClick={(c) => { setSelectedCompany(c.id); setConfirmOpen(true) }}
+        onRowClick={(c) => router.push(`/admin/companies/${c.id}`)}
         pagination={{
           page,
           pageSize,
@@ -126,20 +174,17 @@ export default function CompaniesPage() {
       />
       <ConfirmDialog
         open={confirmOpen}
-        title="Change Company Status"
-        message="What action would you like to take on this company?"
-        confirmLabel="Toggle Status"
+        title="Delete Company"
+        message="Are you sure you want to delete this company? All employees will also be deactivated."
+        confirmLabel="Delete"
+        loading={deleteCompany.isPending}
         onConfirm={() => {
-          if (selectedCompany) {
-            updateStatus.mutate(
-              { companyId: selectedCompany, status: 'PAUSED' },
-              {
-                onSuccess: (res: any) => showToast({ type: 'success', title: res.message ?? 'Company status updated' }),
-                onError: (err: Error) => showToast({ type: 'error', title: 'Status update failed', description: err.message }),
-              },
-            )
+          if (confirmAction === 'delete' && selectedCompany) {
+            confirmDelete()
+          } else {
+            setConfirmOpen(false)
+            setSelectedCompany(null)
           }
-          setConfirmOpen(false); setSelectedCompany(null)
         }}
         onCancel={() => { setConfirmOpen(false); setSelectedCompany(null) }}
       />

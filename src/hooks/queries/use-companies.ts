@@ -73,6 +73,40 @@ export function useCreateCompany() {
   });
 }
 
+export function useCompanyDetail(id: string) {
+  return useQuery({
+    queryKey: companyKeys.detail(id),
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/companies/${id}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to fetch company');
+      return json;
+    },
+    enabled: !!id,
+  });
+}
+
+export function useUpdateCompanyDetail() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; status?: string; reason?: string; adminNote?: string; billingStatus?: string }) => {
+      const res = await fetch(`/api/admin/companies/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to update company');
+      return json;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: companyKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: companyKeys.details() });
+    },
+  });
+}
+
 export function useDeleteCompany() {
   const queryClient = useQueryClient();
 

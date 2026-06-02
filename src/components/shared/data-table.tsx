@@ -13,6 +13,7 @@ import { cn } from '@/utils/cn'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Checkbox } from '@/components/ui/checkbox'
 import type { ColumnDef, TableSortConfig } from '@/types'
+import { Button } from '../ui/button'
 
 interface DataTableProps<T> {
   columns: ColumnDef<T>[]
@@ -277,25 +278,29 @@ export function DataTable<T extends Record<string, unknown>>({
       </div>
 
       {pagination && totalPages > 1 && (
-        <div className="flex items-center justify-between border-t pt-3">
-          <p className="text-xs text-muted-foreground">
-            Page {pagination.page} of {totalPages} ({pagination.total} total)
-          </p>
-          <div className="flex items-center gap-1">
-            <button
-              className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
+        <div className="flex items-center justify-center border-t pt-3">
+           <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+            size="sm"
               disabled={pagination.page <= 1}
               onClick={() => pagination.onPageChange(pagination.page - 1)}
             >
               <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30"
+            </Button>
+           </div>
+          <p className="text-xs text-muted-foreground">
+            Page {pagination.page} of {totalPages} ({pagination.total} total)
+          </p>
+          <div className="flex items-center gap-1">
+            <Button
+               variant="outline"
+            size="sm"
               disabled={pagination.page >= totalPages}
               onClick={() => pagination.onPageChange(pagination.page + 1)}
             >
               <ChevronRight className="h-4 w-4" />
-            </button>
+            </Button>
           </div>
         </div>
       )}

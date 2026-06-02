@@ -269,7 +269,13 @@ export async function DELETE(request: NextRequest) {
 
     await prisma.company.update({
       where: { id },
-      data: { deletedAt: new Date(), status: 'CANCELLED' },
+      data: { deletedAt: new Date(), deletedById: user.id, status: 'CANCELLED' },
+    });
+
+    // Cascade soft-delete all employees of this company
+    await prisma.employee.updateMany({
+      where: { companyId: id, deletedAt: null },
+      data: { deletedAt: new Date(), deletedById: user.id, status: 'INACTIVE' },
     });
 
     await prisma.auditLog.create({
@@ -279,11 +285,11 @@ export async function DELETE(request: NextRequest) {
         action: 'COMPANY_DELETED',
         entityType: 'company',
         entityId: id,
-        changes: {},
+        changes: { name: existing.name, email: existing.email },
       },
     });
 
-    return NextResponse.json({ success: true, data: null, message: 'Company deleted successfully' });
+    return NextResponse.json({ success: true, data: null, message: 'Company and its employees deleted successfully' });
   } catch (error) {
     return internalError(error);
   }

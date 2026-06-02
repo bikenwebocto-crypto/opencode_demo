@@ -190,6 +190,23 @@ export function useMerchantOffers(merchantId: string) {
   });
 }
 
+export function useDeleteMerchant() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/admin/merchants/${id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to delete merchant');
+      return json;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: merchantKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: merchantKeys.pending() });
+    },
+  });
+}
+
 export function useCreateMerchant() {
   const queryClient = useQueryClient();
 

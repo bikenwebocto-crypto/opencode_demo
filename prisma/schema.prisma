@@ -55,6 +55,8 @@ model Company {
   deletedAt            DateTime?
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
+  approvedById         String?                @db.Uuid
+  deletedById          String?                @db.Uuid
   adminNote            String?                @db.VarChar(500)
   approvedDomain       String?                @db.VarChar(255)
   industry             String?                @db.VarChar(100)
@@ -142,6 +144,8 @@ model Employee {
   deletedAt     DateTime?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
+  approvedById  String?             @db.Uuid
+  deletedById   String?             @db.Uuid
   joinMethod    String?             @db.VarChar(50)
   company       Company             @relation(fields: [companyId], references: [id])
   reports       IssueReport[]
@@ -192,6 +196,8 @@ model Merchant {
   deletedAt           DateTime?
   createdAt           DateTime                     @default(now())
   updatedAt           DateTime                     @updatedAt
+  approvedById        String?                      @db.Uuid
+  deletedById         String?                      @db.Uuid
   adminNote           String?                      @db.VarChar(500)
   liveAt              DateTime?
   actionQueueItems    ActionQueueItem[]

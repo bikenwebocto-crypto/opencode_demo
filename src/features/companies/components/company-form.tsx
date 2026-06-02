@@ -189,9 +189,9 @@ export function CompanyForm() {
             <p className="mt-1 text-sm text-muted-foreground">Register a new company with admin account</p>
           </div>
         </div>
-        <Button type="button" variant="outline" onClick={() => setShowBulk(!showBulk)}>
+        {/* <Button type="button" variant="outline" onClick={() => setShowBulk(!showBulk)}>
           <Upload className="mr-1 h-4 w-4" />Bulk Upload CSV
-        </Button>
+        </Button> */}
       </div>
 
       {showBulk && (

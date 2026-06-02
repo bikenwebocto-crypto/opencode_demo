@@ -7,12 +7,13 @@ import { DataTable } from '@/components/shared/data-table'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { PendingMerchantCard } from '@/features/merchants/components/pending-merchant-card'
+import { MerchantImportExport } from '@/features/merchants/components/merchant-import-export'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plus, ExternalLink } from 'lucide-react'
+import { Plus, ExternalLink, Trash2 } from 'lucide-react'
 import Link from 'next/link'
-import { useMerchants, usePendingMerchants, useApproveMerchant } from '@/hooks/queries/use-merchants'
+import { useMerchants, usePendingMerchants, useApproveMerchant, useDeleteMerchant } from '@/hooks/queries/use-merchants'
 import { useTablePagination } from '@/hooks/use-table-pagination'
 import { showToast } from '@/hooks/use-toast'
 import type { ColumnDef, MerchantStatus } from '@/types'
@@ -26,7 +27,7 @@ export default function MerchantsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const [activeTab, setActiveTab] = useState<'all' | 'pending'>('all')
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [confirmAction, setConfirmAction] = useState<'suspend' | 'reject'>('suspend')
+  const [confirmAction, setConfirmAction] = useState<'suspend' | 'reject' | 'delete'>('suspend')
   const [selectedMerchant, setSelectedMerchant] = useState<string | null>(null)
 
   const { page, setPage, pageSize } = useTablePagination({ defaultPageSize: 10 })
@@ -39,6 +40,7 @@ export default function MerchantsPage() {
 
   const { data: pendingData, isLoading: pendingLoading } = usePendingMerchants()
   const approveMutation = useApproveMerchant()
+  const deleteMutation = useDeleteMerchant()
 
   const rawMerchants = merchantsData?.data ?? []
   const pendingMerchants = pendingData?.data ?? []
@@ -117,16 +119,31 @@ export default function MerchantsPage() {
       header: '',
       sortable: false,
       render: (m: any) => (
-        <Link
-          href={`/admin/merchants/${m.id}`}
-          className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-          onClick={(e) => e.stopPropagation()}
-        >
-          View <ExternalLink className="h-3 w-3" />
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/admin/merchants/${m.id}`}
+            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            View <ExternalLink className="h-3 w-3" />
+          </Link>
+          <button
+            onClick={(e) => { e.stopPropagation(); handleDelete(m.id) }}
+            className="text-sm text-destructive hover:underline"
+            title="Delete merchant"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       ),
     },
   ]
+
+  const handleDelete = (id: string) => {
+    setSelectedMerchant(id)
+    setConfirmAction('delete')
+    setConfirmOpen(true)
+  }
 
   const handleSuspend = (id: string) => {
     setSelectedMerchant(id)
@@ -139,6 +156,22 @@ export default function MerchantsPage() {
     setConfirmAction('reject')
     setConfirmOpen(true)
   }
+
+  const confirmDelete = useCallback(() => {
+    if (!selectedMerchant) return
+    deleteMutation.mutate(selectedMerchant, {
+      onSuccess: (res: any) => {
+        showToast({ type: 'success', title: res.message ?? 'Merchant deleted' })
+        setConfirmOpen(false)
+        setSelectedMerchant(null)
+      },
+      onError: (err: Error) => {
+        showToast({ type: 'error', title: 'Delete failed', description: err.message })
+        setConfirmOpen(false)
+        setSelectedMerchant(null)
+      },
+    })
+  }, [selectedMerchant, deleteMutation])
 
   const handleConfirmApprove = (merchantId: string) => {
     approveMutation.mutate(
@@ -156,9 +189,12 @@ export default function MerchantsPage() {
         title="Merchants"
         description="Manage merchant accounts, approvals, and statuses"
         actions={(
-          <Link href="/admin/merchants/add">
-            <Button><Plus className="mr-1 h-4 w-4" />Add Merchant</Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <MerchantImportExport />
+            <Link href="/admin/merchants/add">
+              <Button><Plus className="mr-1 h-4 w-4" />Add Merchant</Button>
+            </Link>
+          </div>
         )}
       />
       <FilterBar
@@ -227,11 +263,14 @@ export default function MerchantsPage() {
 
       <ConfirmDialog
         open={confirmOpen}
-        title={confirmAction === 'suspend' ? 'Suspend Merchant' : 'Reject Merchant'}
-        message={confirmAction === 'suspend' ? 'Are you sure you want to suspend this merchant?' : 'Are you sure you want to reject this merchant application?'}
-        confirmLabel={confirmAction === 'suspend' ? 'Suspend' : 'Reject'}
+        title={confirmAction === 'delete' ? 'Delete Merchant' : confirmAction === 'suspend' ? 'Suspend Merchant' : 'Reject Merchant'}
+        message={confirmAction === 'delete' ? 'Are you sure you want to delete this merchant? It will be soft-deleted and can be recovered.' : confirmAction === 'suspend' ? 'Are you sure you want to suspend this merchant?' : 'Are you sure you want to reject this merchant application?'}
+        confirmLabel={confirmAction === 'delete' ? 'Delete' : confirmAction === 'suspend' ? 'Suspend' : 'Reject'}
+        loading={deleteMutation.isPending}
         onConfirm={() => {
-          if (confirmAction === 'reject' && selectedMerchant) {
+          if (confirmAction === 'delete' && selectedMerchant) {
+            confirmDelete()
+          } else if (confirmAction === 'reject' && selectedMerchant) {
             approveMutation.mutate(
               { merchantId: selectedMerchant, status: 'REJECTED' as MerchantStatus },
               {
@@ -239,9 +278,12 @@ export default function MerchantsPage() {
                 onError: (err: Error) => showToast({ type: 'error', title: 'Failed to reject', description: err.message }),
               },
             )
+            setConfirmOpen(false)
+            setSelectedMerchant(null)
+          } else {
+            setConfirmOpen(false)
+            setSelectedMerchant(null)
           }
-          setConfirmOpen(false)
-          setSelectedMerchant(null)
         }}
         onCancel={() => { setConfirmOpen(false); setSelectedMerchant(null) }}
       />
