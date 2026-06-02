@@ -85,37 +85,88 @@ export async function GET(request: NextRequest) {
 // POST /api/admin/merchants — approve/reject merchant
 export async function POST(request: NextRequest) {
   try {
+    console.log('========== MERCHANT APPROVAL START ==========');
+
     const user = await getCurrentUser();
-    if (!user || user.userType !== 'admin') return unauthorized();
+    console.log('1. Current user:', JSON.stringify(user, null, 2));
+
+    if (!user) {
+      console.log('2. User not found');
+      return unauthorized();
+    }
+
+    // Verify admin exists
+    const adminRecord = await prisma.adminUser.findUnique({
+      where: { id: user.id },
+    });
+
+    console.log('3. Admin record lookup:', adminRecord);
 
     const body = await request.json();
+    console.log('4. Request body:', body);
+
     const parsed = adminApproveMerchantSchema.safeParse(body);
+
     if (!parsed.success) {
+      console.log('5. Validation failed:', parsed.error.flatten());
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION', message: 'Validation failed', details: parsed.error.flatten().fieldErrors } },
-        { status: 400 },
+        {
+          success: false,
+          error: {
+            code: 'VALIDATION',
+            message: 'Validation failed',
+            details: parsed.error.flatten().fieldErrors,
+          },
+        },
+        { status: 400 }
       );
     }
 
-    const { merchantId, status, rejectionReason, notes } = parsed.data;
+    console.log('5. Validation passed');
 
-    const existing = await prisma.merchant.findUnique({ where: { id: merchantId } });
-    if (!existing || existing.deletedAt) return notFound('Merchant');
+    const { merchantId, status, rejectionReason, notes, adminNote } = parsed.data;
+
+    console.log('6. Looking up merchant:', merchantId);
+
+    const existing = await prisma.merchant.findUnique({
+      where: { id: merchantId },
+    });
+
+    console.log('7. Existing merchant:', existing);
+
+    if (!existing || existing.deletedAt) {
+      console.log('8. Merchant not found');
+      return notFound('Merchant');
+    }
 
     const previousStatus = existing.status;
+
+    console.log('9. Updating merchant');
 
     const merchant = await prisma.merchant.update({
       where: { id: merchantId },
       data: {
         status: status as any,
         rejectionReason,
+        adminNote: adminNote ?? existing.adminNote,
         notes: notes ?? existing.notes,
         approvedAt: status === 'ACTIVE' ? new Date() : undefined,
-        onboardingStep: status === 'ACTIVE' ? 'COMPLETE' : existing.onboardingStep,
+        liveAt:
+          status === 'ACTIVE' && !existing.liveAt
+            ? new Date()
+            : undefined,
+        onboardingStep:
+          status === 'ACTIVE'
+            ? 'COMPLETE'
+            : existing.onboardingStep,
       },
     });
 
-    await prisma.merchantStatusHistory.create({
+    console.log('10. Merchant updated:', merchant.id);
+
+    console.log('11. Creating status history');
+
+    const history = await prisma.merchantStatusHistory.create({
       data: {
         merchantId,
         fromStatus: previousStatus,
@@ -126,35 +177,63 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    await prisma.auditLog.create({
+    console.log('12. Status history created:', history.id);
+
+    console.log('13. Creating audit log');
+    console.log('13a. adminId:', user.id);
+
+    const auditLog = await prisma.auditLog.create({
       data: {
         actorType: 'admin',
         adminId: user.id,
         action: `MERCHANT_${status}`,
         entityType: 'merchant',
         entityId: merchantId,
-        changes: { from: previousStatus, to: status, rejectionReason },
+        changes: {
+          from: previousStatus,
+          to: status,
+          rejectionReason,
+        },
       },
     });
 
-    // Complete pending action queue items
-    await prisma.actionQueueItem.updateMany({
-      where: { referenceId: merchantId, referenceType: 'merchant', status: 'PENDING' },
-      data: { status: 'COMPLETED', completedAt: new Date() },
+    console.log('14. Audit log created:', auditLog.id);
+
+    console.log('15. Updating action queue');
+
+    const queueResult = await prisma.actionQueueItem.updateMany({
+      where: {
+        referenceId: merchantId,
+        referenceType: 'merchant',
+        status: 'PENDING',
+      },
+      data: {
+        status: 'COMPLETED',
+        completedAt: new Date(),
+      },
     });
 
-    return NextResponse.json({ success: true, data: merchant, message: `Merchant ${status.toLowerCase()} successfully` });
+    console.log('16. Queue updated:', queueResult);
+
+    console.log('========== MERCHANT APPROVAL SUCCESS ==========');
+
+    return NextResponse.json({
+      success: true,
+      data: merchant,
+      message: `Merchant ${status.toLowerCase()} successfully`,
+    });
   } catch (error: any) {
-    if (error?.name === 'ZodError') {
-      return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION', message: 'Validation failed', details: error.errors } },
-        { status: 400 },
-      );
+    console.error('========== ERROR ==========');
+    console.error(error);
+
+    if (error.code === 'P2003') {
+      console.error('Foreign Key Violation');
+      console.error('Meta:', error.meta);
     }
+
     return internalError(error);
   }
 }
-
 // PATCH /api/admin/merchants — update merchant details
 export async function PATCH(request: NextRequest) {
   try {

@@ -25,14 +25,14 @@ export async function createClient() {
 
 export async function getCurrentUser() {
   const supabase = await createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) return null
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return null
 
   return {
-    id: session.user.id,
-    email: session.user.email!,
-    userType: session.user.user_metadata?.user_type as string,
-    role: session.user.user_metadata?.admin_role as string | undefined,
-    companyId: session.user.user_metadata?.company_id as string | undefined,
+    id: user.id,
+    email: user.email!,
+    userType: user.user_metadata?.user_type as string,
+    role: user.user_metadata?.admin_role as string | undefined,
+    companyId: user.user_metadata?.company_id as string | undefined,
   }
 }

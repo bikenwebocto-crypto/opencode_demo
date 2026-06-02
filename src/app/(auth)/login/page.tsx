@@ -1,36 +1,49 @@
 'use client'
 import { Auth } from '@supabase/auth-ui-react'
 import { ThemeSupa } from '@supabase/auth-ui-shared'
-import { createBrowserClient } from '@supabase/ssr'
-import { useEffect } from 'react'
+import { supabase } from '@/lib/supabase/client'
+import { useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
   const router = useRouter()
-  
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-  )
+  const syncedRef = useRef(false)
+
+  const onAuth = useCallback(async () => {
+      if (syncedRef.current) return
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      console.log('Session:', session)
+
+      if (!session?.access_token) {
+        return
+      }
+      
+      if (session?.access_token) {
+      fetch('/api/auth/sync-admin', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      }).catch(() => {})
+    }
+
+    router.push('/admin')
+    router.refresh()
+  }, [router])
 
   useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth event:', event)
-
-      if (event === 'SIGNED_IN') {
-        // The cookie is automatically set by the SSR client
-        // Just redirect
-        router.push('/admin')
-        router.refresh()
-      }
-    })
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [supabase, router])
+    console.log('Setting up auth state change listener')
+    const { data: { subscription }, } = supabase.auth.onAuthStateChange((event) => {
+                                            console.log('Auth event:', event)
+                                            if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+                                              onAuth()
+                                            }
+                                          })
+                    return () => {
+                      subscription.unsubscribe()
+                    }
+                  }, [onAuth])
 
   return (
     <div style={{ maxWidth: 420, margin: '100px auto' }}>
@@ -38,7 +51,6 @@ export default function LoginPage() {
         supabaseClient={supabase}
         appearance={{ theme: ThemeSupa }}
         providers={['google', 'github']}
-        // localStorage={false} // Don't use localStorage
       />
     </div>
   )

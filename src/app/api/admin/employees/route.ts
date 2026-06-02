@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     if (!user || user.userType !== 'admin') return unauthorized();
 
     const body = await request.json();
-    const { email, firstName, lastName, companyId, department, jobTitle, employeeId, phone } = body;
+    const { email, firstName, lastName, companyId, department, jobTitle, employeeId, phone, joinMethod } = body;
 
     if (!email || !firstName || !lastName || !companyId) {
       return NextResponse.json(
@@ -126,6 +126,7 @@ export async function POST(request: NextRequest) {
         department,
         jobTitle,
         phone,
+        joinMethod: joinMethod || 'manual',
         status: 'INVITED',
         invitedAt: new Date(),
         invitedBy: user.id,

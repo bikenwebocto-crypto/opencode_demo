@@ -24,6 +24,7 @@ export async function approveMerchantAction(formData: FormData) {
       status: parsed.status as any,
       rejectionReason: parsed.rejectionReason,
       approvedAt: parsed.status === 'ACTIVE' ? new Date() : undefined,
+      liveAt: parsed.status === 'ACTIVE' ? new Date() : undefined,
     },
   });
 

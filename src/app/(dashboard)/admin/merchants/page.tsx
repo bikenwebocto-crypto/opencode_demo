@@ -1,5 +1,6 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { PageHeader } from '@/components/shared/page-header'
 import { FilterBar } from '@/components/shared/filter-bar'
 import { DataTable } from '@/components/shared/data-table'
@@ -9,7 +10,7 @@ import { PendingMerchantCard } from '@/features/merchants/components/pending-mer
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plus } from 'lucide-react'
+import { Plus, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 import { useMerchants, usePendingMerchants, useApproveMerchant } from '@/hooks/queries/use-merchants'
 import { useTablePagination } from '@/hooks/use-table-pagination'
@@ -19,6 +20,8 @@ import type { ColumnDef, MerchantStatus } from '@/types'
 type StatusFilter = MerchantStatus | 'ALL'
 
 export default function MerchantsPage() {
+  const router = useRouter()
+  const navigateToMerchant = useCallback((id: string) => router.push(`/admin/merchants/${id}`), [router])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const [activeTab, setActiveTab] = useState<'all' | 'pending'>('all')
@@ -109,6 +112,20 @@ export default function MerchantsPage() {
       header: 'Joined',
       render: (m: any) => new Date(m.joinedAt).toLocaleDateString(),
     },
+    {
+      key: 'actions',
+      header: '',
+      sortable: false,
+      render: (m: any) => (
+        <Link
+          href={`/admin/merchants/${m.id}`}
+          className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          View <ExternalLink className="h-3 w-3" />
+        </Link>
+      ),
+    },
   ]
 
   const handleSuspend = (id: string) => {
@@ -187,7 +204,7 @@ export default function MerchantsPage() {
           keyExtractor={(m: any) => m.id}
           isLoading={merchantsLoading}
           emptyMessage="No merchants found"
-          onRowClick={(m) => handleSuspend(m.id)}
+          onRowClick={(m) => navigateToMerchant(m.id)}
           pagination={{
             page,
             pageSize,
@@ -199,18 +216,12 @@ export default function MerchantsPage() {
         pendingLoading ? (
           <div className="space-y-3">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}</div>
         ) : (
-          <div className="space-y-3">
-            {pendingCards.length > 0 ? pendingCards.map((m: any) => (
-              <PendingMerchantCard
-                key={m.id}
-                merchant={m}
-                onApprove={() => handleConfirmApprove(m.id)}
-                onReject={() => handleReject(m.id)}
-              />
-            )) : (
-              <p className="py-8 text-center text-sm text-muted-foreground">No pending merchant approvals</p>
-            )}
-          </div>
+          <PendingMerchantCard
+            merchants={pendingCards}
+            onApprove={(id) => handleConfirmApprove(id)}
+            onReject={(id) => handleReject(id)}
+            isProcessing={approveMutation.isPending}
+          />
         )
       )}
 

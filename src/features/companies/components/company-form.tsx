@@ -18,6 +18,7 @@ interface FormData {
   phone: string
   website: string
   employeeCount: string
+  industry: string
   addressLine1: string
   addressLine2: string
   city: string
@@ -46,6 +47,7 @@ export function CompanyForm() {
     phone: '',
     website: '',
     employeeCount: '',
+    industry: '',
     addressLine1: '',
     addressLine2: '',
     city: '',
@@ -151,6 +153,7 @@ export function CompanyForm() {
               postalCode: row.postalcode || '',
               country: row.country || '',
               taxId: row.taxid || '',
+              industry: row.industry || '',
             }),
           })
           const json = await res.json()
@@ -229,6 +232,10 @@ export function CompanyForm() {
             <div>
               <label className="mb-1 block text-sm font-medium">Tax ID</label>
               <Input value={form.taxId} onChange={(e) => setField('taxId', e.target.value)} placeholder="e.g. 12-3456789" />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Industry</label>
+              <Input value={form.industry} onChange={(e) => setField('industry', e.target.value)} placeholder="e.g. Technology, Healthcare, Retail" />
             </div>
           </CardContent>
         </Card>

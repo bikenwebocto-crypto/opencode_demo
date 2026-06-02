@@ -13,6 +13,7 @@ export type MerchantStatus = 'PENDING' | 'ACTIVE' | 'PAUSED' | 'SUSPENDED' | 'AR
 export type MerchantOnboardingStep = 'APPLICATION' | 'DOCUMENTS' | 'AGREEMENT' | 'COMPLETE';
 export type CompanyStatus = 'PENDING' | 'APPROVED_PENDING_PAYMENT' | 'ACTIVE' | 'PAUSED' | 'SUSPENDED' | 'CANCELLED';
 export type EmployeeStatus = 'INVITED' | 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'INELIGIBLE';
+export type BillingStatus = 'ACTIVE' | 'INVOICE_OVERDUE' | 'ON_HOLD';
 export type OfferStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'LIVE' | 'REJECTED' | 'EXPIRED' | 'REPLACED';
 export type IssueStatus = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED' | 'REJECTED';
 export type ActionQueueStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'SKIPPED';

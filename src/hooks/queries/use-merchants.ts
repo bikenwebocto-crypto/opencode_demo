@@ -150,7 +150,7 @@ export function useApproveMerchant() {
 
       const json = await res.json();
       if (!res.ok) {
-        console.error('[useApproveMerchant] error:', res.status, json);
+        console.log('[useApproveMerchant] error:', res.status, json);
         throw new Error(json.error?.message ?? `Approval failed (${res.status})`);
       }
 
@@ -161,6 +161,32 @@ export function useApproveMerchant() {
       queryClient.invalidateQueries({ queryKey: merchantKeys.lists() });
       queryClient.invalidateQueries({ queryKey: merchantKeys.pending() });
     },
+  });
+}
+
+export function useMerchantById(id: string) {
+  return useQuery({
+    queryKey: merchantKeys.detail(id),
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/merchants/${id}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to fetch merchant');
+      return json;
+    },
+    enabled: !!id,
+  });
+}
+
+export function useMerchantOffers(merchantId: string) {
+  return useQuery({
+    queryKey: [...merchantKeys.detail(merchantId), 'offers'],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/merchants/${merchantId}/offers`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to fetch offers');
+      return json;
+    },
+    enabled: !!merchantId,
   });
 }
 

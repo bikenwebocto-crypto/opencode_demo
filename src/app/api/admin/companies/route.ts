@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
         take: pageSize,
         include: {
           _count: { select: { employees: true, redemptions: true, csvUploads: true } },
-          billing: { select: { plan: true, isTrial: true, trialEndsAt: true } },
+          billing: { select: { plan: true, isTrial: true, trialEndsAt: true, billingStatus: true, renewalDate: true } },
         },
       }),
       prisma.company.count({ where: where as any }),
@@ -191,7 +191,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const { companyId, status, reason } = parsed.data;
+    const { companyId, status, reason, adminNote } = parsed.data;
 
     const existing = await prisma.company.findUnique({ where: { id: companyId } });
     if (!existing || existing.deletedAt) return notFound('Company');
@@ -200,7 +200,11 @@ export async function PATCH(request: NextRequest) {
 
     const company = await prisma.company.update({
       where: { id: companyId },
-      data: { status: status as any, approvedAt: status === 'ACTIVE' && !existing.approvedAt ? new Date() : undefined },
+      data: {
+        status: status as any,
+        adminNote: adminNote ?? existing.adminNote,
+        approvedAt: status === 'ACTIVE' && !existing.approvedAt ? new Date() : undefined,
+      },
     });
 
     await prisma.companyStatusHistory.create({

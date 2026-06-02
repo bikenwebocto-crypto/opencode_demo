@@ -96,6 +96,8 @@ async function main() {
       state: 'CA',
       postalCode: '94105',
       country: 'United States',
+      industry: 'Technology',
+      approvedDomain: 'techcorp.com',
       approvedAt: new Date('2025-06-01'),
     },
   });
@@ -109,6 +111,8 @@ async function main() {
       website: 'https://globalsolutions.com',
       employeeCount: 89,
       status: 'ACTIVE',
+      industry: 'Consulting',
+      approvedDomain: 'globalsolutions.com',
       addressLine1: '200 Park Avenue',
       city: 'New York',
       state: 'NY',
@@ -127,6 +131,8 @@ async function main() {
       website: 'https://innovatex.io',
       employeeCount: 512,
       status: 'ACTIVE',
+      industry: 'Technology',
+      approvedDomain: 'innovatex.io',
       addressLine1: '50 Innovation Drive',
       city: 'Austin',
       state: 'TX',
@@ -144,6 +150,7 @@ async function main() {
       phone: '+1-555-0400',
       employeeCount: 34,
       status: 'PAUSED',
+      industry: 'Logistics',
       addressLine1: '10 Harbor Lane',
       city: 'Seattle',
       state: 'WA',
@@ -161,6 +168,8 @@ async function main() {
       website: 'https://northstar.com',
       employeeCount: 178,
       status: 'ACTIVE',
+      industry: 'Retail',
+      approvedDomain: 'northstar.com',
       addressLine1: '88 North Pole Road',
       city: 'Denver',
       state: 'CO',
@@ -173,10 +182,10 @@ async function main() {
   // ── Company Billing ──────────────────────────────────
   await prisma.companyBilling.createMany({
     data: [
-      { companyId: techCorp.id, plan: 'enterprise', billingEmail: 'billing@techcorp.com', pricePerEmployee: 8.0, isTrial: false },
-      { companyId: globalSolutions.id, plan: 'growth', billingEmail: 'billing@globalsolutions.com', pricePerEmployee: 5.0, isTrial: false },
-      { companyId: innovateX.id, plan: 'enterprise', billingEmail: 'billing@innovatex.io', pricePerEmployee: 8.0, isTrial: false },
-      { companyId: northStar.id, plan: 'growth', billingEmail: 'billing@northstar.com', pricePerEmployee: 5.0, isTrial: true, trialEndsAt: new Date('2026-07-01') },
+      { companyId: techCorp.id, plan: 'enterprise', billingEmail: 'billing@techcorp.com', pricePerEmployee: 8.0, isTrial: false, billingStatus: 'ACTIVE', renewalDate: new Date('2027-01-01') },
+      { companyId: globalSolutions.id, plan: 'growth', billingEmail: 'billing@globalsolutions.com', pricePerEmployee: 5.0, isTrial: false, billingStatus: 'ACTIVE', renewalDate: new Date('2026-12-01') },
+      { companyId: innovateX.id, plan: 'enterprise', billingEmail: 'billing@innovatex.io', pricePerEmployee: 8.0, isTrial: false, billingStatus: 'INVOICE_OVERDUE', renewalDate: new Date('2026-06-15') },
+      { companyId: northStar.id, plan: 'growth', billingEmail: 'billing@northstar.com', pricePerEmployee: 5.0, isTrial: true, billingStatus: 'ACTIVE', trialEndsAt: new Date('2026-07-01'), renewalDate: new Date('2026-07-01') },
     ],
   });
 
@@ -236,6 +245,7 @@ async function main() {
           employeeId: `EMP-${prefix.toUpperCase()}-${String(i + 1).padStart(3, '0')}`,
           department: depts[i % depts.length]!,
           status: statuses[i] as any,
+          joinMethod: statuses[i] === 'INVITED' ? 'invite' : 'csv_import',
           invitedAt: statuses[i] === 'INVITED' ? new Date() : undefined,
           invitedBy: supportAdmin.id,
         },
@@ -335,6 +345,8 @@ async function main() {
           minimumSpend: (tmpl as any).minimumSpend ?? null,
           maxRedemptions: 1000,
           currentRedemptions: Math.floor(Math.random() * 200),
+          viewCount: Math.floor(Math.random() * 1500),
+          saveCount: Math.floor(Math.random() * 300),
           startDate,
           endDate,
           daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
@@ -484,6 +496,16 @@ async function main() {
       },
     });
   }
+
+  // ── Hero Banners ────────────────────────────────────
+  const activeMerchantIds = activeMerchants.map((m) => m.id);
+  await prisma.heroBanner.createMany({
+    data: [
+      { title: 'Summer Sale', subtitle: 'Exclusive summer deals', headline: 'Save Big This Summer', subtext: 'Limited time offers from top merchants', discountBadge: '20% OFF', imageUrl: 'https://images.unsplash.com/hero-summer', linkUrl: '/offers/summer', linkText: 'Shop Now', isActive: true, displayOrder: 1, startDate: new Date('2026-06-01'), endDate: new Date('2026-08-31'), merchantId: activeMerchantIds[0] ?? null },
+      { title: 'New Merchants', subtitle: 'Fresh additions to the platform', headline: 'Welcome Our New Partners', subtext: 'Discover exciting new offers', imageUrl: 'https://images.unsplash.com/hero-new', linkUrl: '/merchants/new', linkText: 'Explore', isActive: true, displayOrder: 2, startDate: new Date('2026-05-01'), merchantId: activeMerchantIds[1] ?? null },
+      { title: 'Flash Deals', discountBadge: 'LIMITED', imageUrl: 'https://images.unsplash.com/hero-flash', isActive: false, displayOrder: 3 },
+    ],
+  });
 
   // ── Notification Events ─────────────────────────────
   await prisma.notificationEvent.createMany({

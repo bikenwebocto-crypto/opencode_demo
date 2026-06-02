@@ -16,6 +16,7 @@ interface FormData {
   email: string
   department: string
   companyId: string
+  joinMethod: string
 }
 
 interface FormErrors {
@@ -37,6 +38,7 @@ export function EmployeeForm() {
     email: '',
     department: '',
     companyId: '',
+    joinMethod: 'manual',
   })
 
   const setField = (field: keyof FormData, value: string) => {
@@ -124,6 +126,7 @@ export function EmployeeForm() {
               jobTitle: row.jobtitle || '',
               phone: row.phone || '',
               employeeId: row.employeeid || '',
+              joinMethod: row.joinmethod || 'csv_import',
             }),
           })
           const json = await res.json()
@@ -195,6 +198,19 @@ export function EmployeeForm() {
               <label className="mb-1 block text-sm font-medium">Department <span className="text-destructive">*</span></label>
               <Input className={inputClass('department')} value={form.department} onChange={(e) => setField('department', e.target.value)} placeholder="e.g. Engineering, Marketing" />
               {errors.department && <p className="mt-1 text-xs text-destructive">{errors.department}</p>}
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium">Join Method</label>
+              <select
+                value={form.joinMethod}
+                onChange={(e) => setField('joinMethod', e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="manual">Manual</option>
+                <option value="invite">Email Invite</option>
+                <option value="csv_import">CSV Import</option>
+                <option value="self_register">Self Registration</option>
+              </select>
             </div>
           </CardContent>
         </Card>

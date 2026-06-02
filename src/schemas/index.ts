@@ -187,6 +187,7 @@ export const adminApproveMerchantSchema = z.object({
   status: z.enum(['ACTIVE', 'REJECTED']),
   rejectionReason: z.string().max(2000).optional(),
   notes: z.string().max(5000).optional(),
+  adminNote: z.string().max(500).optional(),
 });
 
 export const adminApproveOfferSchema = z.object({
@@ -199,6 +200,7 @@ export const adminCompanyActionSchema = z.object({
   companyId: uuidSchema,
   status: z.enum(['ACTIVE', 'PAUSED', 'SUSPENDED', 'CANCELLED']),
   reason: z.string().max(2000).optional(),
+  adminNote: z.string().max(500).optional(),
 });
 
 export const adminEmployeeActionSchema = z.object({
@@ -210,9 +212,13 @@ export const adminEmployeeActionSchema = z.object({
 export const contentBannerSchema = z.object({
   title: z.string().min(1).max(255),
   subtitle: z.string().max(500).optional(),
+  headline: z.string().max(255).optional(),
+  subtext: z.string().max(500).optional(),
+  discountBadge: z.string().max(50).optional(),
   imageUrl: z.string().url(),
   linkUrl: z.string().url().optional().nullable(),
   linkText: z.string().max(100).optional(),
+  merchantId: z.string().uuid().optional().nullable(),
   isActive: z.boolean().default(true),
   displayOrder: z.coerce.number().int().min(0).default(0),
   startDate: z.string().datetime().optional().nullable(),
@@ -241,6 +247,8 @@ export const updateCompanySchema = z.object({
   state: z.string().max(100).optional(),
   postalCode: z.string().min(1).max(20).optional(),
   country: z.string().min(1).max(100).optional(),
+  industry: z.string().max(100).optional(),
+  approvedDomain: z.string().max(255).optional(),
 });
 
 export const inviteEmployeeSchema = z.object({
@@ -251,6 +259,7 @@ export const inviteEmployeeSchema = z.object({
   department: z.string().max(100).optional(),
   jobTitle: z.string().max(100).optional(),
   phone: phoneSchema,
+  joinMethod: z.string().max(50).optional(),
 });
 
 export const inviteEmployeesBulkSchema = z.object({
@@ -268,6 +277,7 @@ export const employeeProfileUpdateSchema = z.object({
   employeeId: z.string().max(100).optional(),
   department: z.string().max(100).optional(),
   jobTitle: z.string().max(100).optional(),
+  joinMethod: z.string().max(50).optional(),
 });
 
 export const issueReportSchema = z.object({
@@ -291,6 +301,7 @@ export const csvEmployeeRowSchema = z.object({
   department: z.string().max(100).optional(),
   job_title: z.string().max(100).optional(),
   phone: z.string().optional(),
+  join_method: z.string().max(50).optional(),
 });
 
 export const csvUploadSchema = z.object({
