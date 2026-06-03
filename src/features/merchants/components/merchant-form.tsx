@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, Save, Upload } from 'lucide-react'
 import { CSVUploadDropzone } from '@/features/csv-uploads/components/csv-upload-dropzone'
-import { useCreateMerchant } from '@/hooks/queries/use-merchants'
+import { useCreateMerchant, useUpdateMerchant } from '@/hooks/queries/use-merchants'
 import { showToast } from '@/hooks/use-toast'
 
 interface FormData {
@@ -30,13 +30,20 @@ interface FormErrors {
   [key: string]: string
 }
 
-export function MerchantForm() {
+interface MerchantFormProps {
+  merchantId?: string
+  initialData?: FormData
+}
+
+export function MerchantForm({ merchantId, initialData }: MerchantFormProps) {
   const router = useRouter()
+  const isEdit = !!merchantId
   const createMerchant = useCreateMerchant()
+  const updateMerchant = useUpdateMerchant()
   const [errors, setErrors] = useState<FormErrors>({})
   const [showBulk, setShowBulk] = useState(false)
 
-  const [form, setForm] = useState<FormData>({
+  const [form, setForm] = useState<FormData>(initialData ?? {
     businessName: '',
     email: '',
     password: '',
@@ -69,8 +76,8 @@ export function MerchantForm() {
     if (!form.businessName.trim()) errs.businessName = 'Business name is required'
     if (!form.email.trim()) errs.email = 'Email is required'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.email = 'Invalid email address'
-    if (!form.password) errs.password = 'Password is required'
-    else if (form.password.length < 8) errs.password = 'Password must be at least 8 characters'
+    if (!isEdit && !form.password) errs.password = 'Password is required'
+    else if (form.password && form.password.length < 8) errs.password = 'Password must be at least 8 characters'
     if (!form.contactName.trim()) errs.contactName = 'Contact name is required'
     if (!form.contactPhone.trim()) errs.contactPhone = 'Phone number is required'
     else if (!/^\+?[\d\s\-()]{7,20}$/.test(form.contactPhone)) errs.contactPhone = 'Invalid phone number'
@@ -82,19 +89,27 @@ export function MerchantForm() {
     return Object.keys(errs).length === 0
   }
 
+  const mutation = isEdit ? updateMerchant : createMerchant
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
 
-    createMerchant.mutate(form as unknown as Record<string, unknown>, {
-      onSuccess: (res) => {
-        showToast({ type: 'success', title: res.message ?? 'Merchant created successfully' })
-        router.push('/admin/merchants')
-      },
-      onError: (err) => {
-        showToast({ type: 'error', title: 'Failed to create merchant', description: err.message })
-      },
-    })
+    const body = { ...form } as Record<string, unknown>
+    if (!body.password) delete body.password
+    if (isEdit) body.id = merchantId
+
+    const mutateFn = isEdit
+      ? (data: typeof body) => updateMerchant.mutateAsync(data as any)
+      : (data: typeof body) => createMerchant.mutateAsync(data as any)
+
+    try {
+      const res = await mutateFn(body)
+      showToast({ type: 'success', title: res.message ?? (isEdit ? 'Merchant updated' : 'Merchant created') })
+      router.push('/admin/merchants')
+    } catch (err: any) {
+      showToast({ type: 'error', title: isEdit ? 'Failed to update merchant' : 'Failed to create merchant', description: err.message })
+    }
   }
 
   const handleBulkUpload = (file: File) => {
@@ -181,13 +196,15 @@ export function MerchantForm() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Add Merchant</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Register a new merchant account</p>
+            <h1 className="text-2xl font-bold tracking-tight">{isEdit ? 'Edit Merchant' : 'Add Merchant'}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{isEdit ? 'Update merchant account details' : 'Register a new merchant account'}</p>
           </div>
         </div>
-        <Button type="button" variant="outline" onClick={() => setShowBulk(!showBulk)}>
-          <Upload className="mr-1 h-4 w-4" />Bulk Upload CSV
-        </Button>
+        {!isEdit && (
+          <Button type="button" variant="outline" onClick={() => setShowBulk(!showBulk)}>
+            <Upload className="mr-1 h-4 w-4" />Bulk Upload CSV
+          </Button>
+        )}
       </div>
 
       {showBulk && (
@@ -296,9 +313,9 @@ export function MerchantForm() {
 
       <div className="flex items-center justify-end gap-3">
         <Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>
-        <Button type="submit" disabled={createMerchant.isPending}>
+        <Button type="submit" disabled={mutation.isPending}>
           <Save className="mr-1 h-4 w-4" />
-          {createMerchant.isPending ? 'Saving...' : 'Save Merchant'}
+          {mutation.isPending ? 'Saving...' : isEdit ? 'Update Merchant' : 'Save Merchant'}
         </Button>
       </div>
     </form>

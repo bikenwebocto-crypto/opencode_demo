@@ -11,7 +11,7 @@ import { MerchantImportExport } from '@/features/merchants/components/merchant-i
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plus, ExternalLink, Trash2 } from 'lucide-react'
+import { Plus, ExternalLink, Trash2, Pencil } from 'lucide-react'
 import Link from 'next/link'
 import { useMerchants, usePendingMerchants, useApproveMerchant, useDeleteMerchant } from '@/hooks/queries/use-merchants'
 import { useTablePagination } from '@/hooks/use-table-pagination'
@@ -126,6 +126,14 @@ export default function MerchantsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             View <ExternalLink className="h-3 w-3" />
+          </Link>
+          <Link
+            href={`/admin/merchants/${m.id}/edit`}
+            onClick={(e) => e.stopPropagation()}
+            className="text-sm text-muted-foreground hover:text-foreground"
+            title="Edit merchant"
+          >
+            <Pencil className="h-3.5 w-3.5" />
           </Link>
           <button
             onClick={(e) => { e.stopPropagation(); handleDelete(m.id) }}

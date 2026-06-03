@@ -1,69 +1,214 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { PageHeader } from '@/components/shared/page-header'
-import { FilterBar } from '@/components/shared/filter-bar'
-import { ConfirmDialog } from '@/components/shared/confirm-dialog'
-import { ActionQueueTable } from '@/features/action-queue/components/action-queue-table'
-import { ActionQueueStats } from '@/features/action-queue/components/action-queue-stats'
-import type { ActionQueueItemWithRef } from '@/types'
+import { StatusBadge } from '@/components/shared/status-badge'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { showToast } from '@/hooks/use-toast'
+import { useActionQueue, useUpdateActionQueueItem, useDeleteActionQueueItem } from '@/hooks/queries/use-action-queue'
+import { CheckCircle2, XCircle, Eye,  } from 'lucide-react'
 
-type StatusFilter = 'ALL' | 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED'
-type TypeFilter = 'ALL' | 'MERCHANT_APPROVAL' | 'OFFER_APPROVAL' | 'COMPANY_APPROVAL' | 'ISSUE_REVIEW'
+type TabKey = 'ALL' | 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED'
 
-const mockItems: ActionQueueItemWithRef[] = [
-  { id: 'aq-001', type: 'MERCHANT_APPROVAL', title: "Joe's Coffee Shop", description: 'New merchant registration', referenceId: 'mer-101', referenceType: 'merchant', status: 'PENDING', priority: 2, createdAt: new Date('2026-05-27T10:30:00'), merchant: { id: 'mer-101', businessName: "Joe's Coffee Shop", email: 'joe@coffee.com' } },
-  { id: 'aq-002', type: 'OFFER_APPROVAL', title: '20% Off Everything', description: 'New offer submission', referenceId: 'off-201', referenceType: 'offer', status: 'PENDING', priority: 1, createdAt: new Date('2026-05-27T09:15:00') },
-  { id: 'aq-003', type: 'COMPANY_APPROVAL', title: 'TechCorp Inc.', description: 'Company account activation', referenceId: 'com-301', referenceType: 'company', status: 'IN_PROGRESS', priority: 3, createdAt: new Date('2026-05-26T14:00:00') },
-  { id: 'aq-004', type: 'ISSUE_REVIEW', title: 'Redemption not honored', description: 'Employee reported issue', referenceId: 'iss-401', referenceType: 'issue', status: 'IN_PROGRESS', priority: 5, createdAt: new Date('2026-05-26T08:45:00') },
-  { id: 'aq-005', type: 'MERCHANT_APPROVAL', title: 'GreenLeaf Bistro', description: 'New merchant registration', referenceId: 'mer-102', referenceType: 'merchant', status: 'COMPLETED', priority: 2, createdAt: new Date('2026-05-25T16:20:00') },
-  { id: 'aq-006', type: 'OFFER_APPROVAL', title: 'Buy 1 Get 1 Free', description: 'New offer submission', referenceId: 'off-202', referenceType: 'offer', status: 'COMPLETED', priority: 1, createdAt: new Date('2026-05-25T11:00:00') },
-  { id: 'aq-007', type: 'ISSUE_REVIEW', title: 'Wrong discount applied', description: 'Employee reported issue', referenceId: 'iss-402', referenceType: 'issue', status: 'FAILED', priority: 4, createdAt: new Date('2026-05-24T13:30:00') },
-  { id: 'aq-008', type: 'COMPANY_APPROVAL', title: 'Global Solutions Ltd', description: 'Company account activation', referenceId: 'com-302', referenceType: 'company', status: 'PENDING', priority: 3, createdAt: new Date('2026-05-24T09:00:00') },
+const tabs: { key: TabKey; label: string }[] = [
+  { key: 'ALL', label: 'All' },
+  { key: 'PENDING', label: 'Pending' },
+  { key: 'IN_PROGRESS', label: 'In Progress' },
+  { key: 'COMPLETED', label: 'Completed' },
+  { key: 'FAILED', label: 'Failed' },
 ]
+
+function TaskProgress({ status }: { status: string }) {
+  const pct = status === 'COMPLETED' ? 100 : status === 'IN_PROGRESS' ? 60 : status === 'FAILED' ? 100 : 25
+  const r = 10
+  const circ = 2 * Math.PI * r
+  const offset = circ - (pct / 100) * circ
+  const color = status === 'COMPLETED' ? 'stroke-green-500' : status === 'FAILED' ? 'stroke-red-500' : status === 'IN_PROGRESS' ? 'stroke-blue-500' : 'stroke-yellow-500'
+  return (
+    <svg width="28" height="28" className="shrink-0">
+      <circle cx="14" cy="14" r={r} fill="none" stroke="hsl(var(--muted))" strokeWidth="3" />
+      <circle cx="14" cy="14" r={r} fill="none" className={color} strokeWidth="3" strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" transform="rotate(-90 14 14)" />
+    </svg>
+  )
+}
 
 export default function ActionQueuePage() {
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('ALL')
-  const [selectedItem, setSelectedItem] = useState<ActionQueueItemWithRef | null>(null)
-  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<TabKey>('ALL')
+  const [selectedItem, setSelectedItem] = useState<any>(null)
 
-  const filtered = useMemo(() => {
-    return mockItems.filter((item) => {
-      if (search && !item.title.toLowerCase().includes(search.toLowerCase())) return false
-      if (statusFilter !== 'ALL' && item.status !== statusFilter) return false
-      if (typeFilter !== 'ALL' && item.type !== typeFilter) return false
-      return true
+  const { data, isLoading } = useActionQueue({
+    status: activeTab !== 'ALL' ? activeTab : undefined,
+    q: search || undefined,
+  })
+
+  const updateItem = useUpdateActionQueueItem()
+  const deleteItem = useDeleteActionQueueItem()
+
+  const items = data?.data ?? []
+
+  const itemCounts = useMemo(() => {
+    return {
+      PENDING: data?.meta?.counts?.PENDING ?? 0,
+      IN_PROGRESS: data?.meta?.counts?.IN_PROGRESS ?? 0,
+      COMPLETED: data?.meta?.counts?.COMPLETED ?? 0,
+      FAILED: data?.meta?.counts?.FAILED ?? 0,
+    }
+  }, [data])
+
+  const pendingItems = useMemo(() => items.filter((i: any) => i.status === 'PENDING'), [items])
+
+  const handleStatusUpdate = useCallback((id: string, status: string) => {
+    updateItem.mutate(
+      { id, status },
+      {
+        onSuccess: (res: any) => {
+          showToast({ type: 'success', title: res.message ?? `Item ${status.toLowerCase()}` })
+          setSelectedItem(null)
+        },
+        onError: (err: Error) => showToast({ type: 'error', title: 'Update failed', description: err.message }),
+      },
+    )
+  }, [updateItem])
+
+  const handleSkip = useCallback((id: string) => {
+    deleteItem.mutate(id, {
+      onSuccess: (res: any) => {
+        showToast({ type: 'success', title: res.message ?? 'Item skipped' })
+        setSelectedItem(null)
+      },
+      onError: (err: Error) => showToast({ type: 'error', title: 'Failed to skip', description: err.message }),
     })
-  }, [search, statusFilter, typeFilter])
-
-  const handleRowClick = (item: ActionQueueItemWithRef) => {
-    setSelectedItem(item)
-    setConfirmOpen(true)
-  }
+  }, [deleteItem])
 
   return (
     <div className="space-y-6">
       <PageHeader title="Action Queue" description="Review and process pending actions from merchants, companies, and employees" />
-      <ActionQueueStats pending={12} inProgress={3} completed={145} failed={2} />
-      <FilterBar
-        searchValue={search}
-        onSearchChange={setSearch}
-        searchPlaceholder="Search actions..."
-        filters={[
-          { key: 'status', label: 'All Statuses', options: [{ label: 'Pending', value: 'PENDING' }, { label: 'In Progress', value: 'IN_PROGRESS' }, { label: 'Completed', value: 'COMPLETED' }, { label: 'Failed', value: 'FAILED' }], value: statusFilter, onChange: (v) => setStatusFilter(v as StatusFilter) },
-          { key: 'type', label: 'All Types', options: [{ label: 'Merchant Approval', value: 'MERCHANT_APPROVAL' }, { label: 'Offer Approval', value: 'OFFER_APPROVAL' }, { label: 'Company Activation', value: 'COMPANY_APPROVAL' }, { label: 'Issue Review', value: 'ISSUE_REVIEW' }], value: typeFilter, onChange: (v) => setTypeFilter(v as TypeFilter) },
-        ]}
+
+      {/* Tabs */}
+      <div className="flex gap-4 border-b">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`pb-2 text-sm font-medium ${activeTab === tab.key ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground'}`}
+          >
+            {tab.label}
+            {tab.key !== 'ALL' && (
+              <span className="ml-1.5 rounded-full bg-muted px-1.5 text-[10px]">{itemCounts[tab.key]}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Search */}
+      <input
+        type="text"
+        placeholder="Search actions..."
+        className="w-full rounded-lg border px-4 py-2 text-sm"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
       />
-      <ActionQueueTable items={filtered} onRowClick={handleRowClick} />
-      <ConfirmDialog
-        open={confirmOpen}
-        title="Claim Item"
-        message={`Are you sure you want to claim "${selectedItem?.title}"? This action will assign it to you.`}
-        confirmLabel="Claim"
-        onConfirm={() => { setConfirmOpen(false); setSelectedItem(null) }}
-        onCancel={() => { setConfirmOpen(false); setSelectedItem(null) }}
-      />
+
+      {/* Table */}
+      <div className="overflow-x-auto rounded-lg border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b bg-muted/30 text-left text-muted-foreground">
+              <th className="w-10 px-4 py-3 font-medium"></th>
+              <th className="px-4 py-3 font-medium">Title</th>
+              <th className="px-4 py-3 font-medium">Type</th>
+              <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium">Priority</th>
+              <th className="px-4 py-3 font-medium">Created</th>
+              <th className="px-4 py-3 font-medium text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr><td colSpan={7} className="p-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="mb-2 h-8 w-full" />)}</td></tr>
+            ) : items.length === 0 ? (
+              <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">No action queue items found</td></tr>
+            ) : (
+              items.map((item: any) => (
+                <tr key={item.id} className="border-b last:border-0 hover:bg-muted/30">
+                  <td className="px-4 py-3"><TaskProgress status={item.status} /></td>
+                  <td className="px-4 py-3">
+                    <p className="font-medium">{item.title}</p>
+                    {item.description && <p className="text-xs text-muted-foreground">{item.description}</p>}
+                  </td>
+                  <td className="px-4 py-3 text-xs">{item.type.replace(/_/g, ' ')}</td>
+                  <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${item.priority >= 4 ? 'bg-red-100 text-red-700' : item.priority >= 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'}`}>
+                      {item.priority >= 4 ? 'High' : item.priority >= 3 ? 'Medium' : 'Low'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">{new Date(item.createdAt).toLocaleDateString('en-US')}</td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      {item.status === 'PENDING' && (
+                        <>
+                          <Button size="sm" variant="success" className="h-7 px-2 text-xs" onClick={() => handleStatusUpdate(item.id, 'IN_PROGRESS')}>
+                            <CheckCircle2 className="mr-1 h-3 w-3" />Claim
+                          </Button>
+                          <Button size="sm" variant="destructive" className="h-7 px-2 text-xs" onClick={() => handleSkip(item.id)}>
+                            <XCircle className="mr-1 h-3 w-3" />Skip
+                          </Button>
+                        </>
+                      )}
+                      {item.status === 'IN_PROGRESS' && (
+                        <Button size="sm" variant="success" className="h-7 px-2 text-xs" onClick={() => handleStatusUpdate(item.id, 'COMPLETED')}>
+                          <CheckCircle2 className="mr-1 h-3 w-3" />Complete
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setSelectedItem(item)}>
+                        <Eye className="mr-1 h-3 w-3" />View
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+     
+
+      {/* Detail modal */}
+      {selectedItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setSelectedItem(null)}>
+          <div className="mx-4 w-full max-w-lg rounded-lg border bg-card p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold">{selectedItem.title}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">{selectedItem.description}</p>
+            <div className="mt-3 flex flex-wrap gap-2 text-sm">
+              <StatusBadge status={selectedItem.status} />
+              <span className="rounded bg-muted px-2 py-0.5 text-xs">{selectedItem.type.replace(/_/g, ' ')}</span>
+              <span className="text-muted-foreground">Ref: {selectedItem.referenceId}</span>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setSelectedItem(null)}>Cancel</Button>
+              {selectedItem.status === 'PENDING' && (
+                <>
+                  <Button variant="success" onClick={() => handleStatusUpdate(selectedItem.id, 'IN_PROGRESS')}>
+                    <CheckCircle2 className="mr-1 h-4 w-4" />Claim
+                  </Button>
+                  <Button variant="destructive" onClick={() => handleSkip(selectedItem.id)}>
+                    <XCircle className="mr-1 h-4 w-4" />Skip
+                  </Button>
+                </>
+              )}
+              {selectedItem.status === 'IN_PROGRESS' && (
+                <Button variant="success" onClick={() => handleStatusUpdate(selectedItem.id, 'COMPLETED')}>
+                  <CheckCircle2 className="mr-1 h-4 w-4" />Complete
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
