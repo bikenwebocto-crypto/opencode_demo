@@ -6,6 +6,7 @@ import { Navbar } from '@/components/layout/navbar'
 import { Toaster } from '@/components/ui/toaster'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/utils/cn'
+import { useCurrentUser } from '@/hooks/queries/use-current-user'
 
 const pageTitles: Record<string, string> = {
   '/admin': 'Admin Overview',
@@ -40,6 +41,7 @@ const pageTitles: Record<string, string> = {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const { data: user } = useCurrentUser()
 
   // Determine user type from path
   const userType = pathname.startsWith('/merchant')
@@ -70,14 +72,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       )}>
         <Sidebar
           userType={userType}
-          userName="Admin User"
-          userEmail="admin@perksplatform.com"
+          userName={user?.name}
+          userEmail={user?.email}
+          userRole={user?.role}
         />
       </div>
 
       {/* Main content */}
       <div className="flex flex-1 flex-col">
-        <Navbar title={title} onMenuClick={() => setSidebarOpen(true)} />
+        <Navbar
+          title={title}
+          onMenuClick={() => setSidebarOpen(true)}
+          userName={user?.name}
+          userEmail={user?.email}
+          userRole={user?.role}
+        />
         <main className="flex-1 overflow-y-auto p-6">
           {children}
         </main>

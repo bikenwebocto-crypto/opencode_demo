@@ -8,6 +8,7 @@ import { ArrowLeft, Save, Send } from 'lucide-react'
 import { useCreateMerchantOffer, useUpdateMerchantOffer, useSubmitMerchantOffer } from '@/hooks/queries/use-merchant-offers'
 import { OfferStrengthIndicator } from './offer-strength-indicator'
 import { showToast } from '@/hooks/use-toast'
+import { useCategories } from '@/hooks/queries/use-categories'
 
 interface FormData {
   title: string
@@ -49,6 +50,7 @@ export function OfferForm({ offerId, initialData, isReplacement, currentLiveOffe
   const submitOffer = useSubmitMerchantOffer()
   const [errors, setErrors] = useState<FormErrors>({})
   const [showStrength, setShowStrength] = useState(false)
+  const { data: categories } = useCategories()
 
   const [form, setForm] = useState<FormData>({
     title: initialData?.title ?? '',
@@ -236,13 +238,9 @@ export function OfferForm({ offerId, initialData, isReplacement, currentLiveOffe
                 onChange={set('categoryId')}
               >
                 <option value="">Select category</option>
-                <option value="food">Food & Dining</option>
-                <option value="retail">Retail</option>
-                <option value="services">Services</option>
-                <option value="entertainment">Entertainment</option>
-                <option value="health">Health & Wellness</option>
-                <option value="education">Education</option>
-                <option value="travel">Travel</option>
+                {(categories ?? []).map((category) => (
+                  <option key={category.id} value={category.id}>{category.name}</option>
+                ))}
               </select>
             </div>
 

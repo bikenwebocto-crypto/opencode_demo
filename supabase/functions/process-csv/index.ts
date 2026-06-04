@@ -75,12 +75,22 @@ serve(async (req) => {
           throw new Error('Invalid email address');
         }
 
-        // Check for existing employee
+        // Check for existing account across all role tables
+        const { data: existingAccount } = await supabase
+          .from('accounts')
+          .select('authUserId')
+          .eq('email', row.email)
+          .maybeSingle();
+
         const { data: existing } = await supabase
           .from('employees')
           .select('id')
           .eq('email', row.email)
           .maybeSingle();
+
+        if (existingAccount && !existing) {
+          throw new Error('Email is already assigned to another account');
+        }
 
         if (existing) {
           // Update existing
@@ -126,6 +136,16 @@ serve(async (req) => {
             phone: row.phone,
             status: 'ACTIVE',
             invited_at: new Date().toISOString(),
+          });
+
+          // Create account record
+          await supabase.from('accounts').insert({
+            auth_user_id: authUser.user.id,
+            email: row.email,
+            role: 'EMPLOYEE',
+            profile_id: authUser.user.id,
+            profile_type: 'EMPLOYEE',
+            status: 'ACTIVE',
           });
 
           // Send welcome email with temp password

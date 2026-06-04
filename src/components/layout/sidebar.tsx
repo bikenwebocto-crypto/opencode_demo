@@ -39,6 +39,7 @@ interface SidebarProps {
   userType: 'admin' | 'merchant' | 'company_admin' | 'employee'
   userName?: string
   userEmail?: string
+  userRole?: string | null
   onLogout?: () => void
 }
 
@@ -80,7 +81,7 @@ const navConfig: Record<string, NavItem[]> = {
   ],
 }
 
-export function Sidebar({ userType, userName, userEmail }: SidebarProps) {
+export function Sidebar({ userType, userName, userEmail, userRole }: SidebarProps) {
   const pathname = usePathname()
   const navItems = navConfig[userType] ?? []
   const router = useRouter()
@@ -112,8 +113,13 @@ export function Sidebar({ userType, userName, userEmail }: SidebarProps) {
           {userName?.charAt(0)?.toUpperCase() ?? 'U'}
         </div>
         <div className="flex-1 overflow-hidden">
-          <p className="truncate text-sm font-medium">{userName ?? 'User'}</p>
-          <p className="truncate text-xs text-muted-foreground">{userEmail ?? ''}</p>
+          <p className="truncate text-sm font-medium">{userName ?? 'NA'}</p>
+          <p className="truncate text-xs text-muted-foreground">{userEmail ?? 'NA'}</p>
+          {userRole && (
+            <span className="inline-block mt-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+              {userRole.replace(/_/g, ' ')}
+            </span>
+          )}
         </div>
       </div>
 

@@ -41,6 +41,7 @@ async function main() {
     prisma.companyStatusHistory.deleteMany(),
     prisma.company.deleteMany(),
     prisma.adminUser.deleteMany(),
+    prisma.account.deleteMany(),
     prisma.category.deleteMany(),
     prisma.platformSettings.deleteMany(),
   ]);
@@ -58,6 +59,9 @@ async function main() {
       isActive: true,
     },
   });
+  await prisma.account.create({
+    data: { authUserId: superAdmin.id, email: 'admin@perks.com', role: 'SUPER_ADMIN', profileId: superAdmin.id, profileType: 'ADMIN', status: 'ACTIVE' },
+  });
 
   const supportAdmin = await prisma.adminUser.create({
     data: {
@@ -69,6 +73,9 @@ async function main() {
       isActive: true,
     },
   });
+  await prisma.account.create({
+    data: { authUserId: supportAdmin.id, email: 'support@perks.com', role: 'SUPER_ADMIN', profileId: supportAdmin.id, profileType: 'ADMIN', status: 'ACTIVE' },
+  });
 
   const financeAdmin = await prisma.adminUser.create({
     data: {
@@ -79,6 +86,9 @@ async function main() {
       role: 'FINANCE_ADMIN',
       isActive: true,
     },
+  });
+  await prisma.account.create({
+    data: { authUserId: financeAdmin.id, email: 'finance@perks.com', role: 'SUPER_ADMIN', profileId: financeAdmin.id, profileType: 'ADMIN', status: 'ACTIVE' },
   });
 
   // ── Companies ─────────────────────────────────────────
@@ -190,15 +200,21 @@ async function main() {
   });
 
   // ── Company Admins ──────────────────────────────────
-  await prisma.companyAdmin.createMany({
-    data: [
-      { companyId: techCorp.id, email: 'john@techcorp.com', passwordHash: pw, firstName: 'John', lastName: 'Doe', isPrimary: true, isActive: true },
-      { companyId: globalSolutions.id, email: 'jane@globalsolutions.com', passwordHash: pw, firstName: 'Jane', lastName: 'Smith', isPrimary: true, isActive: true },
-      { companyId: innovateX.id, email: 'bob@innovatex.io', passwordHash: pw, firstName: 'Bob', lastName: 'Johnson', isPrimary: true, isActive: true },
-      { companyId: blueOcean.id, email: 'alice@blueocean.com', passwordHash: pw, firstName: 'Alice', lastName: 'Williams', isPrimary: true, isActive: true },
-      { companyId: northStar.id, email: 'charlie@northstar.com', passwordHash: pw, firstName: 'Charlie', lastName: 'Brown', isPrimary: true, isActive: true },
-    ],
-  });
+  const companyAdminInputs = [
+    { companyId: techCorp.id, email: 'john@techcorp.com', firstName: 'John', lastName: 'Doe' },
+    { companyId: globalSolutions.id, email: 'jane@globalsolutions.com', firstName: 'Jane', lastName: 'Smith' },
+    { companyId: innovateX.id, email: 'bob@innovatex.io', firstName: 'Bob', lastName: 'Johnson' },
+    { companyId: blueOcean.id, email: 'alice@blueocean.com', firstName: 'Alice', lastName: 'Williams' },
+    { companyId: northStar.id, email: 'charlie@northstar.com', firstName: 'Charlie', lastName: 'Brown' },
+  ];
+  for (const ca of companyAdminInputs) {
+    const admin = await prisma.companyAdmin.create({
+      data: { ...ca, passwordHash: pw, isPrimary: true, isActive: true },
+    });
+    await prisma.account.create({
+      data: { authUserId: admin.id, email: ca.email, role: 'COMPANY_ADMIN', profileId: admin.id, profileType: 'COMPANY_ADMIN', status: 'ACTIVE' },
+    });
+  }
 
   // ── Categories per Company ──────────────────────────
   const catData: { companyId: string; name: string; slug: string; description?: string; icon?: string; displayOrder: number }[] = [];
@@ -250,6 +266,16 @@ async function main() {
           invitedBy: supportAdmin.id,
         },
       });
+      await prisma.account.create({
+        data: {
+          authUserId: emp.id,
+          email: `${prefix}.emp${i + 1}@${company.slug}.com`,
+          role: 'EMPLOYEE',
+          profileId: emp.id,
+          profileType: 'EMPLOYEE',
+          status: statuses[i] === 'INVITED' ? 'PENDING' : 'ACTIVE',
+        },
+      });
       allEmployees.push(emp);
     }
   }
@@ -295,6 +321,16 @@ async function main() {
         country: 'United States',
         tags: [m.category.toLowerCase().replace(/[^a-z]+/g, '-')],
         approvedAt: m.status !== 'PENDING' ? new Date('2025-06-01') : undefined,
+      },
+    });
+    await prisma.account.create({
+      data: {
+        authUserId: merchant.id,
+        email: m.email,
+        role: 'MERCHANT',
+        profileId: merchant.id,
+        profileType: 'MERCHANT',
+        status: m.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING',
       },
     });
     createdMerchants.push(merchant);

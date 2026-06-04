@@ -104,59 +104,84 @@ export async function POST(
     });
 
     const targetStatus = qcResult.passed
-      ? 'VALIDATION_IN_PROGRESS'
+      ? 'AWAITING_APPROVAL'
       : 'VALIDATION_FAILED';
 
     let finalOffer = await prisma.merchantOffer.update({
       where: { id },
       data: {
         validationErrors: qcResult.passed
-          ? null
+          ? Prisma.DbNull
           : qcResult.errors,
         status: targetStatus,
         submittedAt: new Date(),
       },
     });
 
-    if (qcResult.passed && offer.replacesOfferId) {
-      const currentLive = await prisma.merchantOffer.findUnique({
-        where: {
-          id: offer.replacesOfferId,
-        },
-      });
-
-      if (currentLive?.status === 'LIVE') {
-        await prisma.offerReplacementRequest.create({
-          data: {
-            currentOfferId: offer.replacesOfferId,
-            newOfferId: offer.id,
-            status: 'AWAITING_APPROVAL',
-          },
+    // Post-submission actions for passing offers
+    if (qcResult.passed) {
+      if (offer.replacesOfferId) {
+        const currentLive = await prisma.merchantOffer.findUnique({
+          where: { id: offer.replacesOfferId },
         });
 
+        if (currentLive?.status === 'LIVE') {
+          await prisma.offerReplacementRequest.create({
+            data: {
+              currentOfferId: offer.replacesOfferId,
+              newOfferId: offer.id,
+              status: 'AWAITING_APPROVAL',
+            },
+          });
+
+          await prisma.actionQueueItem.create({
+            data: {
+              type: 'OFFER_REPLACEMENT',
+              title: `Offer Replacement: ${offer.title}`,
+              description: `Merchant ${merchant.businessName} submitted a replacement offer`,
+              referenceId: merchant.id,
+              referenceType: 'MERCHANT',
+              status: 'PENDING',
+              priority: 1,
+              metadata: {
+                currentOfferId: offer.replacesOfferId,
+                newOfferId: offer.id,
+              },
+            },
+          });
+        }
+      } else {
+        // New offer draft submitted: create action queue item for admin review
         await prisma.actionQueueItem.create({
           data: {
-            type: 'OFFER_REPLACEMENT',
-            title: `Offer Replacement: ${offer.title}`,
-            description: `Merchant ${merchant.businessName} submitted a replacement offer`,
+            type: 'OFFER_APPROVAL',
+            title: `Offer Approval: ${offer.title}`,
+            description: `Merchant ${merchant.businessName} submitted an offer for approval`,
             referenceId: merchant.id,
             referenceType: 'MERCHANT',
             status: 'PENDING',
             priority: 1,
             metadata: {
-              currentOfferId: offer.replacesOfferId,
-              newOfferId: offer.id,
+              offerId: offer.id,
             },
           },
         });
-
-        finalOffer = await prisma.merchantOffer.update({
-          where: { id },
-          data: {
-            status: 'AWAITING_APPROVAL',
-          },
-        });
       }
+
+      // Audit log
+      await prisma.auditLog.create({
+        data: {
+          actorType: 'MERCHANT',
+          merchantId: merchant.id,
+          action: 'OFFER_SUBMITTED_FOR_APPROVAL',
+          entityType: 'MERCHANT_OFFER',
+          entityId: offer.id,
+          metadata: {
+            title: offer.title,
+            replacesOfferId: offer.replacesOfferId ?? null,
+          },
+        },
+      });
     }
 
     return NextResponse.json({

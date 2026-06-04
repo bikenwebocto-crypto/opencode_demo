@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/supabase/server';
 import { adminEmployeeActionSchema } from '@/schemas';
 import * as bcrypt from 'bcryptjs';
+import { validateUserEmail } from '@/services/user-validation.service';
 
 function unauthorized() {
   return NextResponse.json(
@@ -106,50 +107,65 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const existing = await prisma.employee.findUnique({ where: { email } });
-    if (existing) {
+    const validation = await validateUserEmail(email);
+    if (validation.exists) {
       return NextResponse.json(
-        { success: false, error: { code: 'CONFLICT', message: 'An employee with this email already exists' } },
+        { success: false, error: { code: 'EMAIL_ALREADY_EXISTS', message: 'Email is already assigned to another account' } },
         { status: 409 },
       );
     }
 
     const passwordHash = await bcrypt.hash('Welcome@123', 10);
 
-    const employee = await prisma.employee.create({
-      data: {
-        companyId,
-        email,
-        passwordHash,
-        firstName,
-        lastName,
-        employeeId,
-        department,
-        jobTitle,
-        phone,
-        joinMethod: joinMethod || 'manual',
-        status: 'INVITED',
-        invitedAt: new Date(),
-        invitedBy: user.id,
-      },
-      include: {
-        company: { select: { id: true, name: true } },
-      },
-    });
+    const result = await prisma.$transaction(async (tx) => {
+      const employee = await tx.employee.create({
+        data: {
+          companyId,
+          email,
+          passwordHash,
+          firstName,
+          lastName,
+          employeeId,
+          department,
+          jobTitle,
+          phone,
+          joinMethod: joinMethod || 'manual',
+          status: 'INVITED',
+          invitedAt: new Date(),
+          invitedBy: user.id,
+        },
+        include: {
+          company: { select: { id: true, name: true } },
+        },
+      });
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'admin',
-        adminId: user.id,
-        action: 'EMPLOYEE_CREATED',
-        entityType: 'employee',
-        entityId: employee.id,
-        changes: { email, companyId, department },
-      },
+      await tx.account.create({
+        data: {
+          authUserId: employee.id,
+          email,
+          role: 'EMPLOYEE',
+          profileId: employee.id,
+          profileType: 'EMPLOYEE',
+          status: 'PENDING',
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorType: 'admin',
+          adminId: user.id,
+          action: 'EMPLOYEE_CREATED',
+          entityType: 'employee',
+          entityId: employee.id,
+          changes: { email, companyId, department },
+        },
+      });
+
+      return employee;
     });
 
     return NextResponse.json(
-      { success: true, data: employee, message: 'Employee created successfully' },
+      { success: true, data: result, message: 'Employee created successfully' },
       { status: 201 },
     );
   } catch (error: any) {

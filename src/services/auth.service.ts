@@ -46,21 +46,24 @@ export class AuthService {
   async login(request: LoginRequest): Promise<LoginResponse | null> {
     const { email, password, userType } = request;
 
-    // Find user based on type
+    // First, look up the Account record
+    const account = await prisma.account.findUnique({ where: { email } });
+    if (!account || account.status !== 'ACTIVE') return null;
+
+    // Find the actual profile record to verify password
     const user = await this.findUserByType(email, userType);
     if (!user) return null;
 
-    // Verify password using our wrapper
     const valid = await this.verifyPassword(password, user.passwordHash);
     if (!valid) return null;
 
     if (!this.isUserActive(user, userType)) return null;
 
-    // Generate tokens
     const payload: JWTPayload = {
       sub: user.id,
       email: user.email,
       user_type: userType,
+      account_role: account.role,
       ...(userType === 'admin' && { admin_role: (user as any).role }),
       ...(userType === 'merchant' && { merchant_id: user.id }),
       ...((userType === 'company_admin' || userType === 'employee') && {
@@ -73,7 +76,6 @@ export class AuthService {
     const accessToken = this.generateAccessToken(payload);
     const refreshToken = this.generateRefreshToken();
 
-    // Store session (polymorphic FK: set the correct ID field per user type)
     await prisma.loginSession.create({
       data: {
         ...this.sessionIdField(user.id, userType),
@@ -84,8 +86,11 @@ export class AuthService {
       },
     });
 
-    // Update last login
     await this.updateLastLogin(user.id, userType);
+    await prisma.account.update({
+      where: { authUserId: account.authUserId },
+      data: { lastLoginAt: new Date() },
+    });
 
     return {
       user: this.mapToAuthUser(user, userType),
@@ -110,10 +115,14 @@ export class AuthService {
     const user = await this.findUserById(sessionUserId, session.userType);
     const userType = session.userType as UserType;
     if (!user || !this.isUserActive(user, userType)) return null;
+
+    const account = await prisma.account.findUnique({ where: { email: user.email } });
+
     const payload: JWTPayload = {
       sub: user.id,
       email: user.email,
       user_type: userType,
+      account_role: account?.role,
       ...(userType === 'admin' && { admin_role: (user as any).role }),
       ...(userType === 'merchant' && { merchant_id: user.id }),
       ...((userType === 'company_admin' || userType === 'employee') && {
@@ -125,7 +134,6 @@ export class AuthService {
 
     const accessToken = this.generateAccessToken(payload);
 
-    // Update session
     await prisma.loginSession.update({
       where: { id: session.id },
       data: { accessToken, lastActivityAt: new Date() },

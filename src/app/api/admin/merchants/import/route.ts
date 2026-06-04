@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import * as bcrypt from 'bcryptjs';
 import { parse } from 'csv-parse/sync';
+import { validateUserEmail } from '@/services/user-validation.service';
 
 export async function POST(request: NextRequest) {
   try {
@@ -80,6 +81,13 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
+        const validation = await validateUserEmail(email);
+        if (validation.exists) {
+          failed++;
+          results.push({ row: i + 1, businessName, success: false, action: 'failed', error: 'Email is already assigned to another account' });
+          continue;
+        }
+
         if (!password) {
           failed++;
           results.push({ row: i + 1, businessName, success: false, action: 'failed', error: 'Password is required for new merchants' });
@@ -97,26 +105,41 @@ export async function POST(request: NextRequest) {
         const rawStatus = (row.status ?? '').trim().toUpperCase();
         const status = ['PENDING', 'ACTIVE', 'SUSPENDED', 'REJECTED'].includes(rawStatus) ? rawStatus : 'PENDING';
 
-        await prisma.merchant.create({
-          data: {
-            businessName,
-            slug,
-            email,
-            passwordHash,
-            contactName,
-            contactPhone: (row.contactPhone ?? '').trim() || null,
-            description: (row.description ?? '').trim() || null,
-            website: (row.website ?? '').trim() || null,
-            categoryId: (row.categoryId ?? '').trim() || null,
-            addressLine1: (row.addressLine1 ?? '').trim() || null,
-            addressLine2: (row.addressLine2 ?? '').trim() || null,
-            city: (row.city ?? '').trim() || null,
-            state: (row.state ?? '').trim() || null,
-            postalCode: (row.postalCode ?? '').trim() || null,
-            country: (row.country ?? '').trim() || null,
-            status: status as any,
-            onboardingStep: status === 'ACTIVE' ? 'COMPLETE' : 'APPLICATION',
-          },
+        const accountStatus = status === 'ACTIVE' ? 'ACTIVE' : 'PENDING';
+
+        await prisma.$transaction(async (tx) => {
+          const merchant = await tx.merchant.create({
+            data: {
+              businessName,
+              slug,
+              email,
+              passwordHash,
+              contactName,
+              contactPhone: (row.contactPhone ?? '').trim() || null,
+              description: (row.description ?? '').trim() || null,
+              website: (row.website ?? '').trim() || null,
+              categoryId: (row.categoryId ?? '').trim() || null,
+              addressLine1: (row.addressLine1 ?? '').trim() || null,
+              addressLine2: (row.addressLine2 ?? '').trim() || null,
+              city: (row.city ?? '').trim() || null,
+              state: (row.state ?? '').trim() || null,
+              postalCode: (row.postalCode ?? '').trim() || null,
+              country: (row.country ?? '').trim() || null,
+              status: status as any,
+              onboardingStep: status === 'ACTIVE' ? 'COMPLETE' : 'APPLICATION',
+            },
+          });
+
+          await tx.account.create({
+            data: {
+              authUserId: merchant.id,
+              email,
+              role: 'MERCHANT',
+              profileId: merchant.id,
+              profileType: 'MERCHANT',
+              status: accountStatus as any,
+            },
+          });
         });
 
         imported++;

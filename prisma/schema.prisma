@@ -33,6 +33,25 @@ model AdminUser {
   @@map("admin_users")
 }
 
+model Account {
+  authUserId  String        @id @default(uuid()) @db.Uuid
+  email       String        @unique @db.VarChar(255)
+  role        AccountRole
+  profileId   String        @db.Uuid
+  profileType ProfileType
+  status      AccountStatus @default(PENDING)
+  createdBy   String?       @db.VarChar(255)
+  changedBy   String?       @db.VarChar(255)
+  lastLoginAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([role])
+  @@index([status])
+  @@index([profileId])
+  @@map("accounts")
+}
+
 model Company {
   id                   String                 @id @default(uuid()) @db.Uuid
   name                 String                 @db.VarChar(255)
@@ -749,6 +768,27 @@ model PlatformSettings {
   updatedAt DateTime @updatedAt
 
   @@map("platform_settings")
+}
+
+enum AccountRole {
+  SUPER_ADMIN
+  COMPANY_ADMIN
+  EMPLOYEE
+  MERCHANT
+}
+
+enum ProfileType {
+  ADMIN
+  COMPANY_ADMIN
+  EMPLOYEE
+  MERCHANT
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
 }
 
 enum AdminRole {

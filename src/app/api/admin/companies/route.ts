@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/supabase/server';
 import { adminCompanyActionSchema } from '@/schemas';
 import * as bcrypt from 'bcryptjs';
+import { validateUserEmail } from '@/services/user-validation.service';
 
 function unauthorized() {
   return NextResponse.json(
@@ -94,10 +95,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const existing = await prisma.company.findUnique({ where: { email } });
-    if (existing) {
+    const validation = await validateUserEmail(email);
+    if (validation.exists) {
       return NextResponse.json(
-        { success: false, error: { code: 'CONFLICT', message: 'A company with this email already exists' } },
+        { success: false, error: { code: 'EMAIL_ALREADY_EXISTS', message: 'Email is already assigned to another account' } },
         { status: 409 },
       );
     }
@@ -105,64 +106,76 @@ export async function POST(request: NextRequest) {
     const passwordHash = await bcrypt.hash(password, 10);
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now();
 
-    const company = await prisma.company.create({
-      data: {
-        name,
-        slug,
-        email,
-        employeeCount: employeeCount ?? 0,
-        phone,
-        website,
-        addressLine1,
-        addressLine2,
-        city,
-        state,
-        postalCode,
-        country,
-        taxId,
-        status: 'ACTIVE',
-        approvedAt: new Date(),
-      },
-    });
+    const result = await prisma.$transaction(async (tx) => {
+      const company = await tx.company.create({
+        data: {
+          name,
+          slug,
+          email,
+          employeeCount: employeeCount ?? 0,
+          phone,
+          website,
+          addressLine1,
+          addressLine2,
+          city,
+          state,
+          postalCode,
+          country,
+          taxId,
+          status: 'ACTIVE',
+          approvedAt: new Date(),
+        },
+      });
 
-    // Create primary company admin
-    await prisma.companyAdmin.create({
-      data: {
-        companyId: company.id,
-        email,
-        passwordHash,
-        firstName,
-        lastName,
-        isPrimary: true,
-        isActive: true,
-      },
-    });
+      const companyAdmin = await tx.companyAdmin.create({
+        data: {
+          companyId: company.id,
+          email,
+          passwordHash,
+          firstName,
+          lastName,
+          isPrimary: true,
+          isActive: true,
+        },
+      });
 
-    // Default billing
-    await prisma.companyBilling.create({
-      data: {
-        companyId: company.id,
-        plan: 'growth',
-        pricePerEmployee: 5.0,
-        isTrial: true,
-        trialEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      },
-    });
+      await tx.account.create({
+        data: {
+          authUserId: companyAdmin.id,
+          email,
+          role: 'COMPANY_ADMIN',
+          profileId: companyAdmin.id,
+          profileType: 'COMPANY_ADMIN',
+          status: 'ACTIVE',
+        },
+      });
 
-    // Audit log
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'admin',
-        adminId: user.id,
-        action: 'COMPANY_CREATED',
-        entityType: 'company',
-        entityId: company.id,
-        changes: {},
-      },
+      await tx.companyBilling.create({
+        data: {
+          companyId: company.id,
+          plan: 'growth',
+          pricePerEmployee: 5.0,
+          isTrial: true,
+          trialEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorType: 'admin',
+          adminId: user.id,
+          action: 'COMPANY_CREATED',
+          entityType: 'company',
+          entityId: company.id,
+          changes: {},
+        },
+      });
+
+      return company;
     });
 
     return NextResponse.json(
-      { success: true, data: company, message: 'Company created successfully' },
+      { success: true, data: result, message: 'Company created successfully' },
       { status: 201 },
     );
   } catch (error: any) {
