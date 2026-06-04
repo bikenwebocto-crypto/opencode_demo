@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/supabase/server';
 
+const EDITABLE_STATUSES = ['DRAFT', 'VALIDATION_FAILED'];
+
 function unauthorized() {
   return NextResponse.json(
     { success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } },
@@ -9,10 +11,17 @@ function unauthorized() {
   );
 }
 
-function notFound() {
+function notFound(msg = 'Offer not found') {
   return NextResponse.json(
-    { success: false, error: { code: 'NOT_FOUND', message: 'Offer not found' } },
+    { success: false, error: { code: 'NOT_FOUND', message: msg } },
     { status: 404 },
+  );
+}
+
+function forbidden(msg: string) {
+  return NextResponse.json(
+    { success: false, error: { code: 'FORBIDDEN', message: msg } },
+    { status: 403 },
   );
 }
 
@@ -64,11 +73,8 @@ export async function PATCH(
     const existing = await getOwnOffer(merchant.id, id);
     if (!existing) return notFound();
 
-    if (existing.status !== 'DRAFT' && existing.status !== 'PENDING_APPROVAL') {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Only draft or pending approval offers can be edited' } },
-        { status: 403 },
-      );
+    if (!EDITABLE_STATUSES.includes(existing.status)) {
+      return forbidden('Only draft or validation-failed offers can be edited');
     }
 
     const body = await request.json();
@@ -77,7 +83,7 @@ export async function PATCH(
       'title', 'description', 'shortDescription', 'termsAndConditions',
       'imageUrls', 'offerType', 'discountValue', 'discountMax', 'discountPercent',
       'minimumSpend', 'maxRedemptions', 'daysOfWeek',
-      'redemptionCode', 'redemptionInstructions',
+      'redemptionCode', 'redemptionInstructions', 'categoryId', 'submissionNotes',
     ];
     for (const f of fields) {
       if (body[f] !== undefined) updatable[f] = body[f];
@@ -91,31 +97,6 @@ export async function PATCH(
     });
 
     return NextResponse.json({ success: true, data: offer });
-  } catch (error) {
-    return internalError(error);
-  }
-}
-
-export async function DELETE(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  try {
-    const merchant = await getMerchantFromUser();
-    if (!merchant) return unauthorized();
-    const { id } = await params;
-    const existing = await getOwnOffer(merchant.id, id);
-    if (!existing) return notFound();
-
-    if (existing.status !== 'DRAFT') {
-      return NextResponse.json(
-        { success: false, error: { code: 'FORBIDDEN', message: 'Only draft offers can be deleted' } },
-        { status: 403 },
-      );
-    }
-
-    await prisma.merchantOffer.delete({ where: { id } });
-    return NextResponse.json({ success: true, message: 'Offer deleted successfully' });
   } catch (error) {
     return internalError(error);
   }

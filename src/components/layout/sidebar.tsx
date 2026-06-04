@@ -24,6 +24,7 @@ import {
   Zap,
   Sparkles,
   Search,
+  RefreshCw,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 
@@ -45,6 +46,7 @@ const navConfig: Record<string, NavItem[]> = {
   admin: [
       { label: 'Overview', href: '/admin', icon: LayoutDashboard },
     { label: 'Action Queue', href: '/admin/action-queue', icon: Zap },
+    { label: 'Replacement Reviews', href: '/admin/offers/replacements', icon: RefreshCw },
     { label: 'Merchants', href: '/admin/merchants', icon: Store },
     { label: 'Companies', href: '/admin/companies', icon: Building2 },
     { label: 'Employees', href: '/admin/employees', icon: Users },

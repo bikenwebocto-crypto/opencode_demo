@@ -10,6 +10,7 @@ import { cn } from '@/utils/cn'
 const pageTitles: Record<string, string> = {
   '/admin': 'Admin Overview',
   '/admin/action-queue': 'Action Queue',
+  '/admin/offers/replacements': 'Replacement Reviews',
   '/admin/merchants': 'Merchants',
   '/admin/companies': 'Companies',
   '/admin/employees': 'Employees',

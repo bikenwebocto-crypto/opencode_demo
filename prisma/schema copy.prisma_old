@@ -55,11 +55,11 @@ model Company {
   deletedAt            DateTime?
   createdAt            DateTime               @default(now())
   updatedAt            DateTime               @updatedAt
+  approvedById         String?                @db.Uuid
+  deletedById          String?                @db.Uuid
   adminNote            String?                @db.VarChar(500)
   approvedDomain       String?                @db.VarChar(255)
   industry             String?                @db.VarChar(100)
-  approvedById         String?                @db.Uuid
-  deletedById          String?                @db.Uuid
   audits               AuditLog[]             @relation("CompanyAuditLogs")
   categories           Category[]
   companyAdmins        CompanyAdmin[]
@@ -144,9 +144,9 @@ model Employee {
   deletedAt     DateTime?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
-  joinMethod    String?             @db.VarChar(50)
   approvedById  String?             @db.Uuid
   deletedById   String?             @db.Uuid
+  joinMethod    String?             @db.VarChar(50)
   company       Company             @relation(fields: [companyId], references: [id])
   reports       IssueReport[]
   loginSessions LoginSession[]
@@ -196,10 +196,10 @@ model Merchant {
   deletedAt           DateTime?
   createdAt           DateTime                     @default(now())
   updatedAt           DateTime                     @updatedAt
-  adminNote           String?                      @db.VarChar(500)
-  liveAt              DateTime?
   approvedById        String?                      @db.Uuid
   deletedById         String?                      @db.Uuid
+  adminNote           String?                      @db.VarChar(500)
+  liveAt              DateTime?
   actionQueueItems    ActionQueueItem[]
   audits              AuditLog[]                   @relation("MerchantAuditLogs")
   heroBanners         HeroBanner[]
@@ -271,12 +271,16 @@ model MerchantOffer {
   title                  String                    @db.VarChar(255)
   description            String
   shortDescription       String?                   @db.VarChar(500)
+  categoryId             String?                   @db.Uuid
   termsAndConditions     String?
   imageUrls              String[]                  @default([])
   offerType              String                    @db.VarChar(50)
   discountValue          Decimal                   @db.Decimal(10, 2)
   discountMax            Decimal?                  @db.Decimal(10, 2)
   discountPercent        Int?
+  replacesOfferId        String?                   @db.Uuid
+  validationErrors       Json?
+  submissionNotes        String?
   minimumSpend           Decimal?                  @db.Decimal(10, 2)
   maxRedemptions         Int?                      @default(0)
   currentRedemptions     Int                       @default(0)
@@ -300,10 +304,6 @@ model MerchantOffer {
   updatedAt              DateTime                  @updatedAt
   saveCount              Int                       @default(0)
   viewCount              Int                       @default(0)
-  categoryId             String?                   @db.Uuid
-  replacesOfferId        String?                   @db.Uuid
-  submissionNotes        String?
-  validationErrors       Json?
   merchant               Merchant                  @relation(fields: [merchantId], references: [id])
   replacesOffer          MerchantOffer?            @relation("OfferReplacement", fields: [replacesOfferId], references: [id])
   replacedBy             MerchantOffer[]           @relation("OfferReplacement")
@@ -320,19 +320,19 @@ model MerchantOffer {
 }
 
 model OfferReplacementRequest {
-  id             String            @id @default(uuid()) @db.Uuid
-  currentOfferId String            @db.Uuid
-  newOfferId     String            @db.Uuid
+  id             String        @id @default(uuid()) @db.Uuid
+  currentOfferId String        @db.Uuid
+  newOfferId     String        @db.Uuid
   reason         String?
-  adminId        String?           @db.Uuid
+  status         ReplacementStatus @default(PENDING)
+  adminId        String?       @db.Uuid
   adminNotes     String?
   reviewedAt     DateTime?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  status         ReplacementStatus @default(PENDING)
-  admin          AdminUser?        @relation("AdminOfferReplacement", fields: [adminId], references: [id])
-  currentOffer   MerchantOffer     @relation("CurrentOffer", fields: [currentOfferId], references: [id])
-  newOffer       MerchantOffer     @relation("NewOffer", fields: [newOfferId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  admin          AdminUser?    @relation("AdminOfferReplacement", fields: [adminId], references: [id])
+  currentOffer   MerchantOffer @relation("CurrentOffer", fields: [currentOfferId], references: [id])
+  newOffer       MerchantOffer @relation("NewOffer", fields: [newOfferId], references: [id])
 
   @@index([currentOfferId])
   @@index([newOfferId])
@@ -801,12 +801,12 @@ enum OfferStatus {
   DRAFT
   PENDING_APPROVAL
   LIVE
-  REJECTED
-  EXPIRED
-  REPLACED
   VALIDATION_IN_PROGRESS
   AWAITING_APPROVAL
   VALIDATION_FAILED
+  REJECTED
+  EXPIRED
+  REPLACED
   ARCHIVED
 }
 

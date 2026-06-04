@@ -8,14 +8,17 @@ const offerKeys = {
   list: (filters?: Record<string, unknown>) => [...offerKeys.lists(), filters] as const,
   details: () => [...offerKeys.all, 'detail'] as const,
   detail: (id: string) => [...offerKeys.details(), id] as const,
+  currentLive: () => [...offerKeys.all, 'current-live'] as const,
+  history: () => [...offerKeys.all, 'history'] as const,
 }
 
-export function useMerchantOffers(filters?: { page?: number; pageSize?: number; status?: string; q?: string }) {
+export function useMerchantOffers(filters?: { page?: number; pageSize?: number; status?: string; q?: string; scope?: string }) {
   const params = new URLSearchParams()
   if (filters?.page) params.set('page', String(filters.page))
   if (filters?.pageSize) params.set('pageSize', String(filters.pageSize))
   if (filters?.status) params.set('status', filters.status)
   if (filters?.q) params.set('q', filters.q)
+  if (filters?.scope) params.set('scope', filters.scope)
   const qs = params.toString()
 
   return useQuery({
@@ -58,6 +61,7 @@ export function useCreateMerchantOffer() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: offerKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: offerKeys.currentLive() })
     },
   })
 }
@@ -79,22 +83,28 @@ export function useUpdateMerchantOffer() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: offerKeys.lists() })
       queryClient.invalidateQueries({ queryKey: offerKeys.details() })
+      queryClient.invalidateQueries({ queryKey: offerKeys.currentLive() })
     },
   })
 }
 
-export function useDeleteMerchantOffer() {
+export function useSubmitMerchantOffer() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/merchant/offers/${id}`, { method: 'DELETE' })
+    mutationFn: async ({ id, ...data }: { id: string } & Record<string, unknown>) => {
+      const res = await fetch(`/api/merchant/offers/${id}/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to delete offer')
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to submit offer')
       return json
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: offerKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: offerKeys.currentLive() })
     },
   })
 }
