@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StatCard } from '@/components/shared/stat-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import Link from 'next/link'
 import { ShoppingBag, Eye, TrendingUp, Star, Gift, Plus, MapPin } from 'lucide-react'
 
 export default function MerchantDashboard() {
@@ -22,9 +23,11 @@ export default function MerchantDashboard() {
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="text-lg">Current Live Offer</CardTitle>
+            <Link href="/merchant/offers/create">
             <Button size="sm">
               <Plus className="mr-1 h-3 w-3" /> New Offer
             </Button>
+          </Link>
           </CardHeader>
           <CardContent>
             <div className="rounded-lg border bg-card p-4">
@@ -39,7 +42,9 @@ export default function MerchantDashboard() {
                     <span className="text-sm text-muted-foreground">245 redemptions · $2,450 savings</span>
                   </div>
                 </div>
-                <Button variant="outline" size="sm">Edit</Button>
+                <Link href="/merchant/offers">
+                  <Button variant="outline" size="sm">Manage</Button>
+                </Link>
               </div>
             </div>
           </CardContent>
@@ -51,9 +56,11 @@ export default function MerchantDashboard() {
             <CardTitle className="text-lg">Quick Actions</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <Button variant="outline" className="w-full justify-start gap-2">
-              <Plus className="h-4 w-4" /> Create New Offer
-            </Button>
+            <Link href="/merchant/offers/create" className="w-full">
+              <Button variant="outline" className="w-full justify-start gap-2">
+                <Plus className="h-4 w-4" /> Create New Offer
+              </Button>
+            </Link>
             <Button variant="outline" className="w-full justify-start gap-2">
               <MapPin className="h-4 w-4" /> Manage Branches
             </Button>

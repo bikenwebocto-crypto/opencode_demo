@@ -1,20 +1,35 @@
 'use client'
-import { use, useState } from 'react'
+import { use, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Package } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { ArrowLeft, Package, Pencil, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { DataTable } from '@/components/shared/data-table'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { useMerchantById, useMerchantOffers } from '@/hooks/queries/use-merchants'
+import { useMerchantById, useMerchantOffers, useDeleteMerchant } from '@/hooks/queries/use-merchants'
 import { showToast } from '@/hooks/use-toast'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import type { ColumnDef } from '@/types'
 
 export default function MerchantDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
+  const router = useRouter()
   const [selectedOffer, setSelectedOffer] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const deleteMerchant = useDeleteMerchant()
+
+  const handleDelete = useCallback(() => {
+    deleteMerchant.mutate(id, {
+      onSuccess: (res: any) => {
+        showToast({ type: 'success', title: res.message ?? 'Merchant deleted' })
+        router.push('/admin/merchants')
+      },
+      onError: (err: Error) => showToast({ type: 'error', title: 'Delete failed', description: err.message }),
+    })
+  }, [id, deleteMerchant, router])
 
   const {
     data: merchantRes,
@@ -111,13 +126,14 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
 
   return (
     <div className="space-y-6 py-6">
-      <div className="flex items-center gap-4">
-        <Link href="/admin/merchants">
-          <Button type="button" variant="ghost" size="icon">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-        </Link>
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Link href="/admin/merchants">
+            <Button type="button" variant="ghost" size="icon">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <div className="flex items-center gap-3">
           <Avatar className="h-10 w-10">
             <AvatarFallback className="text-sm">{(merchant.businessName ?? '?').charAt(0)}</AvatarFallback>
           </Avatar>
@@ -129,6 +145,15 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
             <p className="text-sm text-muted-foreground">{merchant.email} &middot; {merchant.category?.name ?? 'No category'}</p>
             {merchant.adminNote && <p className="mt-1 text-xs text-amber-600">Note: {merchant.adminNote}</p>}
           </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+          <Link href={`/admin/merchants/${id}/edit`}>
+            <Button variant="outline" size="sm"><Pencil className="mr-1 h-4 w-4" />Edit</Button>
+          </Link>
+          <Button variant="destructive" size="sm" onClick={() => setConfirmDelete(true)}>
+            <Trash2 className="mr-1 h-4 w-4" />Delete
+          </Button>
         </div>
       </div>
 
@@ -176,6 +201,16 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete Merchant"
+        message="Are you sure you want to delete this merchant? It will be soft-deleted."
+        confirmLabel="Delete"
+        loading={deleteMerchant.isPending}
+        onConfirm={handleDelete}
+        onCancel={() => setConfirmDelete(false)}
+      />
     </div>
   )
 }

@@ -190,6 +190,27 @@ export function useMerchantOffers(merchantId: string) {
   });
 }
 
+export function useUpdateMerchant() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string } & Record<string, unknown>) => {
+      const res = await fetch(`/api/admin/merchants/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to update merchant');
+      return json;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: merchantKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: merchantKeys.details() });
+    },
+  });
+}
+
 export function useDeleteMerchant() {
   const queryClient = useQueryClient();
 
