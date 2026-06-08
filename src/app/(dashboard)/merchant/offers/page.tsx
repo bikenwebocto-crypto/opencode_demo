@@ -1,13 +1,14 @@
 'use client'
 import { useState } from 'react'
 import Link from 'next/link'
-import { useMerchantOffers } from '@/hooks/queries/use-merchant-offers'
+import { useMerchantOffers, useBulkDeleteMerchantOffers } from '@/hooks/queries/use-merchant-offers'
 import { DataTable } from '@/components/shared/data-table'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { showToast } from '@/hooks/use-toast'
-import { Plus, Pencil, ExternalLink, Gift, RefreshCw, Clock, History } from 'lucide-react'
+import { Plus, Pencil, ExternalLink, Gift, RefreshCw, Clock, History, Trash2 } from 'lucide-react'
 import type { ColumnDef } from '@/types'
 
 const statusLabels: Record<string, string> = {
@@ -26,7 +27,10 @@ export default function MerchantOffersPage() {
   const [tab, setTab] = useState<'all' | 'drafts' | 'history'>('all')
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const scope = tab === 'drafts' ? 'drafts' : tab === 'history' ? 'history' : undefined
+  const bulkDelete = useBulkDeleteMerchantOffers()
 
   const { data, isLoading } = useMerchantOffers({
     page,
@@ -103,6 +107,15 @@ export default function MerchantOffersPage() {
             >
               <RefreshCw className="h-3.5 w-3.5" /> Replace
             </Link>
+          )}
+          {['DRAFT', 'VALIDATION_FAILED', 'REJECTED', 'EXPIRED', 'REPLACED', 'AWAITING_APPROVAL'].includes(o.status) && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setSelectedIds(new Set([o.id])); setDeleteOpen(true) }}
+              className="text-sm text-destructive hover:text-destructive/80"
+              title="Delete offer"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
           )}
           <Link
             href={`/merchant/offers/${o.id}`}
@@ -223,6 +236,14 @@ export default function MerchantOffersPage() {
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1) }}
         />
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-1 text-sm">
+            <span className="text-muted-foreground">{selectedIds.size} selected</span>
+            <Button size="sm" variant="destructive" onClick={() => setDeleteOpen(true)}>
+              <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete Selected
+            </Button>
+          </div>
+        )}
       </div>
 
       <DataTable
@@ -230,18 +251,36 @@ export default function MerchantOffersPage() {
         data={offers}
         keyExtractor={(o: any) => o.id}
         isLoading={isLoading}
+        selectable
+        selectedIds={selectedIds}
+        onSelectChange={setSelectedIds}
         emptyMessage={tab === 'drafts' ? 'No drafts' : tab === 'history' ? 'No offer history' : 'No offers found'}
-        emptyAction={
-          <Link href="/merchant/offers/create">
-            <Button variant="outline" size="sm"><Plus className="mr-1 h-3 w-3" />Create your first offer</Button>
-          </Link>
-        }
         pagination={{
           page,
           pageSize: 10,
           total: meta.total,
           onPageChange: setPage,
         }}
+      />
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Delete Offers"
+        message={`Are you sure you want to delete ${selectedIds.size} offer(s)? This will archive them and they will no longer be visible to employees.`}
+        confirmLabel={`Delete ${selectedIds.size} Offer(s)`}
+        loading={bulkDelete.isPending}
+        onConfirm={async () => {
+          try {
+            await bulkDelete.mutateAsync(Array.from(selectedIds))
+            showToast({ type: 'success', title: `${selectedIds.size} offer(s) deleted` })
+            setSelectedIds(new Set())
+          } catch (err: any) {
+            showToast({ type: 'error', title: 'Failed', description: err.message })
+          } finally {
+            setDeleteOpen(false)
+          }
+        }}
+        onCancel={() => setDeleteOpen(false)}
       />
     </div>
   )

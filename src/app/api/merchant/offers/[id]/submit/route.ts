@@ -46,6 +46,7 @@ function runQualityChecks(body: any): { passed: boolean; errors: Record<string, 
   if (!body.endDate) errors.endDate = 'End date is required';
   if (body.startDate && body.endDate && new Date(body.endDate) <= new Date(body.startDate)) errors.endDate = 'End date must be after start date';
   if (!body.termsAndConditions) errors.termsAndConditions = 'Terms and conditions are required';
+  if (!body.categoryId) errors.categoryId = 'Category is required';
   if (body.imageUrls && Array.isArray(body.imageUrls)) {
     for (const url of body.imageUrls) {
       if (typeof url === 'string' && url.trim()) {
@@ -90,9 +91,9 @@ export async function POST(
       return notFound();
     }
 
-    if (!['DRAFT', 'VALIDATION_FAILED'].includes(offer.status)) {
+    if (!['DRAFT', 'VALIDATION_FAILED', 'CHANGES_REQUESTED'].includes(offer.status)) {
       return forbidden(
-        'Only draft or validation-failed offers can be submitted',
+        'Only draft, validation-failed, or changes-requested offers can be submitted',
       );
     }
 
@@ -151,21 +152,30 @@ export async function POST(
           });
         }
       } else {
-        // New offer draft submitted: create action queue item for admin review
-        await prisma.actionQueueItem.create({
-          data: {
-            type: 'OFFER_APPROVAL',
-            title: `Offer Approval: ${offer.title}`,
-            description: `Merchant ${merchant.businessName} submitted an offer for approval`,
-            referenceId: merchant.id,
-            referenceType: 'MERCHANT',
-            status: 'PENDING',
-            priority: 1,
-            metadata: {
-              offerId: offer.id,
-            },
-          },
+        // Prevent duplicate queue items
+        const existingItems = await prisma.actionQueueItem.findMany({
+          where: { referenceId: merchant.id, type: 'OFFER_APPROVAL', status: 'PENDING' },
         });
+        const hasExisting = existingItems.some((i) => {
+          const meta = i.metadata as Record<string, unknown> | null;
+          return meta?.offerId === offer.id;
+        });
+        if (!hasExisting) {
+          await prisma.actionQueueItem.create({
+            data: {
+              type: 'OFFER_APPROVAL',
+              title: `Offer Approval: ${offer.title}`,
+              description: `Merchant ${merchant.businessName} submitted an offer for approval`,
+              referenceId: merchant.id,
+              referenceType: 'MERCHANT',
+              status: 'PENDING',
+              priority: 1,
+              metadata: {
+                offerId: offer.id,
+              },
+            },
+          });
+        }
       }
 
       // Audit log

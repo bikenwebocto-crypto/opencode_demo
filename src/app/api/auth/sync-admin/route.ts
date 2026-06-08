@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 const dashboardMap: Record<string, string> = {
   SUPER_ADMIN: '/admin',
   MERCHANT: '/merchant',
-  COMPANY_ADMIN: '/company-admin',
+  COMPANY_ADMIN: '/company',
   EMPLOYEE: '/employee',
 }
 
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   const existingAccount = await prisma.account.findUnique({
     where: { authUserId: user.id },
   })
-
+  
   if (existingAccount) {
     if (existingAccount.status !== 'ACTIVE') {
       return NextResponse.json(
@@ -72,8 +72,9 @@ export async function POST(request: NextRequest) {
   const matches: { role: string; profileId: string; profileType: string }[] = []
   if (adminUser) matches.push({ role: 'SUPER_ADMIN', profileId: adminUser.id, profileType: 'ADMIN_USER' })
   if (merchant) matches.push({ role: 'MERCHANT', profileId: merchant.id, profileType: 'MERCHANT' })
-  if (companyAdmin) matches.push({ role: 'COMPANY_ADMIN', profileId: companyAdmin.id, profileType: 'COMPANY_ADMIN' })
+  if (companyAdmin) matches.push({ role: 'COMPANY_ADMIN', profileId: companyAdmin.id, profileType: 'COMPANY' })
   if (employee) matches.push({ role: 'EMPLOYEE', profileId: employee.id, profileType: 'EMPLOYEE' })
+
 
   if (matches.length === 0) {
     return NextResponse.json(

@@ -323,6 +323,7 @@ model MerchantOffer {
   replacesOfferId        String?                   @db.Uuid
   submissionNotes        String?
   validationErrors       Json?
+  adminNote              String?
   merchant               Merchant                  @relation(fields: [merchantId], references: [id])
   replacesOffer          MerchantOffer?            @relation("OfferReplacement", fields: [replacesOfferId], references: [id])
   replacedBy             MerchantOffer[]           @relation("OfferReplacement")
@@ -779,7 +780,7 @@ enum AccountRole {
 
 enum ProfileType {
   ADMIN
-  COMPANY_ADMIN
+  COMPANY
   EMPLOYEE
   MERCHANT
 }
@@ -847,6 +848,7 @@ enum OfferStatus {
   VALIDATION_IN_PROGRESS
   AWAITING_APPROVAL
   VALIDATION_FAILED
+  CHANGES_REQUESTED
   ARCHIVED
 }
 
@@ -881,6 +883,8 @@ enum ActionQueueType {
   COMPANY_APPROVAL
   ISSUE_REVIEW
   CSV_IMPORT
+  BRANCH_EDIT_REQUEST
+  ASSET_REVIEW
 }
 
 enum CSVUploadStatus {

@@ -1,0 +1,155 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import * as bcrypt from 'bcryptjs'
+import { getCompanyAdmin, handleApiError, AuthError } from '../helpers'
+
+export async function GET(request: NextRequest) {
+  try {
+    const { company } = await getCompanyAdmin()
+    const { searchParams } = new URL(request.url)
+    const page = Math.max(1, parseInt(searchParams.get('page') ?? '1'))
+    const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get('pageSize') ?? '20')))
+    const status = searchParams.get('status')
+    const q = searchParams.get('q')
+    const sortBy = searchParams.get('sortBy') ?? 'createdAt'
+    const sortOrder = (searchParams.get('sortOrder') ?? 'desc') as 'asc' | 'desc'
+
+    const where: any = { companyId: company.id, deletedAt: null }
+    if (status && status !== 'ALL') where.status = status
+    if (q) {
+      where.OR = [
+        { firstName: { contains: q, mode: 'insensitive' } },
+        { lastName: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+        { department: { contains: q, mode: 'insensitive' } },
+      ]
+    }
+
+    const orderBy: any = {}
+    const sortMap: Record<string, string> = { firstName: 'firstName', lastName: 'lastName', email: 'email', department: 'department', status: 'status', createdAt: 'createdAt' }
+    orderBy[sortMap[sortBy] ?? 'createdAt'] = sortOrder
+
+    const [employees, total] = await Promise.all([
+      prisma.employee.findMany({
+        where,
+        orderBy,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          department: true,
+          jobTitle: true,
+          status: true,
+          employeeId: true,
+          createdAt: true,
+          invitedAt: true,
+          lastLoginAt: true,
+          joinMethod: true,
+          _count: { select: { redemptions: true } },
+        },
+      }),
+      prisma.employee.count({ where }),
+    ])
+
+    return NextResponse.json({
+      success: true,
+      data: employees,
+      meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+    })
+  } catch (error) {
+    return handleApiError(error)
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const { company, companyAdmin } = await getCompanyAdmin()
+    const body = await request.json()
+    const { firstName, lastName, email, department, jobTitle, phone, employeeId, joinMethod } = body
+
+    if (!firstName || !lastName || !email) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION', message: 'First name, last name, and email are required' } },
+        { status: 400 },
+      )
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      return NextResponse.json(
+        { success: false, error: { code: 'INVALID_EMAIL', message: 'Invalid email address' } },
+        { status: 400 },
+      )
+    }
+
+    if (company.approvedDomain) {
+      const domain = email.split('@')[1]
+      if (domain !== company.approvedDomain) {
+        return NextResponse.json(
+          { success: false, error: { code: 'DOMAIN_MISMATCH', message: `Email domain must be ${company.approvedDomain}` } },
+          { status: 400 },
+        )
+      }
+    }
+
+    const existing = await prisma.employee.findUnique({ where: { email: email.toLowerCase().trim() } })
+    if (existing) {
+      return NextResponse.json(
+        { success: false, error: { code: 'EMAIL_EXISTS', message: 'An employee with this email already exists' } },
+        { status: 409 },
+      )
+    }
+
+    const passwordHash = await bcrypt.hash('Welcome@123', 10)
+    const empId = employeeId || `EMP-${Date.now()}`
+
+    const result = await prisma.$transaction(async (tx) => {
+      const employee = await tx.employee.create({
+        data: {
+          companyId: company.id,
+          email: email.toLowerCase().trim(),
+          passwordHash,
+          firstName,
+          lastName,
+          employeeId: empId,
+          department: department || null,
+          jobTitle: jobTitle || null,
+          phone: phone || null,
+          status: 'ACTIVE',
+          joinMethod: joinMethod || 'manual',
+        },
+      })
+
+      await tx.account.create({
+        data: {
+          authUserId: employee.id,
+          email: employee.email,
+          role: 'EMPLOYEE',
+          profileId: employee.id,
+          profileType: 'EMPLOYEE',
+          status: 'ACTIVE',
+        },
+      })
+
+      await tx.auditLog.create({
+        data: {
+          actorType: 'COMPANY_ADMIN',
+          companyId: company.id,
+          action: 'EMPLOYEE_CREATED',
+          entityType: 'EMPLOYEE',
+          entityId: employee.id,
+          metadata: { createdBy: companyAdmin.id, firstName, lastName, department },
+        },
+      })
+
+      return employee
+    })
+
+    return NextResponse.json({ success: true, data: result }, { status: 201 })
+  } catch (error) {
+    return handleApiError(error)
+  }
+}
