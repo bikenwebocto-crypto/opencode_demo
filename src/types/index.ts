@@ -33,6 +33,10 @@ export type RealtimeEventType =
   | 'ANALYTICS_UPDATED' | 'ISSUE_REPORTED'
   | 'NOTIFICATION_CREATED' | 'EMPLOYEE_STATUS_CHANGED';
 
+export type BranchType = 'IN_STORE' | 'ONLINE';
+export type BranchStatus = 'ACTIVE' | 'INACTIVE' | 'CLOSED';
+export type BranchDisplayType = 'IN_STORE' | 'ONLINE_DELIVERY' | 'ONLINE_DIGITAL';
+
 // ============================================================
 // API RESPONSE TYPES
 // ============================================================

@@ -1,212 +1,323 @@
 'use client'
-import { useState, useMemo, useCallback } from 'react'
+
+import { useState, useMemo } from 'react'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Search, ExternalLink, Filter, X } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { StatusBadge } from '@/components/shared/status-badge'
-import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { showToast } from '@/hooks/use-toast'
-import { useActionQueue, useUpdateActionQueueItem, useDeleteActionQueueItem } from '@/hooks/queries/use-action-queue'
-import { CheckCircle2, XCircle, Eye,  } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { useActionQueue } from '@/hooks/queries/use-action-queue'
+import {
+  TAB_KEYS,
+  QUEUE_TYPE_MAP,
+  PRIORITY_STYLES,
+  STATUS_STYLES,
+  getPriorityLabel,
+  type QueueTabKey,
+} from '@/lib/action-queue-types'
 
-type TabKey = 'ALL' | 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED'
+const PRIORITY_OPTIONS = ['ALL', 'HIGH', 'MEDIUM', 'STANDARD', 'LOW'] as const
+const STATUS_OPTIONS = ['ALL', 'PENDING', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'SKIPPED'] as const
 
-const tabs: { key: TabKey; label: string }[] = [
-  { key: 'ALL', label: 'All' },
-  { key: 'PENDING', label: 'Pending' },
-  { key: 'IN_PROGRESS', label: 'In Progress' },
-  { key: 'COMPLETED', label: 'Completed' },
-  { key: 'FAILED', label: 'Failed' },
+const TYPE_OPTIONS = [
+  { value: 'ALL', label: 'All Types' },
+  ...Object.entries(QUEUE_TYPE_MAP).map(([value, m]) => ({ value, label: m.displayType })),
 ]
 
-function TaskProgress({ status }: { status: string }) {
-  const pct = status === 'COMPLETED' ? 100 : status === 'IN_PROGRESS' ? 60 : status === 'FAILED' ? 100 : 25
-  const r = 10
-  const circ = 2 * Math.PI * r
-  const offset = circ - (pct / 100) * circ
-  const color = status === 'COMPLETED' ? 'stroke-green-500' : status === 'FAILED' ? 'stroke-red-500' : status === 'IN_PROGRESS' ? 'stroke-blue-500' : 'stroke-yellow-500'
-  return (
-    <svg width="28" height="28" className="shrink-0">
-      <circle cx="14" cy="14" r={r} fill="none" stroke="hsl(var(--muted))" strokeWidth="3" />
-      <circle cx="14" cy="14" r={r} fill="none" className={color} strokeWidth="3" strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round" transform="rotate(-90 14 14)" />
-    </svg>
-  )
+function getEntityName(item: any): string {
+  if (item.merchant?.businessName) return item.merchant.businessName
+  const meta = item.metadata ?? {}
+  return meta.entityName ?? meta.companyName ?? item.title ?? 'Unknown'
+}
+
+function getDisplayType(item: any): string {
+  const meta = item.metadata ?? {}
+  const queueType = meta.queueType as string | undefined
+  if (queueType && QUEUE_TYPE_MAP[queueType]) return QUEUE_TYPE_MAP[queueType].displayType
+  return (item.type ?? '').replace(/_/g, ' ')
+}
+
+function getPriorityStyle(priority: number) {
+  const label = getPriorityLabel(priority)
+  return PRIORITY_STYLES[label] ?? 'bg-gray-100 text-gray-700'
+}
+
+function getStatusStyle(status: string) {
+  return STATUS_STYLES[status] ?? 'bg-gray-100 text-gray-700'
 }
 
 export default function ActionQueuePage() {
-  const [search, setSearch] = useState('')
-  const [activeTab, setActiveTab] = useState<TabKey>('ALL')
-  const [selectedItem, setSelectedItem] = useState<any>(null)
+  const router = useRouter()
+  const searchParams = useSearchParams()
 
-  const { data, isLoading } = useActionQueue({
-    status: activeTab !== 'ALL' ? activeTab : undefined,
-    q: search || undefined,
-  })
+  const initialTab = (searchParams.get('tab') as QueueTabKey | null) ?? 'ALL'
+  const validTab = TAB_KEYS.find(t => t.key === initialTab) ? initialTab : 'ALL'
 
-  const updateItem = useUpdateActionQueueItem()
-  const deleteItem = useDeleteActionQueueItem()
+  const [activeTab, setActiveTab] = useState<QueueTabKey>(validTab)
+  const [search, setSearch] = useState(searchParams.get('q') ?? '')
+  const [priority, setPriority] = useState<string>(searchParams.get('priority') ?? 'ALL')
+  const [status, setStatus] = useState<string>(searchParams.get('status') ?? 'ALL')
+  const [type, setType] = useState<string>(searchParams.get('queueType') ?? 'ALL')
+  const [showFilters, setShowFilters] = useState(false)
 
+  const filters = useMemo(
+    () => ({
+      tab: activeTab === 'ALL' ? undefined : activeTab,
+      queueType: type === 'ALL' ? undefined : type,
+      status: status === 'ALL' ? undefined : status,
+      priority: priority === 'ALL' ? undefined : priority,
+      q: search.trim() || undefined,
+    }),
+    [activeTab, type, status, priority, search],
+  )
+
+  const { data, isLoading, isFetching } = useActionQueue(filters)
   const items = data?.data ?? []
+  const meta = data?.meta
 
-  const itemCounts = useMemo(() => {
-    return {
-      PENDING: data?.meta?.counts?.PENDING ?? 0,
-      IN_PROGRESS: data?.meta?.counts?.IN_PROGRESS ?? 0,
-      COMPLETED: data?.meta?.counts?.COMPLETED ?? 0,
-      FAILED: data?.meta?.counts?.FAILED ?? 0,
+  const handleTabChange = (tab: QueueTabKey) => {
+    setActiveTab(tab)
+    const params = new URLSearchParams()
+    if (tab !== 'ALL') params.set('tab', tab)
+    router.replace(`/admin/action-queue${params.toString() ? `?${params}` : ''}`, { scroll: false })
+  }
+
+  const clearFilters = () => {
+    setSearch('')
+    setPriority('ALL')
+    setStatus('ALL')
+    setType('ALL')
+  }
+
+  const hasActiveFilter = search.trim() !== '' || priority !== 'ALL' || status !== 'ALL' || type !== 'ALL'
+
+  const tabCounts = useMemo(() => {
+    if (!meta?.tabCounts) {
+      return {
+        ALL: 0,
+        MERCHANT_APPLICATIONS: 0,
+        OFFER_APPROVALS: 0,
+        COMPANY_ACTIVATION: 0,
+        ISSUES: 0,
+        ALERTS: 0,
+      }
     }
-  }, [data])
-
-  const pendingItems = useMemo(() => items.filter((i: any) => i.status === 'PENDING'), [items])
-
-  const handleStatusUpdate = useCallback((id: string, status: string) => {
-    updateItem.mutate(
-      { id, status },
-      {
-        onSuccess: (res: any) => {
-          showToast({ type: 'success', title: res.message ?? `Item ${status.toLowerCase()}` })
-          setSelectedItem(null)
-        },
-        onError: (err: Error) => showToast({ type: 'error', title: 'Update failed', description: err.message }),
-      },
-    )
-  }, [updateItem])
-
-  const handleSkip = useCallback((id: string) => {
-    deleteItem.mutate(id, {
-      onSuccess: (res: any) => {
-        showToast({ type: 'success', title: res.message ?? 'Item skipped' })
-        setSelectedItem(null)
-      },
-      onError: (err: Error) => showToast({ type: 'error', title: 'Failed to skip', description: err.message }),
-    })
-  }, [deleteItem])
+    return {
+      ALL: meta.tabCounts.ALL ?? 0,
+      MERCHANT_APPLICATIONS: meta.tabCounts.MERCHANT_APPLICATIONS ?? 0,
+      OFFER_APPROVALS: meta.tabCounts.OFFER_APPROVALS ?? 0,
+      COMPANY_ACTIVATION: meta.tabCounts.COMPANY_ACTIVATION ?? 0,
+      ISSUES: meta.tabCounts.ISSUES ?? 0,
+      ALERTS: meta.tabCounts.ALERTS ?? 0,
+    }
+  }, [meta])
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Action Queue" description="Review and process pending actions from merchants, companies, and employees" />
-
-      {/* Tabs */}
-      <div className="flex gap-4 border-b">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`pb-2 text-sm font-medium ${activeTab === tab.key ? 'border-b-2 border-primary text-primary' : 'text-muted-foreground'}`}
-          >
-            {tab.label}
-            {tab.key !== 'ALL' && (
-              <span className="ml-1.5 rounded-full bg-muted px-1.5 text-[10px]">{itemCounts[tab.key]}</span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Search */}
-      <input
-        type="text"
-        placeholder="Search actions..."
-        className="w-full rounded-lg border px-4 py-2 text-sm"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
+      <PageHeader
+        title="Operations Center"
+        description="Centralized approval and review inbox for all admin workflows"
       />
 
-      {/* Table */}
+      <div className="flex gap-1 border-b overflow-x-auto">
+        {TAB_KEYS.map((tab) => {
+          const count = tabCounts[tab.key as keyof typeof tabCounts] ?? 0
+          const isActive = activeTab === tab.key
+          return (
+            <button
+              key={tab.key}
+              onClick={() => handleTabChange(tab.key)}
+              className={`relative whitespace-nowrap px-4 py-2 text-sm font-medium transition-colors ${
+                isActive
+                  ? 'border-b-2 border-primary text-primary'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {tab.label}
+              {count > 0 && (
+                <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] ${
+                  isActive ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'
+                }`}>
+                  {count}
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search by title or description…"
+            className="w-full rounded-md border bg-background py-2 pl-9 pr-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowFilters((v) => !v)}
+            className="gap-1"
+          >
+            <Filter className="h-4 w-4" />
+            Filters
+            {hasActiveFilter && (
+              <span className="ml-1 rounded-full bg-primary px-1.5 py-0.5 text-[10px] text-primary-foreground">
+                {[priority, status, type].filter(v => v !== 'ALL').length + (search ? 1 : 0)}
+              </span>
+            )}
+          </Button>
+          {hasActiveFilter && (
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              <X className="h-3 w-3" />Clear
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {showFilters && (
+        <div className="grid gap-3 rounded-md border bg-muted/20 p-4 sm:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Priority</label>
+            <select
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={priority}
+              onChange={(e) => setPriority(e.target.value)}
+            >
+              {PRIORITY_OPTIONS.map((p) => (
+                <option key={p} value={p}>
+                  {p === 'ALL' ? 'All Priorities' : p}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Status</label>
+            <select
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+            >
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s === 'ALL' ? 'All Statuses' : s.replace(/_/g, ' ')}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">Type</label>
+            <select
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+            >
+              {TYPE_OPTIONS.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/30 text-left text-muted-foreground">
-              <th className="w-10 px-4 py-3 font-medium"></th>
-              <th className="px-4 py-3 font-medium">Title</th>
               <th className="px-4 py-3 font-medium">Type</th>
-              <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium">Entity</th>
+              <th className="px-4 py-3 font-medium">Title</th>
               <th className="px-4 py-3 font-medium">Priority</th>
+              <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Created</th>
-              <th className="px-4 py-3 font-medium text-right">Actions</th>
+              <th className="px-4 py-3 text-right font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {isLoading ? (
-              <tr><td colSpan={7} className="p-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="mb-2 h-8 w-full" />)}</td></tr>
+            {isLoading || isFetching ? (
+              <tr>
+                <td colSpan={7} className="p-4">
+                  <div className="space-y-2">
+                    {[...Array(4)].map((_, i) => (
+                      <Skeleton key={i} className="h-10 w-full" />
+                    ))}
+                  </div>
+                </td>
+              </tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={7} className="py-8 text-center text-muted-foreground">No action queue items found</td></tr>
+              <tr>
+                <td colSpan={7} className="py-8 text-center text-muted-foreground">
+                  No items found
+                </td>
+              </tr>
             ) : (
-              items.map((item: any) => (
-                <tr key={item.id} className="border-b last:border-0 hover:bg-muted/30">
-                  <td className="px-4 py-3"><TaskProgress status={item.status} /></td>
-                  <td className="px-4 py-3">
-                    <p className="font-medium">{item.title}</p>
-                    {item.description && <p className="text-xs text-muted-foreground">{item.description}</p>}
-                  </td>
-                  <td className="px-4 py-3 text-xs">{item.type.replace(/_/g, ' ')}</td>
-                  <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
-                  <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${item.priority >= 4 ? 'bg-red-100 text-red-700' : item.priority >= 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'}`}>
-                      {item.priority >= 4 ? 'High' : item.priority >= 3 ? 'Medium' : 'Low'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{new Date(item.createdAt).toLocaleDateString('en-US')}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      {item.status === 'PENDING' && (
-                        <>
-                          <Button size="sm" variant="success" className="h-7 px-2 text-xs" onClick={() => handleStatusUpdate(item.id, 'IN_PROGRESS')}>
-                            <CheckCircle2 className="mr-1 h-3 w-3" />Claim
-                          </Button>
-                          <Button size="sm" variant="destructive" className="h-7 px-2 text-xs" onClick={() => handleSkip(item.id)}>
-                            <XCircle className="mr-1 h-3 w-3" />Skip
-                          </Button>
-                        </>
+              items.map((item: any) => {
+                const displayType = getDisplayType(item)
+                const entityName = getEntityName(item)
+                const priorityLabel = getPriorityLabel(item.priority)
+                return (
+                  <tr key={item.id} className="border-b last:border-0 hover:bg-muted/30">
+                    <td className="px-4 py-3">
+                      <span className="rounded bg-muted px-2 py-0.5 text-xs font-medium">
+                        {displayType}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-muted-foreground">{entityName}</td>
+                    <td className="px-4 py-3">
+                      <p className="font-medium">{item.title}</p>
+                      {item.description && (
+                        <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+                          {item.description}
+                        </p>
                       )}
-                      {item.status === 'IN_PROGRESS' && (
-                        <Button size="sm" variant="success" className="h-7 px-2 text-xs" onClick={() => handleStatusUpdate(item.id, 'COMPLETED')}>
-                          <CheckCircle2 className="mr-1 h-3 w-3" />Complete
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${getPriorityStyle(item.priority)}`}>
+                        {priorityLabel}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${getStatusStyle(item.status)}`}>
+                        {item.status.replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                      {new Date(item.createdAt).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link href={`/admin/action-queue/${item.id}`}>
+                        <Button size="sm" variant="outline" className="h-7 px-3 text-xs">
+                          <ExternalLink className="mr-1 h-3 w-3" />Review
                         </Button>
-                      )}
-                      <Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setSelectedItem(item)}>
-                        <Eye className="mr-1 h-3 w-3" />View
-                      </Button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+                      </Link>
+                    </td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>
       </div>
 
-     
-
-      {/* Detail modal */}
-      {selectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setSelectedItem(null)}>
-          <div className="mx-4 w-full max-w-lg rounded-lg border bg-card p-6 shadow-lg" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold">{selectedItem.title}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">{selectedItem.description}</p>
-            <div className="mt-3 flex flex-wrap gap-2 text-sm">
-              <StatusBadge status={selectedItem.status} />
-              <span className="rounded bg-muted px-2 py-0.5 text-xs">{selectedItem.type.replace(/_/g, ' ')}</span>
-              <span className="text-muted-foreground">Ref: {selectedItem.referenceId}</span>
-            </div>
-            <div className="mt-6 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setSelectedItem(null)}>Cancel</Button>
-              {selectedItem.status === 'PENDING' && (
-                <>
-                  <Button variant="success" onClick={() => handleStatusUpdate(selectedItem.id, 'IN_PROGRESS')}>
-                    <CheckCircle2 className="mr-1 h-4 w-4" />Claim
-                  </Button>
-                  <Button variant="destructive" onClick={() => handleSkip(selectedItem.id)}>
-                    <XCircle className="mr-1 h-4 w-4" />Skip
-                  </Button>
-                </>
-              )}
-              {selectedItem.status === 'IN_PROGRESS' && (
-                <Button variant="success" onClick={() => handleStatusUpdate(selectedItem.id, 'COMPLETED')}>
-                  <CheckCircle2 className="mr-1 h-4 w-4" />Complete
-                </Button>
-              )}
-            </div>
-          </div>
+      {meta && meta.totalPages > 1 && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            Showing {items.length} of {meta.total} items
+          </span>
+          <span>
+            Page {meta.page} of {meta.totalPages}
+          </span>
         </div>
       )}
     </div>

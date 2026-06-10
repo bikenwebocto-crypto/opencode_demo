@@ -45,7 +45,7 @@ export default function MerchantOffersPage() {
   const meta = data?.meta ?? { total: 0, totalPages: 1 }
 
   const columns: ColumnDef<any>[] = [
-    { key: 'title', header: 'Title' },
+    { key: 'title', header: 'Title' , render: (o: any) => <span className="font-medium">{o.title}</span> },
     {
       key: 'offerType',
       header: 'Type',
