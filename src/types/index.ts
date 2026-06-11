@@ -9,7 +9,7 @@ import type { Prisma } from '@prisma/client';
 // ============================================================
 
 export type AccountRole = 'SUPER_ADMIN' | 'COMPANY_ADMIN' | 'EMPLOYEE' | 'MERCHANT';
-export type ProfileType = 'ADMIN' | 'COMPANY_ADMIN' | 'EMPLOYEE' | 'MERCHANT';
+export type ProfileType = 'ADMIN' | 'COMPANY' | 'EMPLOYEE' | 'MERCHANT';
 export type AccountStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'PENDING';
 export type AdminRole = 'SUPER_ADMIN' | 'SUPPORT_ADMIN' | 'FINANCE_ADMIN' | 'CONTENT_ADMIN';
 export type MerchantStatus = 'PENDING' | 'ACTIVE' | 'PAUSED' | 'SUSPENDED' | 'ARCHIVED' | 'REJECTED';

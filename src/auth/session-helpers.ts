@@ -76,7 +76,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       role,
       userType,
       companyId,
-      profileType: role === 'admin' ? 'ADMIN' : role === 'merchant' ? 'MERCHANT' : role === 'company_admin' ? 'COMPANY_ADMIN' : 'EMPLOYEE',
+      profileType: role === 'admin' ? 'ADMIN' : role === 'merchant' ? 'MERCHANT' : role === 'company_admin' ? 'COMPANY' : 'EMPLOYEE',
       profileId,
       profile,
     }

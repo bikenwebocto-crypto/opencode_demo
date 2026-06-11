@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
           email,
           role: 'COMPANY_ADMIN',
           profileId: companyAdmin.id,
-          profileType: 'COMPANY_ADMIN',
+          profileType: 'COMPANY',
           status: 'ACTIVE',
         },
       });
