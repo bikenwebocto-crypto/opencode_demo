@@ -227,6 +227,12 @@ export default function MerchantOffersPage() {
             {t.label}
           </button>
         ))}
+        <Link
+          href="/merchant/offers/archived"
+          className="ml-auto inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+        >
+          <History className="h-4 w-4" /> Archived →
+        </Link>
       </div>
 
       <div className="flex items-center gap-3">

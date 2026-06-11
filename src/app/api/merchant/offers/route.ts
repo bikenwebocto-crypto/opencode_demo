@@ -146,6 +146,8 @@ export async function GET(request: NextRequest) {
       where.status = { in: ["REPLACED", "EXPIRED", "ARCHIVED"] };
     } else if (scope === "drafts") {
       where.status = { in: ["DRAFT", "VALIDATION_FAILED"] };
+    } else if (scope === "archived") {
+      where.status = "ARCHIVED";
     }
 
     const [offers, total] = await Promise.all([

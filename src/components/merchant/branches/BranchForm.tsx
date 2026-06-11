@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { GooglePlacesAutocomplete, type PlaceResult } from './GooglePlacesAutocomplete'
 
 import {
   BRANCH_TYPE_OPTIONS,
@@ -13,7 +14,7 @@ import {
   type BranchOpeningHour,
 } from '@/lib/branch-helpers'
 import type { BranchStatus, BranchType } from '@/types'
-import { Building2, Globe, Save, MapPin, Clock, Accessibility, ImageIcon, Info, CheckCircle, XCircle, ExternalLink } from 'lucide-react'
+import { Building2, Globe, Save, MapPin, Clock, Accessibility, ImageIcon, Info, ExternalLink } from 'lucide-react'
 export interface BranchFormValues {
   name: string
   addressLine1: string
@@ -109,57 +110,21 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
     onSubmit(values)
   }
 
-  const [verificationStatus, setVerificationStatus] = useState<'IDLE' | 'VERIFIED' | 'FAILED'>('IDLE')
-  const [verifying, setVerifying] = useState(false)
-  const [verifyError, setVerifyError] = useState<string | null>(null)
-  const [addressConfirmed, setAddressConfirmed] = useState(false)
-
   const isOnline = values.branchType === 'ONLINE'
   const isDelivery = isOnline && (values.isNationwide || (values.deliveryRadiusKm ?? 0) > 0)
   const needsAddress = !isOnline || isDelivery
 
-  async function handleVerifyAddress() {
-    const parts = [values.addressLine1, values.city, values.state, values.postalCode, values.country]
-      .filter(Boolean)
-      .join(', ')
-    if (!parts) {
-      setVerifyError('Please fill in the address fields first.')
-      return
-    }
-    setVerifying(true)
-    setVerifyError(null)
-    setVerificationStatus('IDLE')
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(parts)}&format=jsonv2&limit=1`,
-        { headers: { 'Accept-Language': 'en' } }
-      )
-      if (!res.ok) throw new Error('Nominatim service unavailable')
-      const data = await res.json()
-      if (!data || data.length === 0) {
-        setVerificationStatus('FAILED')
-        setVerifyError('Unable to verify this address. Please check address details.')
-        return
-      }
-      const result = data[0]
-      setValues((prev) => ({
-        ...prev,
-        latitude: Number(Number(result.lat).toFixed(7)),
-        longitude: Number(Number(result.lon).toFixed(7)),
-      }))
-      setVerificationStatus('VERIFIED')
-    } catch (err: any) {
-      setVerificationStatus('FAILED')
-      setVerifyError(err?.message ?? 'Network error. Please try again.')
-    } finally {
-      setVerifying(false)
-    }
-  }
-
-  async function handleReVerify() {
-    setVerificationStatus('IDLE')
-    setAddressConfirmed(false)
-    setVerifyError(null)
+  function handlePlaceSelected(place: PlaceResult) {
+    setValues((prev) => ({
+      ...prev,
+      addressLine1: place.addressLine1,
+      city: place.city,
+      state: place.state,
+      country: place.country,
+      postalCode: place.postalCode,
+      latitude: place.latitude,
+      longitude: place.longitude,
+    }))
   }
 
   return (
@@ -278,14 +243,21 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
 
           {needsAddress && (
             <>
+              <div className="space-y-1">
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Search Address</label>
+                <GooglePlacesAutocomplete
+                  onPlaceSelected={handlePlaceSelected}
+                  disabled={submitting}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Search for a location to auto-fill the fields below.
+                </p>
+              </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Address Line 1 *</label>
                 <Input
                   value={values.addressLine1}
-                  onChange={(e) => {
-                    setField('addressLine1', e.target.value)
-                    if (verificationStatus === 'VERIFIED') setVerificationStatus('IDLE')
-                  }}
+                  onChange={(e) => setField('addressLine1', e.target.value)}
                   placeholder="Street address"
                 />
                 {errors.addressLine1 && <p className="mt-1 text-xs text-destructive">{errors.addressLine1}</p>}
@@ -301,67 +273,27 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
               <div className="grid gap-3 sm:grid-cols-3">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">City *</label>
-                  <Input
-                    value={values.city}
-                    onChange={(e) => {
-                      setField('city', e.target.value)
-                      if (verificationStatus === 'VERIFIED') setVerificationStatus('IDLE')
-                    }}
-                  />
+                  <Input value={values.city} onChange={(e) => setField('city', e.target.value)} />
                   {errors.city && <p className="mt-1 text-xs text-destructive">{errors.city}</p>}
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">State / Province</label>
-                  <Input
-                    value={values.state}
-                    onChange={(e) => {
-                      setField('state', e.target.value)
-                      if (verificationStatus === 'VERIFIED') setVerificationStatus('IDLE')
-                    }}
-                  />
+                  <Input value={values.state} onChange={(e) => setField('state', e.target.value)} />
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">Postal Code</label>
-                  <Input
-                    value={values.postalCode}
-                    onChange={(e) => {
-                      setField('postalCode', e.target.value)
-                      if (verificationStatus === 'VERIFIED') setVerificationStatus('IDLE')
-                    }}
-                  />
+                  <Input value={values.postalCode} onChange={(e) => setField('postalCode', e.target.value)} />
                 </div>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Country *</label>
                 <Input
                   value={values.country}
-                  onChange={(e) => {
-                    setField('country', e.target.value)
-                    if (verificationStatus === 'VERIFIED') setVerificationStatus('IDLE')
-                  }}
+                  onChange={(e) => setField('country', e.target.value)}
                   placeholder="e.g. United States"
                 />
                 {errors.country && <p className="mt-1 text-xs text-destructive">{errors.country}</p>}
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={verificationStatus === 'VERIFIED' ? handleReVerify : handleVerifyAddress}
-                  disabled={verifying || submitting}
-                >
-                  {verifying ? 'Verifying…' : verificationStatus === 'VERIFIED' ? 'Re-verify Address' : 'Verify Address'}
-                </Button>
-                {verificationStatus === 'VERIFIED' && (
-                  <span className="inline-flex items-center gap-1 text-xs text-green-600">
-                    <CheckCircle className="h-3 w-3" /> Address verified successfully.
-                  </span>
-                )}
-              </div>
-              {verifyError && (
-                <p className="text-xs text-destructive">{verifyError}</p>
-              )}
             </>
           )}
 
@@ -387,23 +319,13 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <MapPin className="h-5 w-5" /> Location Verification
+              <MapPin className="h-5 w-5" /> Location Details
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium">Status:</span>
-              {verificationStatus === 'VERIFIED' ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                  <CheckCircle className="h-3 w-3" /> Verified
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
-                  <XCircle className="h-3 w-3" /> Not Verified
-                </span>
-              )}
-            </div>
-
+            <p className="text-xs text-muted-foreground">
+              Coordinates are populated automatically when you select an address from the search above. They are read-only.
+            </p>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Latitude *</label>
@@ -428,22 +350,6 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
                 {errors.longitude && <p className="mt-1 text-xs text-destructive">{errors.longitude}</p>}
               </div>
             </div>
-
-            {verificationStatus === 'VERIFIED' && values.latitude != null && values.longitude != null && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  window.open(
-                    `https://www.google.com/maps/search/?api=1&query=${values.latitude},${values.longitude}`,
-                    '_blank'
-                  )
-                }
-              >
-                <ExternalLink className="mr-1 h-3 w-3" /> Open In Google Maps
-              </Button>
-            )}
           </CardContent>
         </Card>
       )}
@@ -618,43 +524,15 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
         </label>
       )}
 
-      {needsAddress && verificationStatus === 'VERIFIED' && (
-        <label className="flex items-start gap-2 rounded-md border p-3 text-sm">
-          <input
-            type="checkbox"
-            checked={addressConfirmed}
-            onChange={(e) => setAddressConfirmed(e.target.checked)}
-            className="mt-0.5 h-4 w-4"
-          />
-          <span>I confirm this branch location is correct.</span>
-        </label>
-      )}
-
       <div className="sticky bottom-0 -mx-4 flex items-center justify-end gap-2 border-t bg-background/95 px-4 py-3 sm:-mx-6 sm:px-6">
         <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
           Cancel
         </Button>
-        <Button
-          type="submit"
-          disabled={submitting || (needsAddress && !addressConfirmed) || (needsAddress && verificationStatus !== 'VERIFIED')}
-          title={
-            needsAddress && verificationStatus !== 'VERIFIED'
-              ? 'Please verify the address first.'
-              : needsAddress && !addressConfirmed
-              ? 'Please confirm the branch location.'
-              : undefined
-          }
-        >
+        <Button type="submit" disabled={submitting}>
           <Save className="mr-1 h-4 w-4" />
           {submitting ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Branch'}
         </Button>
       </div>
-
-      {needsAddress && (verificationStatus !== 'VERIFIED' || !addressConfirmed) && (
-        <p className="text-xs text-destructive">
-          Please verify and confirm the branch location.
-        </p>
-      )}
     </form>
   )
 }

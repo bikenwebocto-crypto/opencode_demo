@@ -1,0 +1,380 @@
+'use client'
+
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { PageHeader } from '@/components/shared/page-header'
+import { showToast } from '@/hooks/use-toast'
+import { Building2, Save, MapPin, Globe, Phone, Mail, Image as ImageIcon, AlertCircle, Lock, CheckCircle, XCircle } from 'lucide-react'
+
+interface Category {
+  id: string
+  name: string
+  slug: string
+}
+
+interface MerchantProfile {
+  id: string
+  businessName: string
+  email: string
+  contactName: string
+  contactPhone: string | null
+  description: string | null
+  logoUrl: string | null
+  coverImageUrl: string | null
+  website: string | null
+  categoryId: string | null
+  status: string
+  addressLine1: string | null
+  addressLine2: string | null
+  city: string | null
+  state: string | null
+  postalCode: string | null
+  country: string | null
+  socialLinks: any
+  businessHours: any
+  tags: string[]
+  category: Category | null
+  _count: { offers: number; branches: number; redemptions: number }
+}
+
+async function fetchProfile(): Promise<MerchantProfile> {
+  const res = await fetch('/api/merchant/profile')
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error?.message ?? 'Failed to load profile')
+  return json.data
+}
+
+export default function MerchantProfilePage() {
+  const queryClient = useQueryClient()
+  const { data: profile, isLoading } = useQuery({
+    queryKey: ['merchant-profile'],
+    queryFn: fetchProfile,
+  })
+
+  const [form, setForm] = useState<Partial<MerchantProfile> | null>(null)
+  const [changeReason, setChangeReason] = useState('')
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  const update = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const res = await fetch('/api/merchant/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to update profile')
+      return json
+    },
+    onSuccess: (json) => {
+      queryClient.invalidateQueries({ queryKey: ['merchant-profile'] })
+      setChangeReason('')
+      setErrors({})
+      if (json.requiresApproval) {
+        showToast({
+          type: 'info',
+          title: 'Submitted for review',
+          description: 'Sensitive changes require admin approval and are pending.',
+        })
+      } else {
+        showToast({ type: 'success', title: 'Profile updated' })
+      }
+    },
+    onError: (e: any) => {
+      showToast({ type: 'error', title: 'Update failed', description: e?.message })
+    },
+  })
+
+  if (isLoading || !profile) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Profile" description="Manage your merchant profile" />
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    )
+  }
+
+  const values: any = form ?? profile
+  const setField = (k: string, v: unknown) => {
+    setForm((prev) => ({ ...(prev ?? profile), [k]: v } as any))
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setErrors({})
+    const payload: Record<string, unknown> = {}
+    for (const f of [
+      'contactName',
+      'contactPhone',
+      'description',
+      'website',
+      'coverImageUrl',
+      'socialLinks',
+      'businessHours',
+      'tags',
+      'businessName',
+      'categoryId',
+      'logoUrl',
+    ]) {
+      const a = (profile as any)[f]
+      const b = (values as any)[f]
+      if (JSON.stringify(a ?? null) !== JSON.stringify(b ?? null)) {
+        payload[f] = b
+      }
+    }
+    if (Object.keys(payload).length === 0) {
+      showToast({ type: 'info', title: 'No changes to save' })
+      return
+    }
+    const needsApproval = ['businessName', 'categoryId', 'logoUrl'].some((f) => f in payload)
+    if (needsApproval) payload.changeReason = changeReason
+    update.mutate(payload)
+  }
+
+  const isPendingApproval = profile.status === 'PENDING' || profile.status === 'PAUSED'
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Profile"
+        description="Manage your business profile, contact details, and online presence"
+      />
+
+      {isPendingApproval && (
+        <div className="flex items-start gap-2 rounded-md bg-yellow-50 p-3 text-sm text-yellow-900 dark:bg-yellow-900/20 dark:text-yellow-300">
+          <AlertCircle className="mt-0.5 h-4 w-4" />
+          <div>
+            <p className="font-medium">Account is {profile.status}</p>
+            <p className="text-xs">Some fields are read-only until your account is approved.</p>
+          </div>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Building2 className="h-5 w-5" /> Business Information
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Business Name
+                </label>
+                <Input
+                  value={values.businessName ?? ''}
+                  onChange={(e) => setField('businessName', e.target.value)}
+                  readOnly={isPendingApproval}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Changing this requires admin approval.
+                </p>
+                {errors.businessName && <p className="mt-1 text-xs text-destructive">{errors.businessName}</p>}
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Email</label>
+                <Input value={values.email ?? ''} readOnly className="bg-muted/30" />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  <Lock className="inline h-3 w-3" /> Email cannot be changed here. Go to Settings.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Contact Name *
+                </label>
+                <Input
+                  value={values.contactName ?? ''}
+                  onChange={(e) => setField('contactName', e.target.value)}
+                />
+                {errors.contactName && <p className="mt-1 text-xs text-destructive">{errors.contactName}</p>}
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Contact Phone
+                </label>
+                <Input
+                  value={values.contactPhone ?? ''}
+                  onChange={(e) => setField('contactPhone', e.target.value)}
+                  placeholder="+1 555-0100"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Description
+              </label>
+              <textarea
+                rows={3}
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={values.description ?? ''}
+                onChange={(e) => setField('description', e.target.value)}
+                placeholder="Tell employees about your business…"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">Website</label>
+              <Input
+                value={values.website ?? ''}
+                onChange={(e) => setField('website', e.target.value)}
+                placeholder="https://example.com"
+              />
+              {errors.website && <p className="mt-1 text-xs text-destructive">{errors.website}</p>}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <ImageIcon className="h-5 w-5" /> Branding
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Logo URL
+                </label>
+                <Input
+                  value={values.logoUrl ?? ''}
+                  onChange={(e) => setField('logoUrl', e.target.value)}
+                  placeholder="https://…"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Changing this requires admin approval.
+                </p>
+                {errors.logoUrl && <p className="mt-1 text-xs text-destructive">{errors.logoUrl}</p>}
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                  Cover Image URL
+                </label>
+                <Input
+                  value={values.coverImageUrl ?? ''}
+                  onChange={(e) => setField('coverImageUrl', e.target.value)}
+                  placeholder="https://…"
+                />
+              </div>
+            </div>
+            {values.logoUrl && (
+              <img
+                src={values.logoUrl}
+                alt="Logo preview"
+                className="h-20 w-20 rounded-md border object-cover"
+              />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <MapPin className="h-5 w-5" /> Headquarters Address
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              This is the merchant's primary address. For per-location addresses, go to Branches.
+            </p>
+            <Input
+              value={values.addressLine1 ?? ''}
+              readOnly
+              className="bg-muted/30"
+              placeholder="No address on file"
+            />
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Input value={values.city ?? ''} readOnly className="bg-muted/30" placeholder="City" />
+              <Input value={values.state ?? ''} readOnly className="bg-muted/30" placeholder="State" />
+              <Input value={values.postalCode ?? ''} readOnly className="bg-muted/30" placeholder="Postal" />
+            </div>
+            <Input value={values.country ?? ''} readOnly className="bg-muted/30" placeholder="Country" />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <CheckCircle className="h-5 w-5" /> Sensitive Changes (require approval)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Changes to <strong>Business Name</strong>, <strong>Category</strong>, or <strong>Logo</strong> require
+              admin review. Provide a reason below.
+            </p>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Category
+              </label>
+              <select
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={values.categoryId ?? ''}
+                onChange={(e) => setField('categoryId', e.target.value || null)}
+              >
+                <option value="">— No category —</option>
+                <option value={profile.category?.id}>{profile.category?.name ?? 'Current'}</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Change reason (required for sensitive changes)
+              </label>
+              <textarea
+                rows={2}
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={changeReason}
+                onChange={(e) => setChangeReason(e.target.value)}
+                placeholder="Why are you requesting this change?"
+              />
+              {errors.changeReason && <p className="mt-1 text-xs text-destructive">{errors.changeReason}</p>}
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="sticky bottom-0 -mx-4 flex items-center justify-end gap-2 border-t bg-background/95 px-4 py-3 sm:-mx-6 sm:px-6">
+          <Button type="button" variant="outline" onClick={() => setForm(null)} disabled={update.isPending}>
+            Reset
+          </Button>
+          <Button type="submit" disabled={update.isPending}>
+            <Save className="mr-1 h-4 w-4" />
+            {update.isPending ? 'Saving…' : 'Save Profile'}
+          </Button>
+        </div>
+      </form>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Stats</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-md bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Offers</p>
+              <p className="text-2xl font-bold">{profile._count.offers}</p>
+            </div>
+            <div className="rounded-md bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Branches</p>
+              <p className="text-2xl font-bold">{profile._count.branches}</p>
+            </div>
+            <div className="rounded-md bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">Total Redemptions</p>
+              <p className="text-2xl font-bold">{profile._count.redemptions}</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}

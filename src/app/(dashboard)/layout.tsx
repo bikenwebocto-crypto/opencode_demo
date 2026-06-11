@@ -33,9 +33,15 @@ const pageTitles: Record<string, string> = {
   '/company/analytics': 'Analytics',
   '/company/billing': 'Billing',
   '/company/settings': 'Settings',
-  '/employee': 'Available Offers',
+  '/employee': 'Employee Home',
+  '/employee/offers': 'Available Offers',
+  '/employee/offers/[id]': 'Offer Details',
+  '/employee/saved': 'Saved Offers',
   '/employee/redemptions': 'My Redemptions',
+  '/employee/notifications': 'Notifications',
   '/employee/profile': 'My Profile',
+  '/employee/settings': 'Settings',
+  '/admin/analytics': 'Platform Analytics',
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
