@@ -1,4 +1,3 @@
-import { createClient } from '@/lib/supabase/client'
 import type { UploadConfig, UploadResult } from '@/types'
 
 export class UploadService {
@@ -10,69 +9,55 @@ export class UploadService {
     this.validateFile(file, config)
 
     const path = this.resolvePath(config.path, pathParams)
-    const supabase = createClient()
 
-    const { data, error } = await supabase.storage
-      .from(config.bucket)
-      .upload(path, file, {
-        cacheControl: '3600',
-        upsert: true,
-        contentType: file.type,
-      })
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('path', path)
+    formData.append('bucket', config.bucket)
 
-    if (error) throw new Error(`Upload failed: ${error.message}`)
-
-    const { data: urlData } = supabase.storage
-      .from(config.bucket)
-      .getPublicUrl(data.path)
-
+    const res = await fetch('/api/upload', { method: 'POST', body: formData })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.error?.message ?? 'Upload failed')
+    }
+    const json = await res.json()
     return {
-      url: urlData.publicUrl,
-      path: data.path,
+      url: json.url ?? '',
+      path,
       size: file.size,
       mimeType: file.type,
     }
   }
 
-  async getSignedUploadUrl(
-    config: UploadConfig,
-    pathParams: Record<string, string>,
-    expiresIn = 60
-  ): Promise<string> {
-    const path = this.resolvePath(config.path, pathParams)
-    const supabase = createClient()
-
-    const { data, error } = await supabase.storage
-      .from(config.bucket)
-      .createSignedUploadUrl(path, { upsert: true })
-
-    if (error) throw new Error(`Signed URL generation failed: ${error.message}`)
-    return data.signedUrl
+  async getPublicUrl(bucket: string, path: string): Promise<string> {
+    return `/api/upload/public?bucket=${encodeURIComponent(bucket)}&path=${encodeURIComponent(path)}`
   }
 
-  async delete(path: string, bucket: string): Promise<void> {
-    const supabase = createClient()
-    const { error } = await supabase.storage.from(bucket).remove([path])
-    if (error) throw new Error(`Delete failed: ${error.message}`)
+  async delete(bucket: string, path: string): Promise<{ success: boolean; error?: string }> {
+    const res = await fetch(`/api/upload?bucket=${encodeURIComponent(bucket)}&path=${encodeURIComponent(path)}`, {
+      method: 'DELETE',
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      return { success: false, error: body.error?.message ?? 'Delete failed' }
+    }
+    return { success: true }
   }
 
   private validateFile(file: File, config: UploadConfig): void {
-    if (file.size > config.maxSizeBytes) {
-      const maxMB = config.maxSizeBytes / (1024 * 1024)
-      throw new Error(`File too large. Maximum size is ${maxMB}MB`)
+    if (config.maxSizeBytes && file.size > config.maxSizeBytes) {
+      throw new Error(`File too large. Max ${config.maxSizeBytes} bytes`)
     }
-    if (!config.allowedMimeTypes.includes(file.type)) {
-      throw new Error(`Invalid file type. Allowed: ${config.allowedMimeTypes.join(', ')}`)
+    if (config.allowedMimeTypes && !config.allowedMimeTypes.includes(file.type)) {
+      throw new Error(`File type ${file.type} not allowed`)
     }
   }
 
   private resolvePath(template: string, params: Record<string, string>): string {
-    let resolved = template
-    for (const [key, value] of Object.entries(params)) {
-      resolved = resolved.replace(`{${key}}`, value)
-    }
-    return `${resolved}/${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+    return Object.entries(params).reduce(
+      (p, [k, v]) => p.replace(`{${k}}`, v),
+      template
+    )
   }
 }
-
 export const uploadService = new UploadService()

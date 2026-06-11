@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { getCurrentUser } from '@/lib/supabase/server'
+import { getCurrentUser } from '@/lib/session'
 import { NextResponse } from 'next/server'
 
 export async function getCompanyAdmin() {

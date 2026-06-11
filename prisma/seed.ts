@@ -13,6 +13,7 @@ async function main() {
 
   // Clean existing data in dependency order
   await prisma.$transaction([
+    prisma.user.deleteMany(),
     prisma.renewalGamingAlert.deleteMany(),
     prisma.realtimeEvent.deleteMany(),
     prisma.emailVerificationToken.deleteMany(),
@@ -572,6 +573,31 @@ async function main() {
   console.log('   Company Admin: john@techcorp.com');
   console.log('   Employee:      techcorp.emp1@techcorp-inc.com');
   console.log(`   Merchants:     ${createdMerchants.map((m) => m.email).join(', ')}`);
+
+  // ── NextAuth Users (mapped 1:1 to existing role profiles by email) ──
+  console.log('');
+  console.log('👤 Seeding NextAuth users…');
+  const defaultPassword = await hashPassword('Password123!');
+  const nextAuthUsers: Array<{ email: string; fullName: string; role: 'admin' | 'merchant' | 'company_admin' | 'employee' }> = [
+    { email: 'admin@perks.com', fullName: 'Super Admin', role: 'admin' },
+    { email: createdMerchants[0]?.email ?? 'joe@coffee.com', fullName: 'Joe Brewster', role: 'merchant' },
+    { email: 'john@techcorp.com', fullName: 'John Doe', role: 'company_admin' },
+    { email: 'techcorp.emp1@techcorp-inc.com', fullName: 'Alice Johnson', role: 'employee' },
+  ];
+  for (const u of nextAuthUsers) {
+    const existing = await prisma.user.findUnique({ where: { email: u.email } })
+    if (!existing) {
+      await prisma.user.create({
+        data: {
+          email: u.email,
+          passwordHash: defaultPassword,
+          fullName: u.fullName,
+          role: u.role,
+        },
+      })
+      console.log(`   ✓ ${u.role.padEnd(14)} ${u.email}`)
+    }
+  }
 }
 
 main()

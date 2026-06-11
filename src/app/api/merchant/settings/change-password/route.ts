@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
-import { getCurrentUser } from '@/lib/supabase/server'
+import { getCurrentUser } from '@/lib/session'
 import { getMerchantFromSession } from '@/lib/merchant-session'
 
 function unauthorized() {

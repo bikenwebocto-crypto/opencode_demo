@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { resolveAuthenticatedUser } from '@/lib/supabase/server'
+import { resolveAuthenticatedUser } from '@/lib/session'
 
 export async function GET() {
   const resolved = await resolveAuthenticatedUser()

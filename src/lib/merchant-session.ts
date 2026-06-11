@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma'
-import { getCurrentUser } from '@/lib/supabase/server'
+import { getCurrentUser } from '@/lib/session'
 
 export async function getMerchantFromSession() {
   const user = await getCurrentUser()

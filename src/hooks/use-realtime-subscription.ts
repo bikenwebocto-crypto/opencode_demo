@@ -4,8 +4,7 @@ import { useEffect, useCallback, useRef } from 'react';
 import { useRealtimeStore } from '@/store/realtime-store';
 import { useActionQueueStore } from '@/store/action-queue-store';
 import { useNotificationStore } from '@/store/notification-store';
-import { subscribeToChannel } from '@/lib/supabase/realtime';
-import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { subscribeToChannel, type RealtimePayload } from '@/lib/realtime/client';
 import type {
   RedemptionRealtimeEvent,
   ActionQueueRealtimeEvent,
@@ -49,92 +48,85 @@ export function useRealtimeSubscriptions(options: UseRealtimeSubscriptionOptions
 
     // Admin subscriptions
     if (userType === 'admin') {
-      unsubscribers.push(
-        subscribeToChannel(
-          'admin-action-queue',
-          { table: 'action_queue_items', event: '*' },
-          (payload: RealtimePostgresChangesPayload<any>) => {
-            if (payload.eventType === 'INSERT') {
-              prependActionQueueItem(payload.new);
-            }
-          },
-          (status) => {
-            setConnected(status === 'SUBSCRIBED');
-            setConnectionQuality(status === 'SUBSCRIBED' ? 'good' : 'degraded');
+      const h1 = subscribeToChannel(
+        'admin-action-queue',
+        { table: 'action_queue_items', event: '*' },
+        (payload: RealtimePayload) => {
+          if (payload.eventType === 'INSERT') {
+            prependActionQueueItem(payload.new as any);
           }
-        )
+        },
+        (status: string) => {
+          setConnected(status === 'SUBSCRIBED');
+          setConnectionQuality(status === 'SUBSCRIBED' ? 'good' : 'degraded');
+        }
       );
+      unsubscribers.push(h1.unsubscribe);
 
-      unsubscribers.push(
-        subscribeToChannel(
-          'admin-redemptions',
-          { table: 'redemptions', event: 'INSERT' },
-          (payload: RealtimePostgresChangesPayload<any>) => {
-            redemptionsRef.current(payload.new as RedemptionRealtimeEvent);
-          }
-        )
+      const h2 = subscribeToChannel(
+        'admin-redemptions',
+        { table: 'redemptions', event: 'INSERT' },
+        (payload: RealtimePayload) => {
+          redemptionsRef.current(payload.new as RedemptionRealtimeEvent);
+        }
       );
+      unsubscribers.push(h2.unsubscribe);
     }
 
     // Merchant subscriptions
     if (userType === 'merchant' && merchantId) {
-      unsubscribers.push(
-        subscribeToChannel(
-          `merchant-${merchantId}-redemptions`,
-          { table: 'redemptions', event: 'INSERT', filter: `merchant_id=eq.${merchantId}` },
-          (payload: RealtimePostgresChangesPayload<any>) => {
-            redemptionsRef.current(payload.new as RedemptionRealtimeEvent);
-          }
-        )
+      const h1 = subscribeToChannel(
+        `merchant-${merchantId}-redemptions`,
+        { table: 'redemptions', event: 'INSERT', filter: `merchant_id=eq.${merchantId}` },
+        (payload: RealtimePayload) => {
+          redemptionsRef.current(payload.new as RedemptionRealtimeEvent);
+        }
       );
+      unsubscribers.push(h1.unsubscribe);
 
-      unsubscribers.push(
-        subscribeToChannel(
-          `merchant-${merchantId}-status`,
-          { table: 'merchants', event: 'UPDATE', filter: `id=eq.${merchantId}` },
-          (payload: RealtimePostgresChangesPayload<any>) => {
-            addMerchantStatus(payload.new as MerchantStatusRealtimeEvent);
-          }
-        )
+      const h2 = subscribeToChannel(
+        `merchant-${merchantId}-status`,
+        { table: 'merchants', event: 'UPDATE', filter: `id=eq.${merchantId}` },
+        (payload: RealtimePayload) => {
+          addMerchantStatus(payload.new as MerchantStatusRealtimeEvent);
+        }
       );
+      unsubscribers.push(h2.unsubscribe);
     }
 
     // Employee subscriptions
     if (userType === 'employee') {
-      unsubscribers.push(
-        subscribeToChannel(
-          `employee-${userId}-notifications`,
-          { table: 'notification_events', event: 'INSERT', filter: `recipient_id=eq.${userId}` },
-          (payload: RealtimePostgresChangesPayload<any>) => {
-            addNotification(payload.new);
-          }
-        )
+      const h1 = subscribeToChannel(
+        `employee-${userId}-notifications`,
+        { table: 'notification_events', event: 'INSERT', filter: `recipient_id=eq.${userId}` },
+        (payload: RealtimePayload) => {
+          addNotification(payload.new as any);
+        }
       );
+      unsubscribers.push(h1.unsubscribe);
     }
 
     // Company admin subscriptions
     if (userType === 'company_admin' && companyId) {
-      unsubscribers.push(
-        subscribeToChannel(
-          `company-${companyId}-notifications`,
-          { table: 'notification_events', event: 'INSERT', filter: `recipient_id=eq.${userId}` },
-          (payload: RealtimePostgresChangesPayload<any>) => {
-            addNotification(payload.new);
-          }
-        )
+      const h1 = subscribeToChannel(
+        `company-${companyId}-notifications`,
+        { table: 'notification_events', event: 'INSERT', filter: `recipient_id=eq.${userId}` },
+        (payload: RealtimePayload) => {
+          addNotification(payload.new as any);
+        }
       );
+      unsubscribers.push(h1.unsubscribe);
     }
 
     // Offer status changes (all authenticated users)
-    unsubscribers.push(
-      subscribeToChannel(
-        'global-offer-status',
-        { table: 'merchant_offers', event: 'UPDATE' },
-        (payload: RealtimePostgresChangesPayload<any>) => {
-          addOfferStatus(payload.new as OfferStatusRealtimeEvent);
-        }
-      )
+    const hGlobal = subscribeToChannel(
+      'global-offer-status',
+      { table: 'merchant_offers', event: 'UPDATE' },
+      (payload: RealtimePayload) => {
+        addOfferStatus(payload.new as OfferStatusRealtimeEvent);
+      }
     );
+    unsubscribers.push(hGlobal.unsubscribe);
 
     return () => {
       unsubscribers.forEach((unsub) => unsub());
@@ -156,15 +148,15 @@ export function usePostgresSubscription<T>(
   useEffect(() => {
     if (!enabled) return;
 
-    const unsub = subscribeToChannel(
+    const handle = subscribeToChannel(
       `custom-${table}-${Date.now()}`,
       { table, event, filter },
-      (payload: RealtimePostgresChangesPayload<any>) => {
+      (payload: RealtimePayload) => {
         callbackRef.current?.(payload.new as T);
       }
     );
 
-    return unsub;
+    return handle.unsubscribe;
   }, [table, event, filter, enabled]);
 
   const onEvent = useCallback((callback: (payload: T) => void) => {

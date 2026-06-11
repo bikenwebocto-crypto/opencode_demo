@@ -1,4 +1,4 @@
-import { prisma, paginate } from '@/lib/prisma';
+import { prisma } from '@/lib/prisma';
 import type { Prisma } from '@prisma/client';
 
 export class BaseRepository<T, CreateInput, UpdateInput> {
@@ -42,12 +42,20 @@ export class BaseRepository<T, CreateInput, UpdateInput> {
     pageSize?: number;
   }) {
     const { page = 1, pageSize = 20, ...rest } = params;
-    return paginate<T>(
-      this.model,
-      rest as Prisma.Args<typeof prisma, 'findMany'>,
-      page,
-      pageSize
-    );
+    const skip = (page - 1) * pageSize;
+    const [data, total] = await Promise.all([
+      this.model.findMany({ ...(rest as any), skip, take: pageSize }),
+      this.model.count({ where: (rest as any).where }),
+    ]);
+    return {
+      data: data as T[],
+      meta: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
   }
 
   async create(data: CreateInput): Promise<T> {

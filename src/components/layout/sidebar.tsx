@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { signOut } from 'next-auth/react'
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -27,7 +28,6 @@ import {
   RefreshCw,
   Bookmark,
 } from 'lucide-react'
-import { supabase } from '@/lib/supabase/client'
 
 interface NavItem {
   label: string
@@ -94,12 +94,8 @@ export function Sidebar({ userType, userName, userEmail, userRole }: SidebarProp
   const router = useRouter()
   const logout = async() => {
     try {
-      // await fetch('/api/auth/logout', {
-      //   method: 'POST',
-      // })
-     const res = await supabase.auth.signOut()
-     console.log('Logout response:', res) 
-     router.push('/login')
+      await signOut({ callbackUrl: '/login' })
+      router.push('/login')
     } 
     catch (error) {
       console.error('Logout failed:', error)

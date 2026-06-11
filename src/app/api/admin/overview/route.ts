@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentUser } from '@/lib/supabase/server';
+import { getCurrentUser } from '@/lib/session';
 
 export async function GET() {
   try {
@@ -100,7 +100,7 @@ export async function GET() {
       ? Number(prevPeriodSavings._sum.savingsAmount)
       : 0;
 
-    const calcChange = (current, previous) => {
+    const calcChange = (current: number, previous: number) => {
       if (previous === 0) return current > 0 ? 100 : 0;
       return Math.round(((current - previous) / previous) * 100);
     };
@@ -169,3 +169,4 @@ export async function GET() {
     );
   }
 }
+

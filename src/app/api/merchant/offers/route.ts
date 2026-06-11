@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/session";
 import { Prisma, OfferStatus } from "@prisma/client";
 const MIN_TITLE_LENGTH = 5;
 const MAX_TITLE_LENGTH = 255;
