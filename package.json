@@ -20,7 +20,8 @@
     "supabase:stop": "supabase stop",
     "supabase:functions:serve": "supabase functions serve",
     "queue:worker": "tsx src/lib/queue/worker.ts",
-    "analytics:aggregate": "tsx scripts/aggregate-analytics.ts"
+    "analytics:aggregate": "tsx scripts/aggregate-analytics.ts",
+    "vercel-build": "prisma generate && next build"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -101,4 +102,5 @@
     "typescript": "^5.6.3",
     "vitest": "^4.1.7"
   }
+
 }
