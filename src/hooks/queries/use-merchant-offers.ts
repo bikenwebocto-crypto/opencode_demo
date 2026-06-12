@@ -88,6 +88,45 @@ export function useUpdateMerchantOffer() {
   })
 }
 
+export function useBulkDeleteMerchantOffers() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await fetch(`/api/merchant/offers?ids=${ids.join(',')}`, {
+        method: 'DELETE',
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to delete offers')
+      return json
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: offerKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: offerKeys.currentLive() })
+    },
+  })
+}
+
+export function useDeleteMerchantOffer() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/merchant/offers/${id}`, {
+        method: 'DELETE',
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to delete offer')
+      return json
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: offerKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: offerKeys.currentLive() })
+      queryClient.invalidateQueries({ queryKey: offerKeys.details() })
+    },
+  })
+}
+
 export function useSubmitMerchantOffer() {
   const queryClient = useQueryClient()
 

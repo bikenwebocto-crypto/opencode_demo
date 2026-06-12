@@ -25,6 +25,7 @@ import {
   Sparkles,
   Search,
   RefreshCw,
+  Bookmark,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 
@@ -39,6 +40,7 @@ interface SidebarProps {
   userType: 'admin' | 'merchant' | 'company_admin' | 'employee'
   userName?: string
   userEmail?: string
+  userRole?: string | null
   onLogout?: () => void
 }
 
@@ -47,6 +49,7 @@ const navConfig: Record<string, NavItem[]> = {
       { label: 'Overview', href: '/admin', icon: LayoutDashboard },
     { label: 'Action Queue', href: '/admin/action-queue', icon: Zap },
     { label: 'Replacement Reviews', href: '/admin/offers/replacements', icon: RefreshCw },
+    { label: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
     { label: 'Merchants', href: '/admin/merchants', icon: Store },
     { label: 'Companies', href: '/admin/companies', icon: Building2 },
     { label: 'Employees', href: '/admin/employees', icon: Users },
@@ -63,6 +66,7 @@ const navConfig: Record<string, NavItem[]> = {
     { label: 'Analytics', href: '/merchant/analytics', icon: BarChart3 },
     { label: 'Branches', href: '/merchant/branches', icon: MapPin },
     { label: 'Redemptions', href: '/merchant/redemptions', icon: ShoppingBag },
+    { label: 'Issues', href: '/merchant/issues', icon: FileText },
     { label: 'Profile', href: '/merchant/profile', icon: Store },
     { label: 'Settings', href: '/merchant/settings', icon: Settings },
   ],
@@ -74,13 +78,17 @@ const navConfig: Record<string, NavItem[]> = {
     { label: 'Settings', href: '/company/settings', icon: Settings },
   ],
   employee: [
-    { label: 'Offers', href: '/employee', icon: Gift },
+    { label: 'Home', href: '/employee', icon: LayoutDashboard },
+    { label: 'Offers', href: '/employee/offers', icon: Gift },
+    { label: 'Saved', href: '/employee/saved', icon: Bookmark },
     { label: 'My Redemptions', href: '/employee/redemptions', icon: ShoppingBag },
+    { label: 'Notifications', href: '/employee/notifications', icon: Bell },
     { label: 'Profile', href: '/employee/profile', icon: UserCircle },
+    { label: 'Settings', href: '/employee/settings', icon: Settings },
   ],
 }
 
-export function Sidebar({ userType, userName, userEmail }: SidebarProps) {
+export function Sidebar({ userType, userName, userEmail, userRole }: SidebarProps) {
   const pathname = usePathname()
   const navItems = navConfig[userType] ?? []
   const router = useRouter()
@@ -112,8 +120,13 @@ export function Sidebar({ userType, userName, userEmail }: SidebarProps) {
           {userName?.charAt(0)?.toUpperCase() ?? 'U'}
         </div>
         <div className="flex-1 overflow-hidden">
-          <p className="truncate text-sm font-medium">{userName ?? 'User'}</p>
-          <p className="truncate text-xs text-muted-foreground">{userEmail ?? ''}</p>
+          <p className="truncate text-sm font-medium">{userName ?? 'NA'}</p>
+          <p className="truncate text-xs text-muted-foreground">{userEmail ?? 'NA'}</p>
+          {userRole && (
+            <span className="inline-block mt-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+              {userRole.replace(/_/g, ' ')}
+            </span>
+          )}
         </div>
       </div>
 

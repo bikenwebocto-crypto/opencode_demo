@@ -79,6 +79,9 @@ function runQualityChecks(body: any): {
   if (!body.termsAndConditions) {
     errors.termsAndConditions = "Terms and conditions are required";
   }
+  if (!body.categoryId) {
+    errors.categoryId = "Category is required";
+  }
   if (body.imageUrls && Array.isArray(body.imageUrls)) {
     for (const url of body.imageUrls) {
       if (typeof url === "string" && url.trim()) {
@@ -119,6 +122,7 @@ async function checkDuplicateOffer(
 export async function GET(request: NextRequest) {
   try {
     const merchant = await getMerchantFromUser();
+    // console.log("** Merchant offers GET - merchant running ");
     if (!merchant) return unauthorized();
 
     const { searchParams } = new URL(request.url);
@@ -142,6 +146,8 @@ export async function GET(request: NextRequest) {
       where.status = { in: ["REPLACED", "EXPIRED", "ARCHIVED"] };
     } else if (scope === "drafts") {
       where.status = { in: ["DRAFT", "VALIDATION_FAILED"] };
+    } else if (scope === "archived") {
+      where.status = "ARCHIVED";
     }
 
     const [offers, total] = await Promise.all([
@@ -202,6 +208,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const merchant = await getMerchantFromUser();
+    console.log("** Merchant offers POST - merchant:");
     if (!merchant) return unauthorized();
 
     const body = await request.json();
@@ -240,6 +247,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate category
+    if (categoryId) {
+      const category = await prisma.category.findUnique({
+        where: { id: categoryId },
+      });
+      console.log('** Validating categoryId:', categoryId, 'Found category:', !!category);
+      if (!category) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: "INVALID_CATEGORY",
+              message: "Selected category does not exist.",
+            },
+          },
+          { status: 400 },
+        );
+      }
+    }
+
     // Check duplicate
     const isDuplicate = await checkDuplicateOffer(merchant.id, title);
     if (isDuplicate) {
@@ -248,16 +275,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Run quality checks (skip for drafts)
+    // Only one pending draft per merchant (Phase 5)
+    if (saveAsDraft) {
+      const existingDraft = await prisma.merchantOffer.findFirst({
+        where: {
+          merchantId: merchant.id,
+          status: { in: ['DRAFT', 'VALIDATION_FAILED', 'CHANGES_REQUESTED'] },
+          id: { not: body.excludeId ?? '' },
+        },
+      });
+      if (existingDraft) {
+        return badRequest('You already have a pending draft. Please submit or delete it before creating a new one.');
+      }
+    }
+
+    // Run quality checks for ALL submitted offers (not just replacements)
     let qcResult = { passed: true, errors: {} as Record<string, string> };
-    if (!saveAsDraft && replacesOfferId) {
+    if (!saveAsDraft) {
       qcResult = runQualityChecks(body);
     }
 
+    // After validation, offers go to AWAITING_APPROVAL or VALIDATION_FAILED
+    // VALIDATION_IN_PROGRESS is only for transient background processing
+    console.log('** Quality check result:', qcResult);
     const targetStatus = saveAsDraft
       ? "DRAFT"
       : qcResult.passed
-        ? "VALIDATION_IN_PROGRESS"
+        ? "AWAITING_APPROVAL"
         : "VALIDATION_FAILED";
 
     const offer = await prisma.merchantOffer.create({
@@ -289,40 +333,77 @@ export async function POST(request: NextRequest) {
         submittedAt: saveAsDraft ? null : new Date(),
       },
     });
-
-    if (!saveAsDraft && replacesOfferId && qcResult.passed) {
-      // Create replacement request + action queue item
-      await prisma.offerReplacementRequest.create({
-        data: {
-          currentOfferId: replacesOfferId,
-          newOfferId: offer.id,
-          status: "AWAITING_APPROVAL",
-        },
-      });
-
-      await prisma.actionQueueItem.create({
-        data: {
-          type: "OFFER_REPLACEMENT",
-          title: `Offer Replacement: ${title}`,
-          description: `Merchant ${merchant.businessName} submitted a replacement offer`,
-          referenceId: merchant.id,
-          referenceType: "MERCHANT",
-          status: "PENDING",
-          priority: 1,
-          metadata: {
+    console.log('** Created offer with ID:', offer.id, 'Status:', offer.status);
+    // Post-creation actions for passing offers
+    if (!saveAsDraft && qcResult.passed) {
+      if (replacesOfferId) {
+        // Replacement: create replacement request + action queue item
+        await prisma.offerReplacementRequest.create({
+          data: {
             currentOfferId: replacesOfferId,
             newOfferId: offer.id,
-            replacementRequestId: null, // will link after creation
+            status: "AWAITING_APPROVAL",
+          },
+        });
+
+        await prisma.actionQueueItem.create({
+          data: {
+            type: "OFFER_REPLACEMENT",
+            title: `Offer Replacement: ${title}`,
+            description: `Merchant ${merchant.businessName} submitted a replacement offer`,
+            referenceId: merchant.id,
+            referenceType: "MERCHANT",
+            status: "PENDING",
+            priority: 1,
+            metadata: {
+              currentOfferId: replacesOfferId,
+              newOfferId: offer.id,
+            },
+          },
+        });
+      } else {
+        // Prevent duplicate queue items
+        const existingItems = await prisma.actionQueueItem.findMany({
+          where: { referenceId: merchant.id, type: 'OFFER_APPROVAL', status: 'PENDING' },
+        });
+        const hasExisting = existingItems.some((i) => {
+          const meta = i.metadata as Record<string, unknown> | null;
+          return meta?.offerId === offer.id;
+        });
+        if (!hasExisting) {
+          await prisma.actionQueueItem.create({
+            data: {
+              type: "OFFER_APPROVAL",
+              title: `Offer Approval: ${title}`,
+              description: `Merchant ${merchant.businessName} submitted an offer for approval`,
+              referenceId: merchant.id,
+              referenceType: "MERCHANT",
+              status: "PENDING",
+              priority: 1,
+              metadata: {
+                offerId: offer.id,
+              },
+            },
+          });
+        }
+      }
+      console.log('** Created action queue item for offer approval/replacement',);
+      // Audit log
+      await prisma.auditLog.create({
+        data: {
+          actorType: "MERCHANT",
+          merchantId: merchant.id,
+          action: "OFFER_SUBMITTED_FOR_APPROVAL",
+          entityType: "MERCHANT_OFFER",
+          entityId: offer.id,
+          metadata: {
+            title,
+            replacesOfferId: replacesOfferId ?? null,
           },
         },
       });
-
-      await prisma.merchantOffer.update({
-        where: { id: offer.id },
-        data: { status: "AWAITING_APPROVAL" },
-      });
     }
-
+    console.log('** Created offer with ID:', offer.id, 'Status:', offer.status);
     return NextResponse.json(
       {
         success: true,
@@ -332,6 +413,79 @@ export async function POST(request: NextRequest) {
       },
       { status: 201 },
     );
+  } catch (error) {
+    return internalError(error);
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const merchant = await getMerchantFromUser();
+    if (!merchant) return unauthorized();
+
+    const { searchParams } = new URL(request.url);
+    const ids = searchParams.get('ids');
+    if (!ids) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION', message: 'Offer IDs are required' } },
+        { status: 400 },
+      );
+    }
+
+    const idList = ids.split(',').filter(Boolean);
+    if (idList.length === 0) {
+      return NextResponse.json(
+        { success: false, error: { code: 'VALIDATION', message: 'At least one offer ID is required' } },
+        { status: 400 },
+      );
+    }
+
+    const deletableStatuses = ['DRAFT', 'VALIDATION_FAILED', 'REJECTED', 'EXPIRED', 'REPLACED', 'AWAITING_APPROVAL','ARCHIVED'];
+
+    const offers = await prisma.merchantOffer.findMany({
+      where: { id: { in: idList }, merchantId: merchant.id },
+    });
+
+    const invalid = offers.filter((o) => !deletableStatuses.includes(o.status));
+    if (invalid.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: `Cannot delete ${invalid.length} offer(s) — live offers must be replaced instead`,
+          },
+        },
+        { status: 403 },
+      );
+    }
+
+    // If any of the offers are LIVE, archive those live offers first
+    if (offers.some((o) => o.status === 'LIVE')) {
+      await prisma.merchantOffer.updateMany({
+        where: { id: { in: idList }, merchantId: merchant.id, status: 'LIVE' },
+        data: { status: 'ARCHIVED' },
+      });
+    }
+
+    await prisma.merchantOffer.deleteMany({
+      where: { id: { in: idList }, merchantId: merchant.id },
+    });
+
+    for (const offer of offers) {
+      await prisma.auditLog.create({
+        data: {
+          actorType: 'MERCHANT',
+          merchantId: merchant.id,
+          action: 'OFFER_DELETED',
+          entityType: 'MERCHANT_OFFER',
+          entityId: offer.id,
+          metadata: { title: offer.title, previousStatus: offer.status },
+        },
+      });
+    }
+
+    return NextResponse.json({ success: true, deleted: offers.length });
   } catch (error) {
     return internalError(error);
   }

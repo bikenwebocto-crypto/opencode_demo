@@ -44,6 +44,7 @@ export async function PATCH(
 ) {
   try {
     const user = await getCurrentUser();
+    console.log('** Authenticated user:', user); 
     if (!user || user.userType !== 'admin') {
       return NextResponse.json(
         { success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } },

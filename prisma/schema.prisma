@@ -33,6 +33,25 @@ model AdminUser {
   @@map("admin_users")
 }
 
+model Account {
+  authUserId  String        @id @default(uuid()) @db.Uuid
+  email       String        @unique @db.VarChar(255)
+  role        AccountRole
+  profileId   String        @db.Uuid
+  profileType ProfileType
+  status      AccountStatus @default(PENDING)
+  createdBy   String?       @db.VarChar(255)
+  changedBy   String?       @db.VarChar(255)
+  lastLoginAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([role])
+  @@index([status])
+  @@index([profileId])
+  @@map("accounts")
+}
+
 model Company {
   id                   String                 @id @default(uuid()) @db.Uuid
   name                 String                 @db.VarChar(255)
@@ -224,25 +243,43 @@ model Merchant {
 }
 
 model MerchantBranch {
-  id           String   @id @default(uuid()) @db.Uuid
-  merchantId   String   @db.Uuid
-  name         String   @db.VarChar(255)
-  addressLine1 String   @db.VarChar(255)
-  addressLine2 String?  @db.VarChar(255)
-  city         String   @db.VarChar(100)
-  state        String?  @db.VarChar(100)
-  postalCode   String   @db.VarChar(20)
-  country      String   @db.VarChar(100)
-  phone        String?  @db.VarChar(50)
-  email        String?  @db.VarChar(255)
-  latitude     Decimal? @db.Decimal(10, 7)
-  longitude    Decimal? @db.Decimal(10, 7)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  merchant     Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  id                 String       @id @default(uuid()) @db.Uuid
+  merchantId         String       @db.Uuid
+  name               String       @db.VarChar(255)
+  addressLine1       String       @db.VarChar(255)
+  addressLine2       String?      @db.VarChar(255)
+  city               String       @db.VarChar(100)
+  state              String?      @db.VarChar(100)
+  postalCode         String       @db.VarChar(20)
+  country            String       @db.VarChar(100)
+  phone              String?      @db.VarChar(50)
+  email              String?      @db.VarChar(255)
+  latitude           Decimal?     @db.Decimal(10, 7)
+  longitude          Decimal?     @db.Decimal(10, 7)
+  isActive           Boolean      @default(true)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  branchImages       String[]     @default([])
+  branchType         BranchType   @default(IN_STORE)
+  deletedAt          DateTime?
+  deliveryRadiusKm   Int?
+  description        String?
+  isNationwide       Boolean      @default(false)
+  isPrimary          Boolean      @default(false)
+  landmark           String?      @db.VarChar(500)
+  openingHours       Json?
+  parkingInfo        String?      @db.VarChar(500)
+  status             BranchStatus @default(ACTIVE)
+  storefrontImageUrl String?      @db.VarChar(500)
+  wheelchairAccess   Boolean      @default(false)
+  merchant           Merchant     @relation(fields: [merchantId], references: [id], onDelete: Cascade)
 
   @@index([merchantId])
+  @@index([merchantId, isPrimary])
+  @@index([merchantId, status])
+  @@index([merchantId, branchType])
+  @@index([status])
+  @@index([deletedAt])
   @@map("merchant_branches")
 }
 
@@ -304,6 +341,7 @@ model MerchantOffer {
   replacesOfferId        String?                   @db.Uuid
   submissionNotes        String?
   validationErrors       Json?
+  adminNote              String?
   merchant               Merchant                  @relation(fields: [merchantId], references: [id])
   replacesOffer          MerchantOffer?            @relation("OfferReplacement", fields: [replacesOfferId], references: [id])
   replacedBy             MerchantOffer[]           @relation("OfferReplacement")
@@ -751,6 +789,27 @@ model PlatformSettings {
   @@map("platform_settings")
 }
 
+enum AccountRole {
+  SUPER_ADMIN
+  COMPANY_ADMIN
+  EMPLOYEE
+  MERCHANT
+}
+
+enum ProfileType {
+  ADMIN
+  COMPANY
+  EMPLOYEE
+  MERCHANT
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
+}
+
 enum AdminRole {
   SUPER_ADMIN
   SUPPORT_ADMIN
@@ -808,6 +867,7 @@ enum OfferStatus {
   AWAITING_APPROVAL
   VALIDATION_FAILED
   ARCHIVED
+  CHANGES_REQUESTED
 }
 
 enum IssueStatus {
@@ -841,6 +901,8 @@ enum ActionQueueType {
   COMPANY_APPROVAL
   ISSUE_REVIEW
   CSV_IMPORT
+  BRANCH_EDIT_REQUEST
+  ASSET_REVIEW
 }
 
 enum CSVUploadStatus {
@@ -876,4 +938,15 @@ enum RealtimeEventType {
   ISSUE_REPORTED
   NOTIFICATION_CREATED
   EMPLOYEE_STATUS_CHANGED
+}
+
+enum BranchType {
+  IN_STORE
+  ONLINE
+}
+
+enum BranchStatus {
+  ACTIVE
+  INACTIVE
+  CLOSED
 }

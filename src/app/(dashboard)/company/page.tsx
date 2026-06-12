@@ -1,56 +1,122 @@
 'use client'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StatCard } from '@/components/shared/stat-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Users, ShoppingBag, TrendingUp, CreditCard, Plus, ArrowRight } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useCompanyDashboard } from '@/hooks/queries/use-company-dashboard'
+import { useCompanyEmployees } from '@/hooks/queries/use-company-employees'
+import { Users, ShoppingBag, TrendingUp, CreditCard, ArrowRight, AlertCircle, Info, AlertTriangle } from 'lucide-react'
+
+const alertStyles: Record<string, string> = {
+  info: 'border-blue-200 bg-blue-50 dark:bg-blue-950/20',
+  warning: 'border-amber-200 bg-amber-50 dark:bg-amber-950/20',
+  error: 'border-red-200 bg-red-50 dark:bg-red-950/20',
+}
+
+const alertIcons: Record<string, React.ElementType> = {
+  NO_EMPLOYEES: Info,
+  RENEWAL_DUE: AlertTriangle,
+  INVOICE_OVERDUE: AlertCircle,
+  ACCOUNT_ON_HOLD: AlertCircle,
+  LOW_ENGAGEMENT: AlertTriangle,
+}
+
+const iconColors: Record<string, string> = {
+  info: 'text-blue-600',
+  warning: 'text-amber-600',
+  error: 'text-red-600',
+}
 
 export default function CompanyDashboard() {
+  const router = useRouter()
+  const { data: dashboard, isLoading: dashLoading } = useCompanyDashboard()
+  const { data: employees } = useCompanyEmployees({ page: 1, pageSize: 5, sortBy: 'createdAt', sortOrder: 'desc' })
+
+  if (dashLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28" />)}
+        </div>
+        <Skeleton className="h-64" />
+      </div>
+    )
+  }
+
+  const stats = dashboard ?? {
+    enrolledEmployees: 0, activeThisMonth: 0, activationRate: 0, redemptionsThisMonth: 0,
+    totalSavings: 0, nextBillingDate: null, estimatedRenewalAmount: 0, plan: 'Trial', billingStatus: 'ACTIVE', alerts: [],
+  }
+
   return (
     <div className="space-y-6">
+      {/* Alerts */}
+      {stats.alerts.length > 0 && (
+        <div className="space-y-2">
+          {stats.alerts.map((a, i) => {
+            const Icon = alertIcons[a.type] ?? AlertCircle
+            const borderStyle = alertStyles[a.severity] ?? ''
+            const iconColor = iconColors[a.severity] ?? ''
+            return (
+              <div key={i} className={`flex items-start gap-3 rounded-md border p-4 ${borderStyle}`}>
+                <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${iconColor}`} />
+                <div>
+                  <p className="text-sm font-medium capitalize">{a.type.replace(/_/g, ' ')}</p>
+                  <p className="text-sm text-muted-foreground">{a.message}</p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="Active Employees" value="342" trend={{ value: 5, isUp: true }} icon={Users} />
-        <StatCard title="This Month Redemptions" value="487" trend={{ value: 23, isUp: true }} icon={ShoppingBag} />
-        <StatCard title="Total Employee Savings" value="$18,430" description="All time" icon={TrendingUp} />
-        <StatCard title="Next Billing" value="$1,710" description="Dec 1, 2026" icon={CreditCard} />
+        <StatCard title="Enrolled Employees" value={String(stats.enrolledEmployees)} icon={Users} />
+        <StatCard title="Active This Month" value={String(stats.activeThisMonth)} trend={stats.activationRate ? { value: stats.activationRate, isUp: stats.activationRate >= 50 } : undefined} icon={TrendingUp} />
+        <StatCard title="This Month Redemptions" value={String(stats.redemptionsThisMonth)} icon={ShoppingBag} />
+        <StatCard title="Next Billing" value={`$${stats.estimatedRenewalAmount.toLocaleString()}`} description={stats.nextBillingDate ? new Date(stats.nextBillingDate).toLocaleDateString() : 'N/A'} icon={CreditCard} />
       </div>
 
       {/* Content */}
       <div className="grid gap-4 lg:grid-cols-3">
-        {/* Top merchants */}
+        {/* Recent employees */}
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-lg">Most Popular Merchants</CardTitle>
-            <Button variant="outline" size="sm">
+            <CardTitle className="text-lg">Recent Employees</CardTitle>
+            <Button variant="outline" size="sm" onClick={() => router.push('/company/employees')}>
               View All <ArrowRight className="ml-1 h-3 w-3" />
             </Button>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {[
-                { name: "Pizza Palace", redemptions: 156, savings: '$1,872', rating: 4.8 },
-                { name: "Coffee House", redemptions: 98, savings: '$588', rating: 4.9 },
-                { name: "Bookworm Store", redemptions: 72, savings: '$1,440', rating: 4.7 },
-                { name: "FitLife Gym", redemptions: 65, savings: '$1,950', rating: 4.6 },
-                { name: "TechGadgets Pro", redemptions: 54, savings: '$2,160', rating: 4.5 },
-              ].map((m, i) => (
-                <div key={i} className="flex items-center gap-3 rounded-md border p-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">
-                    {m.name.charAt(0)}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium">{m.name}</p>
-                    <p className="text-xs text-muted-foreground">{m.redemptions} redemptions</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium text-success">{m.savings}</p>
-                    <p className="text-xs text-muted-foreground">saved</p>
-                  </div>
-                  <Badge variant="secondary">{m.rating} ★</Badge>
-                </div>
-              ))}
-            </div>
+            {(!employees?.data || employees.data.length === 0) ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">No employees yet. Invite your first employee.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="pb-3 font-medium">Name</th>
+                      <th className="pb-3 font-medium">Department</th>
+                      <th className="pb-3 font-medium">Status</th>
+                      <th className="pb-3 font-medium">Redemptions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employees.data.map((e) => (
+                      <tr key={e.id} className="border-b last:border-0">
+                        <td className="py-3 font-medium">{e.firstName} {e.lastName}</td>
+                        <td className="py-3 text-muted-foreground">{e.department ?? '-'}</td>
+                        <td className="py-3"><Badge variant={e.status === 'ACTIVE' ? 'success' : e.status === 'INVITED' ? 'pending' : 'secondary'}>{e.status}</Badge></td>
+                        <td className="py-3">{e._count.redemptions}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -60,59 +126,18 @@ export default function CompanyDashboard() {
             <CardTitle className="text-lg">Quick Actions</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <Button variant="outline" className="w-full justify-start gap-2">
-              <Plus className="h-4 w-4" /> Invite Employees
-            </Button>
-            <Button variant="outline" className="w-full justify-start gap-2">
+            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => router.push('/company/employees')}>
               <Users className="h-4 w-4" /> View All Employees
             </Button>
-            <Button variant="outline" className="w-full justify-start gap-2">
-              <TrendingUp className="h-4 w-4" /> View Analytics
+            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => router.push('/company/billing')}>
+              <CreditCard className="h-4 w-4" /> View Billing
+            </Button>
+            <Button variant="outline" className="w-full justify-start gap-2" onClick={() => router.push('/company/settings')}>
+              <TrendingUp className="h-4 w-4" /> Settings
             </Button>
           </CardContent>
         </Card>
       </div>
-
-      {/* Employee list preview */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-lg">Recent Employees</CardTitle>
-          <Badge variant="secondary">342 Total</Badge>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  <th className="pb-3 font-medium">Name</th>
-                  <th className="pb-3 font-medium">Department</th>
-                  <th className="pb-3 font-medium">Status</th>
-                  <th className="pb-3 font-medium">Redemptions</th>
-                  <th className="pb-3 font-medium">Joined</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  { name: 'Sarah Johnson', dept: 'Engineering', status: 'Active', redemptions: 12, joined: '2d ago' },
-                  { name: 'Mike Chen', dept: 'Marketing', status: 'Active', redemptions: 8, joined: '1w ago' },
-                  { name: 'Emma Wilson', dept: 'Design', status: 'Invited', redemptions: 0, joined: 'Just now' },
-                  { name: 'Alex Brown', dept: 'Sales', status: 'Active', redemptions: 5, joined: '2w ago' },
-                ].map((e, i) => (
-                  <tr key={i} className="border-b last:border-0">
-                    <td className="py-3 font-medium">{e.name}</td>
-                    <td className="py-3 text-muted-foreground">{e.dept}</td>
-                    <td className="py-3">
-                      <Badge variant={e.status === 'Active' ? 'success' : 'pending'}>{e.status}</Badge>
-                    </td>
-                    <td className="py-3">{e.redemptions}</td>
-                    <td className="py-3 text-muted-foreground">{e.joined}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }

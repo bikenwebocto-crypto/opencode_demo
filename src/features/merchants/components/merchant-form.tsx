@@ -8,6 +8,7 @@ import { ArrowLeft, Save, Upload } from 'lucide-react'
 import { CSVUploadDropzone } from '@/features/csv-uploads/components/csv-upload-dropzone'
 import { useCreateMerchant, useUpdateMerchant } from '@/hooks/queries/use-merchants'
 import { showToast } from '@/hooks/use-toast'
+import { useCategories } from '@/hooks/queries/use-categories'
 
 interface FormData {
   businessName: string
@@ -42,6 +43,7 @@ export function MerchantForm({ merchantId, initialData }: MerchantFormProps) {
   const updateMerchant = useUpdateMerchant()
   const [errors, setErrors] = useState<FormErrors>({})
   const [showBulk, setShowBulk] = useState(false)
+  const { data: categories } = useCategories()
 
   const [form, setForm] = useState<FormData>(initialData ?? {
     businessName: '',
@@ -248,12 +250,9 @@ export function MerchantForm({ merchantId, initialData }: MerchantFormProps) {
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-ring"
               >
                 <option value="">Select category</option>
-                <option value="food">Food &amp; Dining</option>
-                <option value="retail">Retail</option>
-                <option value="tech">Technology</option>
-                <option value="health">Health &amp; Fitness</option>
-                <option value="entertainment">Entertainment</option>
-                <option value="other">Other</option>
+                {(categories ?? []).map((category) => (
+                  <option key={category.id} value={category.id}>{category.name}</option>
+                ))}
               </select>
             </div>
             <div>

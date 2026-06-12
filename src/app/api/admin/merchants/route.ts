@@ -29,11 +29,10 @@ function internalError(error: unknown) {
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    console.log('Current user:', user);
     // if (!user || user.userType !== 'admin') return unauthorized();
 
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get('status');
+    const status = searchParams.get('stat us');
     const categoryId = searchParams.get('categoryId');
     const page = Math.max(1, parseInt(searchParams.get('page') ?? '1'));
     const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get('pageSize') ?? '20')));

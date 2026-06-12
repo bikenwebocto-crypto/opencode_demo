@@ -8,6 +8,9 @@ import type { Prisma } from '@prisma/client';
 // ENUMS
 // ============================================================
 
+export type AccountRole = 'SUPER_ADMIN' | 'COMPANY_ADMIN' | 'EMPLOYEE' | 'MERCHANT';
+export type ProfileType = 'ADMIN' | 'COMPANY_ADMIN' | 'EMPLOYEE' | 'MERCHANT';
+export type AccountStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'PENDING';
 export type AdminRole = 'SUPER_ADMIN' | 'SUPPORT_ADMIN' | 'FINANCE_ADMIN' | 'CONTENT_ADMIN';
 export type MerchantStatus = 'PENDING' | 'ACTIVE' | 'PAUSED' | 'SUSPENDED' | 'ARCHIVED' | 'REJECTED';
 export type MerchantOnboardingStep = 'APPLICATION' | 'DOCUMENTS' | 'AGREEMENT' | 'COMPLETE';
@@ -29,6 +32,10 @@ export type RealtimeEventType =
   | 'OFFER_STATUS_CHANGED' | 'ACTION_QUEUE_UPDATED'
   | 'ANALYTICS_UPDATED' | 'ISSUE_REPORTED'
   | 'NOTIFICATION_CREATED' | 'EMPLOYEE_STATUS_CHANGED';
+
+export type BranchType = 'IN_STORE' | 'ONLINE';
+export type BranchStatus = 'ACTIVE' | 'INACTIVE' | 'CLOSED';
+export type BranchDisplayType = 'IN_STORE' | 'ONLINE_DELIVERY' | 'ONLINE_DIGITAL';
 
 // ============================================================
 // API RESPONSE TYPES
@@ -100,6 +107,7 @@ export interface JWTPayload {
   sub: string;
   email: string;
   user_type: UserType;
+  account_role?: AccountRole;
   admin_role?: AdminRole;
   merchant_id?: string;
   company_id?: string;
@@ -392,6 +400,14 @@ export interface SelectOption {
 export interface TableSortConfig {
   key: string;
   direction: 'asc' | 'desc';
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  slug: string;
+  description?: string | null;
+  icon?: string | null;
 }
 
 export interface ColumnDef<T> {
