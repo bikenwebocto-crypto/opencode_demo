@@ -212,7 +212,7 @@ async function main() {
       data: { ...ca, passwordHash: pw, isPrimary: true, isActive: true },
     });
     await prisma.account.create({
-      data: { authUserId: admin.id, email: ca.email, role: 'COMPANY_ADMIN', profileId: admin.id, profileType: 'COMPANY_ADMIN', status: 'ACTIVE' },
+      data: { authUserId: admin.id, email: ca.email, role: 'COMPANY_ADMIN', profileId: admin.id, profileType: 'ADMIN', status: 'ACTIVE' },
     });
   }
 

@@ -75,7 +75,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
         companyId = null
         break
       }
-      case 'COMPANY_ADMIN': {
+      case 'COMPANY': {
         const p = await prisma.companyAdmin.findUnique({ where: { id: account.profileId } })
         profile = p as Record<string, unknown> | null
         companyId = p?.companyId ?? null
