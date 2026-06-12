@@ -37,7 +37,7 @@ async function reconcileAccounts() {
       case 'MERCHANT':
         profileExists = !!(await prisma.merchant.findUnique({ where: { id: acct.profileId }, select: { id: true } }));
         break;
-      case 'COMPANY_ADMIN':
+      case 'COMPANY':
         profileExists = !!(await prisma.companyAdmin.findUnique({ where: { id: acct.profileId }, select: { id: true } }));
         break;
       case 'EMPLOYEE':
@@ -75,8 +75,8 @@ async function reconcileAccounts() {
 
   const companyAdmins = await prisma.companyAdmin.findMany({ select: { id: true, email: true } });
   for (const ca of companyAdmins) {
-    const has = await prisma.account.findFirst({ where: { profileId: ca.id, profileType: 'COMPANY_ADMIN' } });
-    if (!has) missingAccounts.push(`COMPANY_ADMIN: ${ca.email} (${ca.id})`);
+    const has = await prisma.account.findFirst({ where: { profileId: ca.id, profileType: 'COMPANY' } });
+    if (!has) missingAccounts.push(`COMPANY: ${ca.email} (${ca.id})`);
   }
 
   const employees = await prisma.employee.findMany({ select: { id: true, email: true } });

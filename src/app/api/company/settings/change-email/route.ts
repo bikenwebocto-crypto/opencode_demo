@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
         data: { email: newEmail.toLowerCase().trim() },
       }),
       prisma.account.updateMany({
-        where: { profileId: companyAdmin.id, profileType: 'COMPANY_ADMIN' },
+        where: { profileId: companyAdmin.id, profileType: 'COMPANY' },
         data: { email: newEmail.toLowerCase().trim() },
       }),
       prisma.auditLog.create({

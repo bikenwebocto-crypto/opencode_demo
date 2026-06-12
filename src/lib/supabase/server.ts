@@ -75,7 +75,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
         companyId = null
         break
       }
-      case 'COMPANY_ADMIN': {
+      case 'COMPANY': {
         const p = await prisma.companyAdmin.findUnique({ where: { id: account.profileId } })
         profile = p as Record<string, unknown> | null
         companyId = p?.companyId ?? null
@@ -133,7 +133,7 @@ export async function resolveAuthenticatedUser(): Promise<ResolvedUser | null> {
         if (p.businessName) name = p.businessName
         break
       }
-      case 'COMPANY_ADMIN':
+      case 'COMPANY':
       case 'EMPLOYEE': {
         const p = session.profile as { firstName?: string; lastName?: string }
         if (p.firstName) name = `${p.firstName} ${p.lastName ?? ''}`.trim()
