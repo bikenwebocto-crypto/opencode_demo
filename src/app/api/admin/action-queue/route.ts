@@ -166,7 +166,7 @@ export async function GET(request: NextRequest) {
     });
 
     const tabCounts: Record<string, number> = { ALL: typeCounts };
-    for (const tabKey of ["MERCHANT_APPLICATIONS", "OFFER_APPROVALS", "COMPANY_ACTIVATION", "ISSUES", "ALERTS"]) {
+    for (const tabKey of ["MERCHANT_APPROVAL", "OFFER_APPROVALS", "COMPANY_ACTIVATION", "ISSUES", "ALERTS"]) {
       const tabQueueTypes = Object.entries(QUEUE_TYPE_MAP)
         .filter(([, m]) => m.tabCategory === tabKey)
         .map(([k]) => k);

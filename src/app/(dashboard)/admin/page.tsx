@@ -41,7 +41,7 @@ export default function AdminDashboard() {
     getData()
   }, [pendingCount])
 
-  if (loading || !summary) {
+  if (loading || !summary) {           
     return (
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {[...Array(4)].map((_, i) => (
@@ -56,7 +56,7 @@ export default function AdminDashboard() {
       title: 'Merchant Applications',
       value: stats?.merchantApplications ?? 0,
       icon: FileText,
-      href: '/admin/action-queue?tab=MERCHANT_APPLICATIONS',
+      href: '/admin/action-queue?tab=MERCHANT_APPROVAL',
       color: 'text-blue-600',
       bg: 'bg-blue-50',
     },

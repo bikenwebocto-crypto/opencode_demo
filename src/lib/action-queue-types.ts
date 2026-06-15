@@ -1,4 +1,4 @@
-export type QueueTabKey = 'ALL' | 'MERCHANT_APPLICATIONS' | 'OFFER_APPROVALS' | 'COMPANY_ACTIVATION' | 'ISSUES' | 'ALERTS'
+export type QueueTabKey = 'ALL' | 'MERCHANT_APPROVAL' | 'OFFER_APPROVALS' | 'COMPANY_ACTIVATION' | 'ISSUES' | 'ALERTS'
 
 export type EntityKind = 'MERCHANT' | 'MERCHANT_OFFER' | 'COMPANY' | 'ISSUE' | 'RENEWAL_ALERT' | 'UNKNOWN'
 
@@ -13,7 +13,7 @@ export interface QueueTypeMapping {
 export const QUEUE_TYPE_MAP: Record<string, QueueTypeMapping> = {
   NEW_MERCHANT_APPLICATION: {
     displayType: 'Merchant Application',
-    tabCategory: 'MERCHANT_APPLICATIONS',
+    tabCategory: 'MERCHANT_APPROVAL',
     priority: 'HIGH',
     entityKind: 'MERCHANT',
     reviewComponent: 'MerchantApplicationReview',
@@ -78,7 +78,7 @@ export const QUEUE_TYPE_MAP: Record<string, QueueTypeMapping> = {
 
 export const TAB_KEYS: { key: QueueTabKey; label: string; queueTypes: string[] }[] = [
   { key: 'ALL', label: 'All', queueTypes: [] },
-  { key: 'MERCHANT_APPLICATIONS', label: 'Merchant Applications', queueTypes: ['NEW_MERCHANT_APPLICATION'] },
+  { key: 'MERCHANT_APPROVAL', label: 'Merchant Applications', queueTypes: ['NEW_MERCHANT_APPLICATION'] },
   { key: 'OFFER_APPROVALS', label: 'Offer Approvals', queueTypes: ['FIRST_PERK_APPROVAL', 'OFFER_REPLACEMENT_APPROVAL', 'PROFILE_CHANGE_APPROVAL'] },
   { key: 'COMPANY_ACTIVATION', label: 'Company Activation', queueTypes: ['COMPANY_PENDING_ACTIVATION', 'SETUP_LINK_EXPIRED'] },
   { key: 'ISSUES', label: 'Issues', queueTypes: ['OPEN_ISSUE'] },

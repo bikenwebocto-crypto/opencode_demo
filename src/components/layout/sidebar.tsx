@@ -54,10 +54,10 @@ const navConfig: Record<string, NavItem[]> = {
     { label: 'Companies', href: '/admin/companies', icon: Building2 },
     { label: 'Employees', href: '/admin/employees', icon: Users },
     { label: 'CSV Uploads', href: '/admin/csv-uploads', icon: Upload },
-    { label: 'Content', href: '/admin/content', icon: Sparkles },
-    { label: 'Reports', href: '/admin/reports', icon: BarChart3 },
+    // { label: 'Content', href: '/admin/content', icon: Sparkles },
+    // { label: 'Reports', href: '/admin/reports', icon: BarChart3 },
     { label: 'Audit Logs', href: '/admin/audit-logs', icon: Search },
-    { label: 'Billing', href: '/admin/billing', icon: CreditCard },
+    // { label: 'Billing', href: '/admin/billing', icon: CreditCard },
     { label: 'Settings', href: '/admin/settings', icon: Settings },
   ],
   merchant: [
@@ -73,8 +73,8 @@ const navConfig: Record<string, NavItem[]> = {
   company_admin: [
     { label: 'Overview', href: '/company', icon: LayoutDashboard },
     { label: 'Employees', href: '/company/employees', icon: Users },
-    { label: 'Analytics', href: '/company/analytics', icon: BarChart3 },
-    { label: 'Billing', href: '/company/billing', icon: CreditCard },
+    // { label: 'Analytics', href: '/company/analytics', icon: BarChart3 },
+    // { label: 'Billing', href: '/company/billing', icon: CreditCard },
     { label: 'Settings', href: '/company/settings', icon: Settings },
   ],
   employee: [

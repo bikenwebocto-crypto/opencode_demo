@@ -86,13 +86,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Main content */}
       <div className="flex flex-1 flex-col">
-        <Navbar
+        {/* <Navbar
           title={title}
           onMenuClick={() => setSidebarOpen(true)}
           userName={user?.name}
           userEmail={user?.email}
           userRole={user?.role}
-        />
+        /> */}
         <main className="flex-1 overflow-y-auto p-6">
           {children}
         </main>
