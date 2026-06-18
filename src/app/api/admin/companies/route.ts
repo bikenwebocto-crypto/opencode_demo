@@ -6,6 +6,8 @@ import * as bcrypt from 'bcryptjs';
 import { validateUserEmail } from '@/services/user-validation.service';
 import { getCityReadiness } from '@/lib/company-activation/city-readiness';
 import { sendLaunchPack } from '@/lib/company-activation/launch-pack';
+import { derivePrimaryAdmin, summarizeAdmins } from '@/lib/company-contact';
+import type { CompanyStatus } from '@/types';
 
 function unauthorized() {
   return NextResponse.json(
@@ -30,24 +32,78 @@ function internalError(error: unknown) {
 }
 
 // GET /api/admin/companies — list all companies
+//
+// Query params:
+//   - status      : company status (ALL | PENDING | ACTIVE | PAUSED | SUSPENDED | CANCELLED | APPROVED_PENDING_PAYMENT)
+//   - adminStatus : filter to companies whose primary admin is ACTIVE/INACTIVE
+//   - page, pageSize
+//   - q           : free-text search across company name, company contact email, and admin email
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    // if (!user || user.userType !== 'admin') return unauthorized();
+    if (!user) return unauthorized();
+    if (user.userType !== 'admin') {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Admin access required' } },
+        { status: 403 },
+      );
+    }
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
+    const adminStatus = searchParams.get('adminStatus');
     const page = Math.max(1, parseInt(searchParams.get('page') ?? '1'));
     const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get('pageSize') ?? '20')));
     const q = searchParams.get('q');
 
     const where: Record<string, unknown> = { deletedAt: null };
-    if (status && status !== 'ALL') where.status = status;
-    if (q) {
-      where.OR = [
-        { name: { contains: q, mode: 'insensitive' } },
-        { email: { contains: q, mode: 'insensitive' } },
-      ];
+    if (status && status !== 'ALL') where.status = status as CompanyStatus;
+
+    // When adminStatus='ACTIVE'|'INACTIVE', restrict to companies that have
+    // at least one admin matching that flag. We resolve those company IDs
+    // up-front to keep the main query simple.
+    if (adminStatus === 'ACTIVE' || adminStatus === 'INACTIVE') {
+      const isActive = adminStatus === 'ACTIVE'
+      const matchingAdmins = await prisma.companyAdmin.findMany({
+        where: { isActive },
+        select: { companyId: true },
+        distinct: ['companyId'],
+      })
+      where.id = { in: matchingAdmins.map((a) => a.companyId) }
+    }
+
+    // Free-text search: company name, company contact email, or any
+    // matching company admin email. We pre-resolve admin email matches
+    // into company IDs and OR them into the where clause.
+    if (q && q.trim()) {
+      const term = q.trim()
+      const matchingAdmins = await prisma.companyAdmin.findMany({
+        where: { email: { contains: term, mode: 'insensitive' } },
+        select: { companyId: true },
+        distinct: ['companyId'],
+      })
+      const adminEmailCompanyIds = matchingAdmins.map((a) => a.companyId)
+
+      const orClauses: Record<string, unknown>[] = [
+        { name: { contains: term, mode: 'insensitive' } },
+        { email: { contains: term, mode: 'insensitive' } },
+      ]
+      if (adminEmailCompanyIds.length > 0) {
+        orClauses.push({ id: { in: adminEmailCompanyIds } })
+      }
+
+      // Combine with adminStatus id-in filter if both present.
+      const existingIdIn = (where.id as { in?: string[] } | undefined)?.in
+      if (existingIdIn) {
+        const intersected = adminEmailCompanyIds.length > 0
+          ? adminEmailCompanyIds.filter((id) => existingIdIn.includes(id))
+          : existingIdIn
+        where.id = { in: intersected }
+        delete (where as any).OR
+        where.AND = [{ OR: orClauses }]
+      } else {
+        where.OR = orClauses
+      }
     }
 
     const [companies, total] = await Promise.all([
@@ -59,14 +115,58 @@ export async function GET(request: NextRequest) {
         include: {
           _count: { select: { employees: true, redemptions: true, csvUploads: true } },
           billing: { select: { plan: true, isTrial: true, trialEndsAt: true, billingStatus: true, renewalDate: true } },
+          companyAdmins: {
+            orderBy: { createdAt: 'asc' },
+          },
         },
       }),
       prisma.company.count({ where: where as any }),
     ]);
 
+    const data = companies.map((c) => {
+      const admins = summarizeAdmins(c.companyAdmins)
+      const activeAdmins = admins.filter((a) => a.isActive)
+      const primaryAdmin = derivePrimaryAdmin(c.companyAdmins)
+      return {
+        id: c.id,
+        name: c.name,
+        email: c.email,
+        phone: c.phone,
+        website: c.website,
+        city: c.city,
+        country: c.country,
+        industry: c.industry,
+        logoUrl: c.logoUrl,
+        status: c.status,
+        employeeCount: c._count?.employees ?? 0,
+        activeRedemptions: c._count?.redemptions ?? 0,
+        joinedAt: c.createdAt,
+        createdAt: c.createdAt,
+        billing: c.billing,
+        companyContact: {
+          id: c.id,
+          companyName: c.name,
+          companyEmail: c.email,
+          phone: c.phone,
+          website: c.website,
+          status: c.status,
+          city: c.city,
+          country: c.country,
+          industry: c.industry,
+          logoUrl: c.logoUrl,
+          employeeCount: c._count?.employees ?? 0,
+          createdAt: c.createdAt,
+        },
+        primaryAdmin,
+        admins,
+        adminCount: admins.length,
+        activeAdminCount: activeAdmins.length,
+      }
+    })
+
     return NextResponse.json({
       success: true,
-      data: companies,
+      data,
       meta: {
         page,
         pageSize,

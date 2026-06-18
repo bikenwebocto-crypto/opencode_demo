@@ -73,6 +73,8 @@ export async function getCityReadiness(
   const ready =
     activeMerchants >= required.minActiveMerchants &&
     uniqueCategories >= required.minUniqueCategories
+  
+    console.log(`City readiness for ${city}: ${activeMerchants} active merchants, ${uniqueCategories} unique categories. Ready: ${ready}`)  
 
   const message = ready
     ? `${city} has ${activeMerchants} active merchants across ${uniqueCategories} categories.`

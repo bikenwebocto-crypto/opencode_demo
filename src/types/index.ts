@@ -26,6 +26,52 @@ export type CSVUploadStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'PARTIALL
 export type NotificationChannel = 'IN_APP' | 'EMAIL' | 'PUSH' | 'SMS';
 export type NotificationPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
 export type UserType = 'admin' | 'merchant' | 'company_admin' | 'employee';
+export type CompanyAdminStatus = 'ACTIVE' | 'INACTIVE';
+
+// ============================================================
+// COMPANY CONTACT vs COMPANY ADMIN TYPES
+// ============================================================
+// Company contact information lives on the Company row.
+// Company admin login information lives on the CompanyAdmin row.
+// These are intentionally separate. The company_email is the
+// public/support/billing contact; the company_admin.email is the
+// actual login email used to access the Company Dashboard.
+
+export interface CompanyContact {
+  id: string
+  companyName: string
+  companyEmail: string
+  phone?: string | null
+  website?: string | null
+  status: CompanyStatus
+  city?: string | null
+  country?: string | null
+  industry?: string | null
+  logoUrl?: string | null
+  employeeCount: number
+  createdAt: Date
+}
+
+export interface CompanyAdminSummary {
+  id: string
+  companyId: string
+  firstName: string
+  lastName: string
+  email: string
+  role: 'OWNER' | 'MEMBER'
+  status: CompanyAdminStatus
+  isPrimary: boolean
+  isActive: boolean
+  lastLoginAt: Date | null
+  createdAt: Date
+}
+
+export interface CompanyWithAdmins extends CompanyContact {
+  admins: CompanyAdminSummary[]
+  primaryAdmin: CompanyAdminSummary | null
+  adminCount: number
+  activeAdminCount: number
+}
 export type RealtimeEventType =
   | 'REDEMPTION_CREATED' | 'REDEMPTION_UPDATED'
   | 'MERCHANT_STATUS_CHANGED' | 'COMPANY_STATUS_CHANGED'

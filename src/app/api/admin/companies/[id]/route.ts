@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/supabase/server';
 import { getCityReadiness } from '@/lib/company-activation/city-readiness';
 import { sendLaunchPack, sendBillingReminder } from '@/lib/company-activation/launch-pack';
+import { derivePrimaryAdmin, ensurePrimaryAdmin, summarizeAdmins } from '@/lib/company-contact';
+import { forbidden } from '@/lib/api-auth';
 
 export async function GET(
   _request: NextRequest,
@@ -11,15 +13,26 @@ export async function GET(
   try {
     const user = await getCurrentUser();
     console.log('Company detail request by user:', user?.id, user?.email, user?.userType, user?.role);
-    // if (!user || user.userType !== 'admin') {
     if (!user) {
       return NextResponse.json(
         { success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } },
         { status: 401 },
       );
     }
+    if (user.userType !== 'admin') {
+      return forbidden(user.userType);
+    }
 
     const { id } = await params;
+
+    // Auto-fix primary admin: if the company has admins but none flagged
+    // isPrimary, promote the oldest ACTIVE admin (per spec). Safe to run
+    // on every read — it's a no-op when the invariant is already met.
+    try {
+      await ensurePrimaryAdmin(id)
+    } catch (err) {
+      console.error('ensurePrimaryAdmin failed for company', id, err)
+    }
 
     const company = await prisma.company.findUnique({
       where: { id },
@@ -31,6 +44,9 @@ export async function GET(
           include: { company: { select: { name: true } } },
         },
         _count: { select: { employees: true, redemptions: true, csvUploads: true } },
+        companyAdmins: {
+          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+        },
       },
     });
 
@@ -41,7 +57,33 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ success: true, data: company });
+    const admins = summarizeAdmins(company.companyAdmins)
+    const primaryAdmin = derivePrimaryAdmin(company.companyAdmins)
+    const activeAdminCount = admins.filter((a) => a.isActive).length
+
+    const data = {
+      ...company,
+      companyContact: {
+        id: company.id,
+        companyName: company.name,
+        companyEmail: company.email,
+        phone: company.phone,
+        website: company.website,
+        status: company.status,
+        city: company.city,
+        country: company.country,
+        industry: company.industry,
+        logoUrl: company.logoUrl,
+        employeeCount: company._count?.employees ?? 0,
+        createdAt: company.createdAt,
+      },
+      primaryAdmin,
+      admins,
+      adminCount: admins.length,
+      activeAdminCount,
+    }
+
+    return NextResponse.json({ success: true, data });
   } catch (error) {
     console.error('Company detail error:', error);
     return NextResponse.json(
@@ -189,10 +231,40 @@ export async function PATCH(
         billing: true,
         statusHistory: { orderBy: { createdAt: 'desc' }, take: 10 },
         _count: { select: { employees: true, redemptions: true, csvUploads: true } },
+        companyAdmins: {
+          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+        },
       },
     });
 
-    return NextResponse.json({ success: true, data: updated, message: 'Company updated successfully' });
+    const updatedAdmins = summarizeAdmins(updated?.companyAdmins ?? [])
+    const updatedPrimary = derivePrimaryAdmin(updated?.companyAdmins ?? [])
+
+    const data = updated
+      ? {
+          ...updated,
+          companyContact: {
+            id: updated.id,
+            companyName: updated.name,
+            companyEmail: updated.email,
+            phone: updated.phone,
+            website: updated.website,
+            status: updated.status,
+            city: updated.city,
+            country: updated.country,
+            industry: updated.industry,
+            logoUrl: updated.logoUrl,
+            employeeCount: updated._count?.employees ?? 0,
+            createdAt: updated.createdAt,
+          },
+          primaryAdmin: updatedPrimary,
+          admins: updatedAdmins,
+          adminCount: updatedAdmins.length,
+          activeAdminCount: updatedAdmins.filter((a) => a.isActive).length,
+        }
+      : null
+
+    return NextResponse.json({ success: true, data, message: 'Company updated successfully' });
   } catch (error) {
     console.error('Company update error:', error);
     return NextResponse.json(
