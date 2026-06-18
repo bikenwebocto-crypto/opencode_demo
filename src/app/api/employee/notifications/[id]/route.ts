@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import {
-  getEmployeeFromSession,
-  unauthorized,
-  notFound,
-  internalError,
-} from '@/lib/employee-session'
+import { getEmployeeFromSession, unauthorized, internalError, companyInactive, notFound, badRequest } from '@/lib/employee-session'
 
 export async function PATCH(
   _request: NextRequest,
@@ -14,6 +9,7 @@ export async function PATCH(
   try {
     const employee = await getEmployeeFromSession()
     if (!employee) return unauthorized()
+    if ('inactive' in employee) return companyInactive(employee.companyStatus)
     const { id } = await params
 
     const existing = await prisma.notificationEvent.findFirst({

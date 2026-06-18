@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getEmployeeFromSession, unauthorized, internalError, companyInactive, notFound, badRequest } from '@/lib/employee-session'
 import { getCurrentUser } from '@/lib/supabase/server'
-import {
-  getEmployeeFromSession,
-  unauthorized,
-  notFound,
-  badRequest,
-  internalError,
-} from '@/lib/employee-session'
 
 export async function GET() {
   try {
     const employee = await getEmployeeFromSession()
     if (!employee) return unauthorized()
+    if ('inactive' in employee) return companyInactive(employee.companyStatus)
     const full = await prisma.employee.findUnique({
       where: { id: employee.id },
       include: { company: { select: { id: true, name: true, approvedDomain: true } } },
@@ -29,6 +24,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const employee = await getEmployeeFromSession()
     if (!employee) return unauthorized()
+    if ('inactive' in employee) return companyInactive(employee.companyStatus)
     const user = await getCurrentUser()
     const body = await request.json()
     const allowed = ['firstName', 'lastName', 'phone', 'jobTitle', 'department', 'avatarUrl'] as const

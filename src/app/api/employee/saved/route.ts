@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import {
-  getEmployeeFromSession,
-  unauthorized,
-  notFound,
-  badRequest,
-  internalError,
-} from '@/lib/employee-session'
+import { getEmployeeFromSession, unauthorized, internalError, companyInactive, notFound, badRequest } from '@/lib/employee-session'
 
 export async function GET(_request: NextRequest) {
   try {
     const employee = await getEmployeeFromSession()
     if (!employee) return unauthorized()
+    if ('inactive' in employee) return companyInactive(employee.companyStatus)
 
     const saved = await prisma.notificationEvent.findMany({
       where: {
@@ -66,6 +61,7 @@ export async function POST(request: NextRequest) {
   try {
     const employee = await getEmployeeFromSession()
     if (!employee) return unauthorized()
+    if ('inactive' in employee) return companyInactive(employee.companyStatus)
     const body = await request.json()
     const offerId: string | undefined = body?.offerId
     if (!offerId) return badRequest('offerId is required')

@@ -2,6 +2,14 @@ import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
+export class CompanyInactiveError extends Error {
+  code = 'COMPANY_INACTIVE'
+  constructor(public companyStatus: string) {
+    super(`Your company's access is currently inactive.`)
+    this.name = 'CompanyInactiveError'
+  }
+}
+
 export async function getCompanyAdmin() {
   const user = await getCurrentUser()
   if (!user || user.userType !== 'company_admin') {
@@ -22,6 +30,12 @@ export async function getCompanyAdmin() {
     throw new AuthError('Company not found or inactive')
   }
 
+  // Non-payment cascade: if the company is paused or suspended, the
+  // company admin loses platform access.
+  if (company.status === 'PAUSED' || company.status === 'SUSPENDED') {
+    throw new CompanyInactiveError(company.status)
+  }
+
   return { company, companyAdmin, user }
 }
 
@@ -32,11 +46,37 @@ export class AuthError extends Error {
   }
 }
 
+export class ForbiddenError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ForbiddenError'
+  }
+}
+
 export function handleApiError(error: unknown) {
   if (error instanceof AuthError) {
     return NextResponse.json(
       { success: false, error: { code: 'UNAUTHORIZED', message: error.message } },
       { status: 401 },
+    )
+  }
+  if (error instanceof ForbiddenError) {
+    return NextResponse.json(
+      { success: false, error: { code: 'FORBIDDEN', message: error.message } },
+      { status: 403 },
+    )
+  }
+  if (error instanceof CompanyInactiveError) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: 'COMPANY_INACTIVE',
+          message: `Your company's access is currently inactive.`,
+          companyStatus: error.companyStatus,
+        },
+      },
+      { status: 403 },
     )
   }
   console.error('API error:', error)

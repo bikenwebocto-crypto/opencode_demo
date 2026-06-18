@@ -31,7 +31,7 @@ function internalError(error: unknown) {
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    console.log('Employee Current user:', user);
+    
     if (!user) return unauthorized();
 
     const { searchParams } = new URL(request.url);

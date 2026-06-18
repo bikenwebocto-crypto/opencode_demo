@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import {
-  getEmployeeFromSession,
-  unauthorized,
-  internalError,
-} from '@/lib/employee-session'
+import { getEmployeeFromSession, unauthorized, internalError, companyInactive, notFound, badRequest } from '@/lib/employee-session'
 
 export async function GET(request: NextRequest) {
   try {
     const employee = await getEmployeeFromSession()
     if (!employee) return unauthorized()
+    if ('inactive' in employee) return companyInactive(employee.companyStatus)
 
     const { searchParams } = new URL(request.url)
     const q = searchParams.get('q') ?? undefined

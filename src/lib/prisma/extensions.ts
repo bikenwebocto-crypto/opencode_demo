@@ -35,20 +35,23 @@ prisma.$use(async (params, next) => {
 
   const relevantActions = auditActions[params.model ?? ''];
   if (relevantActions?.includes(params.action)) {
-    // Queue audit log entry asynchronously
-    prisma.auditLog
-      .create({
-        data: {
-          adminId: 'system',
-          actorType: 'system',
-          action: `${params.model?.toLowerCase()}.${params.action}`,
-          entityType: params.model?.toLowerCase() ?? 'unknown',
-          entityId: (params.args?.where?.id as string) ?? 'unknown',
-          changes: params.args?.data ? { before: null, after: params.args.data } : undefined,
-          metadata: { action: params.action },
-        },
-      })
-      .catch((err) => console.error('Audit log error:', err));
+    const entityId = params.args?.where?.id;
+    if (typeof entityId === 'string' && entityId.length > 0) {
+      // Queue audit log entry asynchronously. adminId should be null for system-generated audits.
+      prisma.auditLog
+        .create({
+          data: {
+            adminId: null,
+            actorType: 'system',
+            action: `${params.model?.toLowerCase()}.${params.action}`,
+            entityType: params.model?.toLowerCase() ?? 'unknown',
+            entityId,
+            changes: params.args?.data ? { before: null, after: params.args.data } : undefined,
+            metadata: { action: params.action },
+          },
+        })
+        .catch((err) => console.error('Audit log error:', err));
+    }
   }
 
   return result;

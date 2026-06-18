@@ -4,6 +4,8 @@ import { getCurrentUser } from '@/lib/supabase/server';
 import { adminCompanyActionSchema } from '@/schemas';
 import * as bcrypt from 'bcryptjs';
 import { validateUserEmail } from '@/services/user-validation.service';
+import { getCityReadiness } from '@/lib/company-activation/city-readiness';
+import { sendLaunchPack } from '@/lib/company-activation/launch-pack';
 
 function unauthorized() {
   return NextResponse.json(
@@ -122,7 +124,7 @@ export async function POST(request: NextRequest) {
           postalCode,
           country,
           taxId,
-          status: 'ACTIVE',
+          status: 'APPROVED_PENDING_PAYMENT',
           approvedAt: new Date(),
         },
       });
@@ -174,10 +176,15 @@ export async function POST(request: NextRequest) {
       return company;
     });
 
-    return NextResponse.json(
-      { success: true, data: result, message: 'Company created successfully' },
-      { status: 201 },
-    );
+      return NextResponse.json(
+        {
+          success: true,
+          data: result,
+          message:
+            'Company created successfully. Use the company detail page to set the city and then mark the company ACTIVE (which will trigger the city-readiness gate and dispatch the launch pack).',
+        },
+        { status: 201 },
+      );
   } catch (error: any) {
     if (error?.code === 'P2002') {
       return NextResponse.json(
@@ -210,6 +217,25 @@ export async function PATCH(request: NextRequest) {
     if (!existing || existing.deletedAt) return notFound('Company');
 
     const previousStatus = existing.status;
+
+    // City Readiness Gate: cannot transition to ACTIVE unless the
+    // headquarters city meets the merchant/category thresholds.
+    if (status === 'ACTIVE') {
+      const readiness = await getCityReadiness(existing.city)
+      if (!readiness.ready) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'CITY_NOT_READY',
+              message: readiness.message,
+              details: readiness,
+            },
+          },
+          { status: 422 }
+        )
+      }
+    }
 
     const company = await prisma.company.update({
       where: { id: companyId },
@@ -248,6 +274,15 @@ export async function PATCH(request: NextRequest) {
         where: { referenceId: companyId, referenceType: 'company', status: 'PENDING' },
         data: { status: 'COMPLETED', completedAt: new Date() },
       });
+    }
+
+    // Dispatch the launch pack on a successful first-time activation.
+    if (status === 'ACTIVE' && previousStatus !== 'ACTIVE') {
+      try {
+        await sendLaunchPack(companyId, user.id)
+      } catch (err) {
+        console.error('Launch pack failed for company', companyId, err)
+      }
     }
 
     return NextResponse.json({ success: true, data: company, message: `Company ${status.toLowerCase()} successfully` });

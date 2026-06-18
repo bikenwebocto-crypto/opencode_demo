@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import {
-  getEmployeeFromSession,
-  unauthorized,
-  notFound,
-  badRequest,
-  internalError,
-} from '@/lib/employee-session'
+import { getEmployeeFromSession, unauthorized, internalError, companyInactive, notFound, badRequest } from '@/lib/employee-session'
 import {
   checkRedemptionEligibility,
   generateRedemptionCode,
@@ -22,6 +16,7 @@ export async function GET(request: NextRequest) {
   try {
     const employee = await getEmployeeFromSession()
     if (!employee) return unauthorized()
+    if ('inactive' in employee) return companyInactive(employee.companyStatus)
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status') ?? undefined
 
@@ -80,6 +75,7 @@ export async function POST(request: NextRequest) {
   try {
     const employee = await getEmployeeFromSession()
     if (!employee) return unauthorized()
+    if ('inactive' in employee) return companyInactive(employee.companyStatus)
     const body = await request.json()
     const { offerId, method, branchId, notes, spentAmount } = body
 

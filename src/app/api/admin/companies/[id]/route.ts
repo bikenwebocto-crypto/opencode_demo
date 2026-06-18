@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/supabase/server';
+import { getCityReadiness } from '@/lib/company-activation/city-readiness';
+import { sendLaunchPack, sendBillingReminder } from '@/lib/company-activation/launch-pack';
 
 export async function GET(
   _request: NextRequest,
@@ -83,6 +85,25 @@ export async function PATCH(
         );
       }
 
+      // City Readiness Gate: cannot transition to ACTIVE unless the
+      // headquarters city meets the merchant/category thresholds.
+      if (body.status === 'ACTIVE') {
+        const readiness = await getCityReadiness(company.city)
+        if (!readiness.ready) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: {
+                code: 'CITY_NOT_READY',
+                message: readiness.message,
+                details: readiness,
+              },
+            },
+            { status: 422 }
+          )
+        }
+      }
+
       await prisma.company.update({
         where: { id },
         data: {
@@ -113,6 +134,16 @@ export async function PATCH(
           changes: { from: previousStatus, to: body.status, reason: body.reason },
         },
       });
+
+      // When activation succeeds, dispatch the launch pack to the
+      // company admin + active employees.
+      if (body.status === 'ACTIVE' && previousStatus !== 'ACTIVE') {
+        try {
+          await sendLaunchPack(id, user.id)
+        } catch (err) {
+          console.error('Launch pack failed for company', id, err)
+        }
+      }
     }
 
     if (body.adminNote !== undefined) {
@@ -131,10 +162,25 @@ export async function PATCH(
         );
       }
 
+      const previousBilling = await prisma.companyBilling.findUnique({ where: { companyId: id } })
       await prisma.companyBilling.update({
         where: { companyId: id },
         data: { billingStatus: body.billingStatus as any },
       });
+
+      // Non-payment cascade: when a company moves to INVOICE_OVERDUE,
+      // send a reminder to the company admin(s) via the existing
+      // NotificationEvent / queue pipeline.
+      if (
+        body.billingStatus === 'INVOICE_OVERDUE' &&
+        previousBilling?.billingStatus !== 'INVOICE_OVERDUE'
+      ) {
+        try {
+          await sendBillingReminder(id, user.id)
+        } catch (err) {
+          console.error('Billing reminder failed for company', id, err)
+        }
+      }
     }
 
     const updated = await prisma.company.findUnique({
