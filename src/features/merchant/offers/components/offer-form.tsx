@@ -29,6 +29,7 @@ interface FormData {
   redemptionInstructions: string
   categoryId: string
   submissionNotes: string
+  replacementReason: string
 }
 
 interface FormErrors {
@@ -71,6 +72,7 @@ export function OfferForm({ offerId, initialData, isReplacement, currentLiveOffe
     redemptionInstructions: initialData?.redemptionInstructions ?? '',
     categoryId: initialData?.categoryId ?? '',
     submissionNotes: initialData?.submissionNotes ?? '',
+    replacementReason: initialData?.replacementReason ?? '',
   })
 
   const set = (field: keyof FormData) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -113,6 +115,7 @@ export function OfferForm({ offerId, initialData, isReplacement, currentLiveOffe
     redemptionInstructions: form.redemptionInstructions || null,
     categoryId: form.categoryId || null,
     submissionNotes: form.submissionNotes || null,
+    replacementReason: isReplacement ? form.replacementReason || null : null,
     saveAsDraft,
     ...(isReplacement && currentLiveOffer ? { replacesOfferId: currentLiveOffer.id } : {}),
   })
@@ -198,6 +201,27 @@ export function OfferForm({ offerId, initialData, isReplacement, currentLiveOffe
           <CardContent className="p-4 text-sm">
             <p className="font-medium">Replacing: <span className="text-blue-600">{currentLiveOffer.title}</span></p>
             <p className="text-muted-foreground mt-1">Your current live offer will remain visible to employees until the replacement is approved.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {isReplacement && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Replacement Details</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <label className={labelClass}>Reason for replacement</label>
+            <textarea
+              className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              value={form.replacementReason}
+              onChange={set('replacementReason')}
+              placeholder="Why are you replacing your current offer? (shown to admins during review)"
+              maxLength={1000}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              {form.replacementReason.length}/1000
+            </p>
           </CardContent>
         </Card>
       )}

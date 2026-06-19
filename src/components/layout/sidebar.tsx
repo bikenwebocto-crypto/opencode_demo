@@ -57,7 +57,7 @@ const navConfig: Record<string, NavItem[]> = {
     // { label: 'Content', href: '/admin/content', icon: Sparkles },
     // { label: 'Reports', href: '/admin/reports', icon: BarChart3 },
     { label: 'Audit Logs', href: '/admin/audit-logs', icon: Search },
-    // { label: 'Billing', href: '/admin/billing', icon: CreditCard },
+    { label: 'Billing', href: '/admin/billing', icon: CreditCard },
     { label: 'Settings', href: '/admin/settings', icon: Settings },
   ],
   merchant: [

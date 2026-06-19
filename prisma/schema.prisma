@@ -342,6 +342,9 @@ model MerchantOffer {
   submissionNotes        String?
   validationErrors       Json?
   adminNote              String?
+  isReplacement          Boolean                   @default(false)
+  replacementReason      String?
+  reviewNotes            String?
   merchant               Merchant                  @relation(fields: [merchantId], references: [id])
   replacesOffer          MerchantOffer?            @relation("OfferReplacement", fields: [replacesOfferId], references: [id])
   replacedBy             MerchantOffer[]           @relation("OfferReplacement")
@@ -354,6 +357,7 @@ model MerchantOffer {
   @@index([startDate, endDate])
   @@index([merchantId, status])
   @@index([status, startDate, endDate])
+  @@index([replacesOfferId])
   @@map("merchant_offers")
 }
 

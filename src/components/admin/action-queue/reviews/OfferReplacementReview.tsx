@@ -1,8 +1,9 @@
 'use client'
 
-import { ArrowDown, Tag, Clock } from 'lucide-react'
+import { ArrowDown, Tag, Clock, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StatusBadge } from '@/components/shared/status-badge'
+import { Badge } from '@/components/ui/badge'
 import type { ReviewComponentProps } from './types'
 
 function formatDiscount(offer: any): string {
@@ -14,6 +15,193 @@ function formatDiscount(offer: any): string {
 function formatDate(d?: string | Date | null) {
   if (!d) return 'N/A'
   return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+function imagesEqual(a: string[] | undefined, b: string[] | undefined): boolean {
+  const aJson = JSON.stringify([...(a ?? [])].sort())
+  const bJson = JSON.stringify([...(b ?? [])].sort())
+  return aJson === bJson
+}
+
+function arraysEqual(a: any, b: any): boolean {
+  return JSON.stringify(a ?? []) === JSON.stringify(b ?? [])
+}
+
+interface FieldRow {
+  key: string
+  label: string
+  current: any
+  next: any
+  changed: boolean
+  render?: (v: any) => string
+}
+
+function FieldDiffRow({ row }: { row: FieldRow }) {
+  return (
+    <div
+      className={`grid grid-cols-2 gap-2 rounded-md border p-2 text-sm ${
+        row.changed
+          ? 'border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/30'
+          : 'border-transparent'
+      }`}
+    >
+      <div>
+        <p className="text-xs uppercase text-muted-foreground">{row.label}</p>
+        <p className="text-sm">
+          {row.render ? row.render(row.current) : row.current ?? '—'}
+        </p>
+      </div>
+      <div>
+        <p className="text-xs uppercase text-muted-foreground">Replacement</p>
+        <p className={row.changed ? 'font-semibold text-primary' : 'text-sm'}>
+          {row.render ? row.render(row.next) : row.next ?? '—'}
+        </p>
+        {row.changed && (
+          <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold uppercase text-amber-700 dark:text-amber-300">
+            <AlertTriangle className="h-3 w-3" /> Changed
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function CompareTable({ current, next }: { current: any; next: any }) {
+  if (!current || !next) return null
+
+  const rows: FieldRow[] = [
+    {
+      key: 'title',
+      label: 'Title',
+      current: current.title,
+      next: next.title,
+      changed: current.title !== next.title,
+    },
+    {
+      key: 'description',
+      label: 'Description',
+      current: current.description,
+      next: next.description,
+      changed: current.description !== next.description,
+    },
+    {
+      key: 'categoryId',
+      label: 'Category',
+      current: current.categoryId,
+      next: next.categoryId,
+      changed: current.categoryId !== next.categoryId,
+    },
+    {
+      key: 'discount',
+      label: 'Discount',
+      current: current,
+      next: next,
+      changed:
+        Number(current.discountValue) !== Number(next.discountValue) ||
+        Number(current.discountPercent ?? 0) !== Number(next.discountPercent ?? 0) ||
+        Number(current.discountMax ?? 0) !== Number(next.discountMax ?? 0) ||
+        Number(current.minimumSpend ?? 0) !== Number(next.minimumSpend ?? 0),
+      render: (o: any) => formatDiscount(o),
+    },
+    {
+      key: 'redemptionCode',
+      label: 'Promo Code',
+      current: current.redemptionCode,
+      next: next.redemptionCode,
+      changed: (current.redemptionCode ?? '') !== (next.redemptionCode ?? ''),
+    },
+    {
+      key: 'redemptionInstructions',
+      label: 'Redemption Instructions',
+      current: current.redemptionInstructions,
+      next: next.redemptionInstructions,
+      changed:
+        (current.redemptionInstructions ?? '') !==
+        (next.redemptionInstructions ?? ''),
+    },
+    {
+      key: 'terms',
+      label: 'Terms & Conditions',
+      current: current.termsAndConditions,
+      next: next.termsAndConditions,
+      changed:
+        (current.termsAndConditions ?? '') !== (next.termsAndConditions ?? ''),
+    },
+    {
+      key: 'images',
+      label: 'Images',
+      current: current.imageUrls,
+      next: next.imageUrls,
+      changed: !imagesEqual(current.imageUrls, next.imageUrls),
+      render: (v: string[]) =>
+        (v ?? []).length > 0 ? `${v.length} image(s)` : 'None',
+    },
+    {
+      key: 'daysOfWeek',
+      label: 'Days of Week',
+      current: current.daysOfWeek,
+      next: next.daysOfWeek,
+      changed: !arraysEqual(current.daysOfWeek, next.daysOfWeek),
+      render: (v: any) => {
+        if (!Array.isArray(v)) return '—'
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+        return v
+          .slice()
+          .sort()
+          .map((d: number) => days[d] ?? `D${d}`)
+          .join(', ')
+      },
+    },
+    {
+      key: 'startDate',
+      label: 'Start Date',
+      current: current.startDate,
+      next: next.startDate,
+      changed:
+        new Date(current.startDate).getTime() !==
+        new Date(next.startDate).getTime(),
+      render: (v: any) => formatDate(v),
+    },
+    {
+      key: 'endDate',
+      label: 'End Date',
+      current: current.endDate,
+      next: next.endDate,
+      changed:
+        new Date(current.endDate).getTime() !==
+        new Date(next.endDate).getTime(),
+      render: (v: any) => formatDate(v),
+    },
+    {
+      key: 'maxRedemptions',
+      label: 'Max Redemptions',
+      current: current.maxRedemptions,
+      next: next.maxRedemptions,
+      changed: (current.maxRedemptions ?? 0) !== (next.maxRedemptions ?? 0),
+    },
+  ]
+
+  const changedCount = rows.filter((r) => r.changed).length
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between text-base">
+          <span>Side-by-Side Comparison</span>
+          {changedCount > 0 && (
+            <Badge variant="secondary">
+              {changedCount} field{changedCount === 1 ? '' : 's'} changed
+            </Badge>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {rows.map((row) => (
+          <FieldDiffRow key={row.key} row={row} />
+        ))}
+      </CardContent>
+    </Card>
+  )
 }
 
 function OfferSummary({ offer, label, accent }: { offer: any; label: string; accent?: boolean }) {
@@ -75,9 +263,17 @@ export function OfferReplacementReview({ entity, queueItem }: ReviewComponentPro
         <CardHeader>
           <CardTitle className="text-base">Replacement Flow</CardTitle>
         </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Approving this request will archive the current live offer and promote the new offer to LIVE.
+        <CardContent className="text-sm text-muted-foreground">
+          <p>
+            Approving this request will <strong>archive</strong> the current
+            live offer and promote the new offer to <strong>LIVE</strong>.
+            The merchant will end up with exactly one LIVE offer.
+          </p>
+          <p className="mt-1">
+            Rejecting keeps the current offer LIVE and marks the replacement as
+            REJECTED. Requesting changes keeps the current offer LIVE and sets
+            the replacement to <code>CHANGES_REQUESTED</code> for the merchant
+            to edit and resubmit.
           </p>
         </CardContent>
       </Card>
@@ -92,6 +288,8 @@ export function OfferReplacementReview({ entity, queueItem }: ReviewComponentPro
         </div>
       </div>
 
+      <CompareTable current={currentOffer} next={newOffer} />
+
       {(meta.reason || meta.replacementReason) && (
         <Card>
           <CardHeader>
@@ -99,6 +297,20 @@ export function OfferReplacementReview({ entity, queueItem }: ReviewComponentPro
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">{meta.reason ?? meta.replacementReason}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {newOffer?.reviewNotes && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CheckCircle2 className="h-4 w-4 text-amber-600" />
+              Previous admin notes
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{newOffer.reviewNotes}</p>
           </CardContent>
         </Card>
       )}

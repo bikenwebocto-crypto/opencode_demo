@@ -26,8 +26,7 @@ export async function GET(_request: NextRequest) {
     const user = await getCurrentUser()
     if (!user || user.userType !== 'admin') return unauthorized()
 
-    console.log('=== ACTION QUEUE STATS ===')
-    
+
     // Get all pending items with their types
     const allPendingItems = await prisma.actionQueueItem.findMany({
       where: { status: 'PENDING' },
@@ -40,7 +39,6 @@ export async function GET(_request: NextRequest) {
       },
     })
     
-    console.log(`Total pending items: ${allPendingItems.length}`)
     
     // Count by type
     const merchantApplications = allPendingItems.filter(i => i.type === 'MERCHANT_APPROVAL').length
@@ -63,16 +61,6 @@ export async function GET(_request: NextRequest) {
       prisma.actionQueueItem.count({ where: { status: 'FAILED' } }),
       prisma.actionQueueItem.count({ where: { status: 'SKIPPED' } }),
     ])
-    
-    console.log('Counts:', {
-      merchantApplications,
-      offerApprovals,
-      offerReplacements,
-      profileChanges,
-      companyActivations,
-      openIssues,
-      totalPending,
-    })
     
     const totalOfferApprovals = offerApprovals + offerReplacements + profileChanges
     const totalAlerts = renewalAlerts + missingPerks
