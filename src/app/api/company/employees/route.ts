@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import * as bcrypt from "bcryptjs";
 import { getCompanyAdmin, handleApiError, AuthError } from "../helpers";
 import { validateUserEmail } from "@/services/user-validation.service";
-import { emailService } from "@/lib/email";
+import { emailService } from "@/lib/email/email";
 
 export async function GET(request: NextRequest) {
   try {
