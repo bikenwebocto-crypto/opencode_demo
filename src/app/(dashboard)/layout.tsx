@@ -60,7 +60,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   // Find the best matching title
   const title = Object.entries(pageTitles).find(([path]) => pathname.startsWith(path))?.[1] ?? 'Dashboard'
-
+  console.log('Current user:', user)
   return (
     <div className="flex min-h-screen">
       {/* Mobile overlay */}
@@ -81,6 +81,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           userName={user?.name}
           userEmail={user?.email}
           userRole={user?.role}
+          companyName={user?.companyName}
         />
       </div>
 

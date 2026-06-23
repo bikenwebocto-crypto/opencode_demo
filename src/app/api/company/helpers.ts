@@ -79,6 +79,21 @@ export function handleApiError(error: unknown) {
       { status: 403 },
     )
   }
+  // Handle Prisma unique constraint violations
+  if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') {
+    const prismaError = error as any
+    const target = prismaError.meta?.target
+    if (Array.isArray(target) && target.includes('email')) {
+      return NextResponse.json(
+        { success: false, error: { code: 'EMAIL_ALREADY_EXISTS', message: 'Email is already assigned to another account' } },
+        { status: 409 },
+      )
+    }
+    return NextResponse.json(
+      { success: false, error: { code: 'DUPLICATE_ENTRY', message: 'A record with this information already exists' } },
+      { status: 409 },
+    )
+  }
   console.error('API error:', error)
   return NextResponse.json(
     { success: false, error: { code: 'INTERNAL', message: 'Internal server error' } },

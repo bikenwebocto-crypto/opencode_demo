@@ -34,6 +34,7 @@ export interface CurrentUser {
   id: string;
   email: string;
   role: string;
+  companyName?: string | null;
   userType: 'admin' | 'merchant' | 'company_admin' | 'employee';
   companyId: string | null;
   profileType: string;
@@ -76,13 +77,19 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
         break
       }
       case 'COMPANY': {
-        const p = await prisma.companyAdmin.findUnique({ where: { id: account.profileId } })
+        const p = await prisma.companyAdmin.findUnique({ 
+          where: { id: account.profileId },
+          include: { company: { select: { name: true } } }
+        })
         profile = p as Record<string, unknown> | null
         companyId = p?.companyId ?? null
         break
       }
       case 'EMPLOYEE': {
-        const p = await prisma.employee.findUnique({ where: { id: account.profileId } })
+        const p = await prisma.employee.findUnique({ 
+          where: { id: account.profileId },
+          include: { company: { select: { name: true } } }
+        })
         profile = p as Record<string, unknown> | null
         companyId = p?.companyId ?? null
         break
@@ -95,6 +102,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       role: account.role,
       userType,
       companyId,
+      companyName: (profile as any)?.companyName ?? null,
       profileType: account.profileType,
       profileId: account.profileId,
       profile,
@@ -112,6 +120,7 @@ export interface ResolvedUser {
   role: string | null;
   profileId: string | null;
   name: string;
+  companyName?: string | null;
   isActive: boolean;
 }
 
@@ -149,6 +158,7 @@ export async function resolveAuthenticatedUser(): Promise<ResolvedUser | null> {
     role: session.role,
     profileId: session.profileId,
     name: name || 'NA',
+    companyName: session.companyId ? (session.profile as any)?.company?.name ?? null : null,  
     isActive: session.role !== null && session.role !== undefined,
   }
 }

@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useCompanyEmployees, useCreateCompanyEmployee, useDeactivateCompanyEmployee, useReactivateCompanyEmployee, useEmployeeExport } from '@/hooks/queries/use-company-employees'
+import { useCompanyEmployees, useCreateCompanyEmployee, useDeactivateCompanyEmployee, useReactivateCompanyEmployee, useUpdateCompanyEmployee, useEmployeeExport } from '@/hooks/queries/use-company-employees'
 import { showToast } from '@/hooks/use-toast'
-import { Search, Download, Plus, UserX, UserCheck } from 'lucide-react'
+import { Search, Download, Plus, UserX, UserCheck, Pencil } from 'lucide-react'
+import { EmployeeEditModal } from '@/components/shared/employee-edit-modal'
 
 export default function CompanyEmployeesPage() {
   const [search, setSearch] = useState('')
@@ -15,11 +16,13 @@ export default function CompanyEmployeesPage() {
   const [page, setPage] = useState(1)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ firstName: '', lastName: '', email: '', department: '', jobTitle: '' })
+  const [editingEmployee, setEditingEmployee] = useState<any | null>(null)
 
   const { data, isLoading } = useCompanyEmployees({ page, pageSize: 20, status: statusFilter, q: search })
   const createEmployee = useCreateCompanyEmployee()
   const deactivate = useDeactivateCompanyEmployee()
   const reactivate = useReactivateCompanyEmployee()
+  const updateEmployee = useUpdateCompanyEmployee()
   const exportCsv = useEmployeeExport()
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -127,7 +130,7 @@ export default function CompanyEmployeesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data?.data.map((emp) => (
+                  { data?.data.map((emp) => (
                     <tr key={emp.id} className="border-b transition-colors hover:bg-muted/50">
                       <td className="p-3 font-medium">{emp.firstName} {emp.lastName}</td>
                       <td className="p-3 text-muted-foreground">{emp.email}</td>
@@ -135,20 +138,32 @@ export default function CompanyEmployeesPage() {
                       <td className="p-3"><StatusBadge status={emp.status} /></td>
                       <td className="p-3">{emp._count.redemptions}</td>
                       <td className="p-3">
-                        {emp.status === 'ACTIVE' ? (
-                          <Button variant="ghost" size="sm" onClick={() => handleDeactivate(emp.id)} disabled={deactivate.isPending}>
-                            <UserX className="h-4 w-4 text-destructive" />
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingEmployee(emp)}
+                            disabled={updateEmployee.isPending}
+                            title="Edit employee"
+                            aria-label="Edit employee"
+                          >
+                            <Pencil className="h-4 w-4" />
                           </Button>
-                        ) : (
-                          <Button variant="ghost" size="sm" onClick={() => handleReactivate(emp.id)} disabled={reactivate.isPending}>
-                            <UserCheck className="h-4 w-4 text-success" />
-                          </Button>
-                        )}
+                          {emp.status === 'ACTIVE' ? (
+                            <Button variant="ghost" size="sm" onClick={() => handleDeactivate(emp.id)} disabled={deactivate.isPending}>
+                              <UserX className="h-4 w-4 text-destructive" />
+                            </Button>
+                          ) : (
+                            <Button variant="ghost" size="sm" onClick={() => handleReactivate(emp.id)} disabled={reactivate.isPending}>
+                              <UserCheck className="h-4 w-4 text-success" />
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
                   {(!data?.data || data.data.length === 0) && (
-                    <tr><td colSpan={6} className="p-8 text-center text-muted-foreground">No employees found</td></tr>
+                    <tr><td colSpan={7} className="p-8 text-center text-muted-foreground">No employees found</td></tr>
                   )}
                 </tbody>
               </table>
@@ -164,6 +179,18 @@ export default function CompanyEmployeesPage() {
           <Button variant="outline" size="sm" disabled={page >= data.meta.totalPages} onClick={() => setPage(page + 1)}>Next</Button>
         </div>
       )}
+
+      <EmployeeEditModal
+        open={!!editingEmployee}
+        onClose={() => setEditingEmployee(null)}
+        employee={editingEmployee ?? { id: '' }}
+        scope="admin"
+        saving={updateEmployee.isPending}
+        onSave={async (data: Record<string, unknown>) => {
+          if (!editingEmployee?.id) return
+          await updateEmployee.mutateAsync({ id: editingEmployee.id, ...data })
+        }}
+      />
     </div>
   )
 }

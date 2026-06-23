@@ -280,6 +280,30 @@ export const employeeProfileUpdateSchema = z.object({
   joinMethod: z.string().max(50).optional(),
 });
 
+// ============================================================
+// EMPLOYEE EDIT SCHEMAS (Admin / Company Admin)
+// ============================================================
+
+export const adminEmployeeUpdateSchema = z.object({
+  firstName: z.string().min(1).max(100).optional(),
+  lastName: z.string().min(1).max(100).optional(),
+  email: emailSchema.optional(),
+  employeeId: z.string().max(100).optional().nullable(),
+  department: z.string().max(100).optional().nullable(),
+  jobTitle: z.string().max(100).optional().nullable(),
+  phone: phoneSchema,
+  status: z.enum(['ACTIVE', 'INACTIVE', 'INVITED', 'SUSPENDED', 'INELIGIBLE']).optional(),
+});
+
+export const companyEmployeeUpdateSchema = z.object({
+  firstName: z.string().min(1).max(100).optional(),
+  lastName: z.string().min(1).max(100).optional(),
+  employeeId: z.string().max(100).optional().nullable(),
+  department: z.string().max(100).optional().nullable(),
+  jobTitle: z.string().max(100).optional().nullable(),
+  phone: phoneSchema,
+}).strict();
+
 export const issueReportSchema = z.object({
   merchantId: uuidSchema,
   redemptionId: uuidSchema.optional().nullable(),

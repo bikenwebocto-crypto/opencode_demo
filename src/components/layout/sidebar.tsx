@@ -41,6 +41,7 @@ interface SidebarProps {
   userName?: string
   userEmail?: string
   userRole?: string | null
+  companyName?: string | null
   onLogout?: () => void
 }
 
@@ -88,17 +89,21 @@ const navConfig: Record<string, NavItem[]> = {
   ],
 }
 
-export function Sidebar({ userType, userName, userEmail, userRole }: SidebarProps) {
+export function Sidebar({ userType, userName, userEmail, userRole, companyName }: SidebarProps) {
   const pathname = usePathname()
   const navItems = navConfig[userType] ?? []
   const router = useRouter()
+  const displayName = userType === 'company_admin' ? userName : userName
+  const userCompany = companyName
+  const initials = displayName?.charAt(0)?.toUpperCase() ?? 'U'
+
   const logout = async() => {
     try {
       // await fetch('/api/auth/logout', {
       //   method: 'POST',
       // })
      const res = await supabase.auth.signOut()
-     console.log('Logout response:', res) 
+    //  console.log('Logout response:', res) 
      router.push('/login')
     } 
     catch (error) {
@@ -117,11 +122,14 @@ export function Sidebar({ userType, userName, userEmail, userRole }: SidebarProp
       {/* User info */}
       <div className="flex items-center gap-3 border-b px-6 py-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
-          {userName?.charAt(0)?.toUpperCase() ?? 'U'}
+          {initials}
         </div>
         <div className="flex-1 overflow-hidden">
-          <p className="truncate text-sm font-medium">{userName ?? 'NA'}</p>
+          <p className="truncate text-sm font-medium">{displayName ?? 'NA'}</p>
           <p className="truncate text-xs text-muted-foreground">{userEmail ?? 'NA'}</p>
+          {userCompany && (
+            <p className="truncate text-xs text-muted-foreground">{userCompany}</p>
+          )}
           {userRole && (
             <span className="inline-block mt-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
               {userRole.replace(/_/g, ' ')}
