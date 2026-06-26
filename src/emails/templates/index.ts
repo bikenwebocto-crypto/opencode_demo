@@ -13,3 +13,7 @@ export {
 export {
   renderOfferApprovedTemplate,
 } from './offer-approved'
+
+export {
+  renderCompanyAdminInvitationTemplate,
+} from './company-admin-invitation'

@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
         { redemptionCode: { contains: q, mode: 'insensitive' } },
         { employee: { firstName: { contains: q, mode: 'insensitive' } } },
         { employee: { lastName: { contains: q, mode: 'insensitive' } } },
-        { employee: { email: { contains: q, mode: 'insensitive' } } },
+
         { company: { name: { contains: q, mode: 'insensitive' } } },
       ]
     }
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
-          employee: { select: { id: true, firstName: true, lastName: true, email: true } },
+          employee: { select: { id: true, firstName: true, lastName: true } },
           company: { select: { id: true, name: true } },
           offer: { select: { id: true, title: true, offerType: true, discountValue: true } },
         },

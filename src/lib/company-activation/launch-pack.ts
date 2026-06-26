@@ -16,6 +16,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
+import { createAuditLog } from '@/services/audit-log.service'
 
 interface LaunchPackRecipient {
   id: string
@@ -23,7 +24,7 @@ interface LaunchPackRecipient {
   firstName: string
 }
 
-export async function sendLaunchPack(companyId: string, triggeredByUserId: string) {
+export async function sendLaunchPack(companyId: string, profileId: string) {
   const company = await prisma.company.findUnique({
     where: { id: companyId },
     include: { companyAdmins: { where: { isActive: true } } },
@@ -32,35 +33,49 @@ export async function sendLaunchPack(companyId: string, triggeredByUserId: strin
     throw new Error('Company not found')
   }
 
+  const adminAccountIds = company.companyAdmins.map((a) => a.accountId).filter(Boolean) as string[]
+  const adminAccounts = adminAccountIds.length > 0
+    ? await prisma.account.findMany({ where: { authUserId: { in: adminAccountIds } }, select: { authUserId: true, email: true } })
+    : []
+  const adminEmailMap = new Map(adminAccounts.map((a) => [a.authUserId, a.email]))
+
   const admins: LaunchPackRecipient[] = company.companyAdmins.map((a) => ({
     id: a.id,
-    email: a.email,
+    email: adminEmailMap.get(a.accountId ?? '') ?? '',
     firstName: a.firstName,
   }))
 
   const employees = await prisma.employee.findMany({
     where: { companyId, status: 'ACTIVE', deletedAt: null },
-    select: { id: true, email: true, firstName: true },
+    select: { id: true, firstName: true, accountId: true },
   })
+
+  const employeeAccountIds = employees.map((e) => e.accountId).filter(Boolean) as string[]
+  const employeeAccounts = employeeAccountIds.length > 0
+    ? await prisma.account.findMany({ where: { authUserId: { in: employeeAccountIds } }, select: { authUserId: true, email: true } })
+    : []
+  const employeeEmailMap = new Map(employeeAccounts.map((a) => [a.authUserId, a.email]))
 
   const recipients: LaunchPackRecipient[] = [
     ...admins,
-    ...employees,
+    ...employees.map((e) => ({
+      id: e.id,
+      email: employeeEmailMap.get(e.accountId ?? '') ?? '',
+      firstName: e.firstName,
+    })),
   ]
 
   // Mark the activation transition with a CompanyStatusHistory
   // entry — useful for audit + UI.
-  await prisma.auditLog.create({
-    data: {
-      actorType: 'admin',
-      adminId: triggeredByUserId,
-      action: 'LAUNCH_PACK_SENT',
-      entityType: 'company',
-      entityId: companyId,
-      metadata: {
-        adminCount: admins.length,
-        employeeCount: employees.length,
-      },
+  await createAuditLog({
+    actorType: 'admin',
+    actorId: profileId,
+    action: 'LAUNCH_PACK_SENT',
+    entityType: 'company',
+    entityId: companyId,
+    metadata: {
+      adminCount: admins.length,
+      employeeCount: employees.length,
     },
   })
 
@@ -86,7 +101,7 @@ export async function sendLaunchPack(companyId: string, triggeredByUserId: strin
   }
 }
 
-export async function sendBillingReminder(companyId: string, triggeredByUserId: string) {
+export async function sendBillingReminder(companyId: string, profileId: string) {
   const company = await prisma.company.findUnique({
     where: { id: companyId },
     include: { companyAdmins: { where: { isActive: true } } },
@@ -95,15 +110,13 @@ export async function sendBillingReminder(companyId: string, triggeredByUserId: 
     throw new Error('Company not found')
   }
 
-  await prisma.auditLog.create({
-    data: {
-      actorType: 'admin',
-      adminId: triggeredByUserId,
-      action: 'BILLING_REMINDER_SENT',
-      entityType: 'company',
-      entityId: companyId,
-      metadata: { billingStatus: 'INVOICE_OVERDUE' },
-    },
+  await createAuditLog({
+    actorType: 'admin',
+    actorId: profileId,
+    action: 'BILLING_REMINDER_SENT',
+    entityType: 'company',
+    entityId: companyId,
+    metadata: { billingStatus: 'INVOICE_OVERDUE' },
   })
 
   for (const a of company.companyAdmins) {

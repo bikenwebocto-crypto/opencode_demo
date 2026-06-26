@@ -52,7 +52,7 @@ export async function POST(
       )
     }
 
-    const adminId = auth.adminId
+    const profileId = auth.profileId
     const auditAction =
       action === 'READY'
         ? BILLING_AUDIT_ACTIONS.RENEWAL_READY
@@ -61,14 +61,14 @@ export async function POST(
     await writeBillingAudit({
       action: auditAction,
       companyId: id,
-      adminId,
+      profileId,
       reason: note || undefined,
       metadata: { decision: action },
     })
 
     await writeBillingNotification({
       companyId: id,
-      adminId,
+      adminId: profileId,
       title:
         action === 'READY'
           ? `Renewal marked ready: ${company.name}`

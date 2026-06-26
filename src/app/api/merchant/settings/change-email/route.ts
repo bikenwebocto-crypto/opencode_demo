@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getMerchantFromSession } from '@/lib/merchant-session'
+import { createAuditLog } from '@/services/audit-log.service'
 
 function unauthorized() {
   return NextResponse.json(
@@ -44,29 +45,23 @@ export async function POST(request: NextRequest) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(newEmail)) return badRequest('Invalid email address')
 
-    const bcrypt = (await import('bcryptjs')).default
-    const valid = await bcrypt.compare(password, merchant.passwordHash)
-    if (!valid) return badRequest('Password is incorrect')
-
-    const existing = await prisma.merchant.findUnique({ where: { email: newEmail } })
-    if (existing && existing.id !== merchant.id) {
+    const existing = await prisma.account.findUnique({ where: { email: newEmail } })
+    if (existing && existing.authUserId !== merchant.accountId) {
       return badRequest('This email is already in use')
     }
 
-    await prisma.merchant.update({
-      where: { id: merchant.id },
+    await prisma.account.update({
+      where: { authUserId: merchant.accountId! },
       data: { email: newEmail },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'MERCHANT',
-        merchantId: merchant.id,
-        action: 'EMAIL_CHANGED',
-        entityType: 'merchant',
-        entityId: merchant.id,
-        metadata: { newEmail },
-      },
+    await createAuditLog({
+      actorType: 'merchant',
+      actorId: merchant.id,
+      action: 'EMAIL_CHANGED',
+      entityType: 'merchant',
+      entityId: merchant.id,
+      metadata: { newEmail },
     })
 
     return NextResponse.json({ success: true, message: 'Email updated successfully' })

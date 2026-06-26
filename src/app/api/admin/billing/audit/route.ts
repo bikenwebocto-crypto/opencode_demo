@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
-          admin: { select: { id: true, firstName: true, lastName: true, email: true } },
+          admin: { select: { id: true, firstName: true, lastName: true } },
           company: { select: { id: true, name: true } },
         },
       }),

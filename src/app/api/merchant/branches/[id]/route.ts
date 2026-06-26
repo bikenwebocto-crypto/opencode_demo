@@ -8,6 +8,7 @@ import {
   isSignificantLocationChange,
   hasDuplicateAddress,
 } from '@/lib/branch-helpers'
+import { createAuditLog } from '@/services/audit-log.service'
 
 function unauthorized() {
   return NextResponse.json(
@@ -214,39 +215,33 @@ export async function PATCH(
       data: dataForPrisma,
     })
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'merchant',
-        merchantId: merchant.id,
-        action: 'BRANCH_UPDATED',
-        entityType: 'merchant_branch',
-        entityId: id,
-        changes: { before, after, requiresApproval } as any,
-      },
+    await createAuditLog({
+      actorType: 'merchant',
+      actorId: merchant.id,
+      action: 'BRANCH_UPDATED',
+      entityType: 'merchant_branch',
+      entityId: id,
+      changes: { before, after, requiresApproval } as any,
     })
 
     if (updateData.status === 'ACTIVE' && existing.status !== 'ACTIVE') {
-      await prisma.auditLog.create({
-        data: {
-          actorType: 'merchant',
-          merchantId: merchant.id,
-          action: 'BRANCH_ACTIVATED',
-          entityType: 'merchant_branch',
-          entityId: id,
-          changes: { from: existing.status, to: 'ACTIVE' } as any,
-        },
+      await createAuditLog({
+        actorType: 'merchant',
+        actorId: merchant.id,
+        action: 'BRANCH_ACTIVATED',
+        entityType: 'merchant_branch',
+        entityId: id,
+        changes: { from: existing.status, to: 'ACTIVE' } as any,
       })
     }
     if (updateData.status === 'INACTIVE' && existing.status !== 'INACTIVE') {
-      await prisma.auditLog.create({
-        data: {
-          actorType: 'merchant',
-          merchantId: merchant.id,
-          action: 'BRANCH_DEACTIVATED',
-          entityType: 'merchant_branch',
-          entityId: id,
-          changes: { from: existing.status, to: 'INACTIVE' } as any,
-        },
+      await createAuditLog({
+        actorType: 'merchant',
+        actorId: merchant.id,
+        action: 'BRANCH_DEACTIVATED',
+        entityType: 'merchant_branch',
+        entityId: id,
+        changes: { from: existing.status, to: 'INACTIVE' } as any,
       })
     }
 
@@ -318,15 +313,13 @@ export async function DELETE(
       data: { status: 'CLOSED', isActive: false, deletedAt: now, isPrimary: false },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'merchant',
-        merchantId: merchant.id,
-        action: 'BRANCH_DELETED',
-        entityType: 'merchant_branch',
-        entityId: id,
-        changes: { branchName: existing.name, branchType: existing.branchType } as any,
-      },
+    await createAuditLog({
+      actorType: 'merchant',
+      actorId: merchant.id,
+      action: 'BRANCH_DELETED',
+      entityType: 'merchant_branch',
+      entityId: id,
+      changes: { branchName: existing.name, branchType: existing.branchType } as any,
     })
 
     await adjustMerchantStatusForBranchChange(merchant.id)

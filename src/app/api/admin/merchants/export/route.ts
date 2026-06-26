@@ -13,9 +13,10 @@ export async function GET() {
   const merchants = await prisma.merchant.findMany({
     orderBy: { createdAt: 'desc' },
     select: {
+      id: true,
+      accountId: true,
       status: true,
       businessName: true,
-      email: true,
       contactName: true,
       contactPhone: true,
       description: true,
@@ -30,10 +31,16 @@ export async function GET() {
     },
   });
 
+  const merchantAccountIds = merchants.map((m) => m.accountId).filter(Boolean) as string[]
+  const merchantAccounts = merchantAccountIds.length > 0
+    ? await prisma.account.findMany({ where: { authUserId: { in: merchantAccountIds } }, select: { authUserId: true, email: true } })
+    : []
+  const emailMap = new Map(merchantAccounts.map((a) => [a.authUserId, a.email]))
+
   const rows = merchants.map((m) => ({
     status: m.status,
     businessName: m.businessName,
-    email: m.email,
+    email: emailMap.get(m.accountId ?? '') ?? '',
     contactName: m.contactName,
     contactPhone: m.contactPhone ?? '',
     password: '',

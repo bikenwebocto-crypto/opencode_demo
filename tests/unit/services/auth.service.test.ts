@@ -13,6 +13,17 @@ vi.mock('crypto', () => ({
   randomBytes: vi.fn(() => Buffer.from('a'.repeat(128))),
 }));
 
+const makeMockAccount = (overrides = {}) => ({
+  authUserId: 'acct-1',
+  email: 'test@example.com',
+  passwordHash: 'hashed_validPass1',
+  status: 'ACTIVE' as const,
+  role: 'SUPER_ADMIN' as const,
+  profileId: 'user-1',
+  profileType: 'ADMIN' as const,
+  ...overrides,
+});
+
 const makeMockUser = (overrides = {}) => ({
   id: 'user-1',
   email: 'test@example.com',
@@ -39,19 +50,6 @@ function decodeToken(token: string): Record<string, unknown> {
 describe('AuthService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  describe('hashPassword / verifyPassword', () => {
-    it('should hash and verify a password', async () => {
-      const hash = await authService.hashPassword('MyStr0ng!Pass');
-      expect(hash).toBe('hashed_MyStr0ng!Pass');
-
-      const ok = await authService.verifyPassword('MyStr0ng!Pass', hash);
-      expect(ok).toBe(true);
-
-      const nok = await authService.verifyPassword('WrongPassword', hash);
-      expect(nok).toBe(false);
-    });
   });
 
   describe('generateAccessToken / verifyAccessToken', () => {
@@ -85,8 +83,11 @@ describe('AuthService', () => {
   describe('login', () => {
     it('should return LoginResponse for valid admin credentials', async () => {
       const user = makeMockUser();
+      const account = makeMockAccount();
+      vi.mocked(prisma.account.findUnique).mockResolvedValue(account as any);
       vi.mocked(prisma.adminUser.findUnique).mockResolvedValue(user as any);
       vi.mocked(prisma.loginSession.create).mockResolvedValue({ id: 'sess-1' } as any);
+      vi.mocked(prisma.account.update).mockResolvedValue(account as any);
       (prisma.adminUser as any).update = vi.fn().mockResolvedValue(user as any);
 
       const result = await authService.login(makeLoginRequest());
@@ -111,8 +112,11 @@ describe('AuthService', () => {
 
     it('should return LoginResponse for valid merchant credentials', async () => {
       const merchant = makeMockUser({ role: undefined, companyId: 'comp-1' });
+      const account = makeMockAccount({ profileType: 'MERCHANT', role: 'MERCHANT' });
+      vi.mocked(prisma.account.findUnique).mockResolvedValue(account as any);
       vi.mocked(prisma.merchant.findUnique).mockResolvedValue(merchant as any);
       vi.mocked(prisma.loginSession.create).mockResolvedValue({ id: 'sess-1' } as any);
+      vi.mocked(prisma.account.update).mockResolvedValue(account as any);
       (prisma.merchant as any).update = vi.fn().mockResolvedValue(merchant as any);
 
       const result = await authService.login(makeLoginRequest({ userType: 'merchant' }));
@@ -131,8 +135,11 @@ describe('AuthService', () => {
 
     it('should return LoginResponse for valid company_admin credentials', async () => {
       const admin = makeMockUser({ company: { id: 'comp-1' }, companyId: 'comp-1', role: undefined });
+      const account = makeMockAccount({ profileType: 'COMPANY', role: 'COMPANY_ADMIN' });
+      vi.mocked(prisma.account.findUnique).mockResolvedValue(account as any);
       vi.mocked(prisma.companyAdmin.findUnique).mockResolvedValue(admin as any);
       vi.mocked(prisma.loginSession.create).mockResolvedValue({ id: 'sess-1' } as any);
+      vi.mocked(prisma.account.update).mockResolvedValue(account as any);
       (prisma.companyAdmin as any).update = vi.fn().mockResolvedValue(admin as any);
 
       const result = await authService.login(makeLoginRequest({ userType: 'company_admin' }));
@@ -149,8 +156,11 @@ describe('AuthService', () => {
 
     it('should return LoginResponse for valid employee credentials', async () => {
       const emp = makeMockUser({ company: { id: 'comp-1' }, companyId: 'comp-1', role: undefined });
+      const account = makeMockAccount({ passwordHash: undefined, profileType: 'EMPLOYEE', role: 'EMPLOYEE' });
+      vi.mocked(prisma.account.findUnique).mockResolvedValue(account as any);
       vi.mocked(prisma.employee.findUnique).mockResolvedValue(emp as any);
       vi.mocked(prisma.loginSession.create).mockResolvedValue({ id: 'sess-1' } as any);
+      vi.mocked(prisma.account.update).mockResolvedValue(account as any);
       (prisma.employee as any).update = vi.fn().mockResolvedValue(emp as any);
 
       const result = await authService.login(makeLoginRequest({ userType: 'employee' }));
@@ -165,21 +175,25 @@ describe('AuthService', () => {
       );
     });
 
-    it('should return null for unknown user', async () => {
-      vi.mocked(prisma.adminUser.findUnique).mockResolvedValue(null);
+    it('should return null for unknown account', async () => {
+      vi.mocked(prisma.account.findUnique).mockResolvedValue(null);
       const result = await authService.login(makeLoginRequest());
       expect(result).toBeNull();
     });
 
     it('should return null for wrong password', async () => {
-      const user = makeMockUser({ passwordHash: 'hashed_otherPass' });
+      const user = makeMockUser();
+      const account = makeMockAccount({ passwordHash: 'hashed_wrongHash' });
+      vi.mocked(prisma.account.findUnique).mockResolvedValue(account as any);
       vi.mocked(prisma.adminUser.findUnique).mockResolvedValue(user as any);
       const result = await authService.login(makeLoginRequest({ password: 'wrongPass' }));
       expect(result).toBeNull();
     });
 
-    it('should return null if user is inactive', async () => {
+    it('should return null if account is inactive', async () => {
       const user = makeMockUser({ isActive: false });
+      const account = makeMockAccount({ status: 'PENDING' });
+      vi.mocked(prisma.account.findUnique).mockResolvedValue(account as any);
       vi.mocked(prisma.adminUser.findUnique).mockResolvedValue(user as any);
       const result = await authService.login(makeLoginRequest());
       expect(result).toBeNull();
@@ -208,7 +222,7 @@ describe('AuthService', () => {
 
     it('should refresh an active session', async () => {
       vi.mocked(prisma.loginSession.findUnique).mockResolvedValue(validSession as any);
-      vi.mocked(prisma.adminUser.findUnique).mockResolvedValue(makeMockUser() as any);
+      vi.mocked(prisma.adminUser.findUnique).mockResolvedValue({ ...makeMockUser(), account: { email: 'test@example.com', role: 'SUPER_ADMIN' } } as any);
       vi.mocked(prisma.loginSession.update).mockResolvedValue(validSession as any);
 
       const result = await authService.refreshAccessToken('valid-refresh');
@@ -244,6 +258,7 @@ describe('AuthService', () => {
 
     it('should return null if user is deleted or inactive', async () => {
       vi.mocked(prisma.loginSession.findUnique).mockResolvedValue(validSession as any);
+      vi.mocked(prisma.loginSession.update).mockResolvedValue(validSession as any);
       vi.mocked(prisma.adminUser.findUnique).mockResolvedValue(null);
       expect(await authService.refreshAccessToken('valid-refresh')).toBeNull();
     });
@@ -301,8 +316,11 @@ describe('AuthService', () => {
   describe('JWT payload construction', () => {
     it('should include admin_role for admin user', async () => {
       const user = makeMockUser({ role: 'SUPER_ADMIN' });
+      const account = makeMockAccount();
+      vi.mocked(prisma.account.findUnique).mockResolvedValue(account as any);
       vi.mocked(prisma.adminUser.findUnique).mockResolvedValue(user as any);
       vi.mocked(prisma.loginSession.create).mockResolvedValue({ id: 's' } as any);
+      vi.mocked(prisma.account.update).mockResolvedValue(account as any);
       (prisma.adminUser as any).update = vi.fn().mockResolvedValue(user as any);
 
       const result = await authService.login(makeLoginRequest());
@@ -314,8 +332,11 @@ describe('AuthService', () => {
 
     it('should include merchant_id for merchant user', async () => {
       const user = makeMockUser({ role: undefined });
+      const account = makeMockAccount({ profileType: 'MERCHANT', role: 'MERCHANT' });
+      vi.mocked(prisma.account.findUnique).mockResolvedValue(account as any);
       vi.mocked(prisma.merchant.findUnique).mockResolvedValue(user as any);
       vi.mocked(prisma.loginSession.create).mockResolvedValue({ id: 's' } as any);
+      vi.mocked(prisma.account.update).mockResolvedValue(account as any);
       (prisma.merchant as any).update = vi.fn().mockResolvedValue(user as any);
 
       const result = await authService.login(makeLoginRequest({ userType: 'merchant' }));
@@ -326,8 +347,11 @@ describe('AuthService', () => {
 
     it('should include company_id for company_admin or employee', async () => {
       const user = makeMockUser({ company: { id: 'comp-1' }, companyId: 'comp-1', role: undefined });
+      const account = makeMockAccount({ passwordHash: undefined, profileType: 'EMPLOYEE', role: 'EMPLOYEE' });
+      vi.mocked(prisma.account.findUnique).mockResolvedValue(account as any);
       vi.mocked(prisma.employee.findUnique).mockResolvedValue(user as any);
       vi.mocked(prisma.loginSession.create).mockResolvedValue({ id: 's' } as any);
+      vi.mocked(prisma.account.update).mockResolvedValue(account as any);
       (prisma.employee as any).update = vi.fn().mockResolvedValue(user as any);
 
       const result = await authService.login(makeLoginRequest({ userType: 'employee' }));

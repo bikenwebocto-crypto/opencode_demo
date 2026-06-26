@@ -112,9 +112,13 @@ export async function buildPreview(csv: string, companyId: string): Promise<Impo
   const rows = await parseCsvBody(csv)
   const existing = await prisma.employee.findMany({
     where: { companyId, deletedAt: null },
-    select: { email: true },
   })
-  const existingEmails = new Set(existing.map((e) => e.email.toLowerCase()))
+  const existingAccountIds = existing.map((e) => e.accountId).filter(Boolean) as string[]
+  const existingAccounts = existingAccountIds.length > 0
+    ? await prisma.account.findMany({ where: { authUserId: { in: existingAccountIds } }, select: { authUserId: true, email: true } })
+    : []
+  const accountEmailMap = new Map(existingAccounts.map((a) => [a.authUserId, a.email]))
+  const existingEmails = new Set(existing.map((e) => accountEmailMap.get(e.accountId ?? '')?.toLowerCase() ?? ''))
   const { valid, invalid } = await validateRows(rows, { companyId, existingEmails })
 
   const bodyHash = await sha256(csv)

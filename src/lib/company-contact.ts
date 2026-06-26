@@ -27,13 +27,13 @@ export function derivePrimaryAdmin(
   return toSummary(sorted[0]!)
 }
 
-export function toAdminSummary(a: CompanyAdmin): CompanyAdminSummary {
+export function toAdminSummary(a: CompanyAdmin, email?: string): CompanyAdminSummary {
   return {
     id: a.id,
     companyId: a.companyId,
     firstName: a.firstName,
     lastName: a.lastName,
-    email: a.email,
+    email: email ?? '',
     role: a.isPrimary ? 'OWNER' : 'MEMBER',
     status: (a.isActive ? 'ACTIVE' : 'INACTIVE') as CompanyAdminStatus,
     isPrimary: a.isPrimary,
@@ -56,7 +56,7 @@ export function summarizeAdmins(
   admins: CompanyAdmin[] | undefined | null,
 ): CompanyAdminSummary[] {
   if (!admins) return []
-  return admins.map(toAdminSummary)
+  return admins.map((a) => toAdminSummary(a))
 }
 
 /**

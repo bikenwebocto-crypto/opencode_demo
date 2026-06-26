@@ -24,7 +24,20 @@ prisma.$use(async (params, next) => {
 
 // Audit logging middleware for critical mutations
 prisma.$use(async (params, next) => {
+   // ✅ Skip ALL operations on Account model completely
+  if (params.model === 'Account') {
+    return next(params); // Skip audit entirely
+  }
+
   const result = await next(params);
+    // ✅ ONLY audit these models - EXCLUDE Account and other sensitive models
+  const auditModels = ['Merchant', 'Company', 'MerchantOffer', 'Employee'];
+  const sensitiveModels = ['Account', 'AdminUser', 'PasswordResetToken', 'LoginSession', 'EmailVerificationToken'];
+  
+  // Skip if not in audit models OR in sensitive models
+  if (!auditModels.includes(params.model ?? '') || sensitiveModels.includes(params.model ?? '')) {
+    return result;
+  }
 
   const auditActions: Record<string, string[]> = {
     Merchant: ['update', 'delete'],

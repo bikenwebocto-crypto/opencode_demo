@@ -9,6 +9,8 @@ import {
   toAdminSummary,
 } from '@/lib/company-contact'
 import { validateUserEmail } from '@/services/user-validation.service'
+import { buildAuditData, fromCurrentUser } from '@/services/audit-log.service'
+import { sendCompanyAdminInvitation } from '@/services/company-admin-invitation.service'
 
 function unauthorized() {
   return NextResponse.json(
@@ -75,10 +77,11 @@ export async function PATCH(
 
     const { id, adminId } = await params
     const body = (await request.json().catch(() => ({}))) as PatchBody
+    console.log('[COMPANY_ADMIN_EMAIL][ROUTE] PATCH /api/admin/companies/[id]/admins/[adminId]', { companyId: id, adminId, bodyEmail: body.email })
 
     const company = await prisma.company.findUnique({
       where: { id },
-      select: { id: true, deletedAt: true },
+      select: { id: true, name: true, deletedAt: true },
     })
     if (!company || company.deletedAt) return notFound('Company not found')
 
@@ -89,7 +92,10 @@ export async function PATCH(
       return notFound('Company admin not found in this company')
     }
 
-    // Email uniqueness check across all profile tables.
+    const existingAcct = existing.accountId
+      ? await prisma.account.findUnique({ where: { authUserId: existing.accountId }, select: { email: true } })
+      : null
+    const currentEmail = existingAcct?.email ?? ''
     let nextEmail: string | undefined
     if (body.email !== undefined) {
       const trimmed = body.email.trim().toLowerCase()
@@ -97,7 +103,7 @@ export async function PATCH(
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
         return badRequest('Invalid email address')
       }
-      if (trimmed !== existing.email) {
+      if (trimmed !== currentEmail) {
         const validation = await validateUserEmail(trimmed)
         if (validation.exists) {
           return conflict(
@@ -138,32 +144,30 @@ export async function PATCH(
               : undefined,
           lastName:
             body.lastName !== undefined ? body.lastName.trim() : undefined,
-          email: nextEmail,
           isActive:
             wantsInactive ? false : wantsActive ? true : undefined,
         },
       })
 
-      // Email change: also update the Account row so the login
-      // email matches the admin profile email.
-      if (nextEmail && nextEmail !== existing.email) {
-        await tx.account.updateMany({
-          where: { profileId: adminId, profileType: 'COMPANY' },
+      // Email change: update the Account row
+      if (nextEmail && nextEmail !== currentEmail && existing.accountId) {
+        await tx.account.update({
+          where: { authUserId: existing.accountId },
           data: { email: nextEmail },
         })
       }
 
       // If the admin was just disabled and they were an active
       // Account, mirror the status.
-      if (wantsInactive) {
-        await tx.account.updateMany({
-          where: { profileId: adminId, profileType: 'COMPANY' },
+      if (wantsInactive && existing.accountId) {
+        await tx.account.update({
+          where: { authUserId: existing.accountId },
           data: { status: 'INACTIVE' },
         })
       }
-      if (wantsActive) {
-        await tx.account.updateMany({
-          where: { profileId: adminId, profileType: 'COMPANY' },
+      if (wantsActive && existing.accountId) {
+        await tx.account.update({
+          where: { authUserId: existing.accountId },
           data: { status: 'ACTIVE' },
         })
       }
@@ -189,6 +193,9 @@ export async function PATCH(
       const refreshed = await tx.companyAdmin.findUnique({
         where: { id: adminId },
       })
+      const refreshedAcct = refreshed?.accountId
+        ? await tx.account.findUnique({ where: { authUserId: refreshed.accountId }, select: { email: true } })
+        : null
 
       // Audit log
       const changes: Record<string, unknown> = {}
@@ -202,7 +209,7 @@ export async function PATCH(
         body.lastName.trim() !== existing.lastName
       )
         changes.lastName = body.lastName.trim()
-      if (nextEmail && nextEmail !== existing.email) changes.email = nextEmail
+      if (nextEmail && nextEmail !== currentEmail) changes.email = nextEmail
       if (wantsInactive && existing.isActive) changes.isActive = false
       if (wantsActive && !existing.isActive) changes.isActive = true
       if (wantsPrimary && !existing.isPrimary) changes.isPrimary = true
@@ -211,22 +218,31 @@ export async function PATCH(
       }
 
       await tx.auditLog.create({
-        data: {
-          actorType: 'admin',
-          adminId: user.id,
-          action: 'COMPANY_ADMIN_UPDATED',
-          entityType: 'company_admin',
-          entityId: adminId,
-          metadata: { companyId: id, changes } as any,
-        },
+        data: buildAuditData(fromCurrentUser(user, 'COMPANY_ADMIN_UPDATED', 'company_admin', adminId, {
+          metadata: { companyId: id, changes },
+        })) as any,
       })
 
-      return refreshed
+      return { admin: refreshed, email: refreshedAcct?.email ?? '' }
     })
+
+    console.log('[EMAIL_CHANGE_CHECK]', { currentEmail, newEmail: nextEmail, changed: nextEmail !== currentEmail, willSend: !!(nextEmail && nextEmail !== currentEmail) })
+    if (nextEmail && nextEmail !== currentEmail) {
+      console.log('[COMPANY_ADMIN_EMAIL][ROUTE] Email changed, calling invitation service', { email: nextEmail, companyName: company.name, firstName: existing.firstName })
+      await sendCompanyAdminInvitation({
+        email: nextEmail,
+        firstName: existing.firstName,
+        lastName: existing.lastName,
+        companyName: company.name ?? '',
+        companyId: id,
+        actorType: user.userType,
+        actorId: user.profileId,
+      })
+    }
 
     return NextResponse.json({
       success: true,
-      data: result ? toAdminSummary(result) : null,
+      data: result && result.admin ? toAdminSummary(result.admin, result.email) : null,
       message: 'Admin updated successfully',
     })
   } catch (error) {

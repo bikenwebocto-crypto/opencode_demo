@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/supabase/server";
+import { createAuditLog, fromCurrentUser } from '@/services/audit-log.service';
 
 export async function GET(
   _request: NextRequest,
@@ -12,18 +13,17 @@ export async function GET(
     const merchant = await prisma.merchant.findUnique({
       where: { id },
       include: {
-        category: { select: { id: true, name: true, slug: true } },
-        _count: {
+        account: {
           select: {
-            offers: true,
-            branches: true,
-            redemptions: true,
-            issues: true,
+            email: true,
           },
         },
-        statusHistory: {
-          orderBy: { createdAt: "desc" },
-          take: 5,
+        category: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
         },
       },
     });
@@ -84,7 +84,6 @@ export async function PATCH(
 
     const updatableFields = [
       "businessName",
-      "email",
       "contactName",
       "contactPhone",
       "description",
@@ -105,23 +104,6 @@ export async function PATCH(
       if (body[field] !== undefined) data[field] = body[field];
     }
 
-    if (body.password) {
-      if (body.password.length < 8) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: {
-              code: "VALIDATION",
-              message: "Password must be at least 8 characters",
-            },
-          },
-          { status: 400 },
-        );
-      }
-      const bcrypt = await import("bcryptjs");
-      data.passwordHash = await bcrypt.hash(body.password, 10);
-    }
-
     if (data.status && data.status !== merchant.status) {
       await prisma.merchantStatusHistory.create({
         data: {
@@ -139,11 +121,28 @@ export async function PATCH(
       data.liveAt = merchant.liveAt ?? new Date();
     }
 
+    // Handle email change via Account
+    const bodyEmail = body.email as string | undefined;
+    if (bodyEmail !== undefined) {
+      const newEmail = bodyEmail.trim().toLowerCase();
+      if (newEmail && merchant.accountId) {
+        await prisma.account.update({
+          where: { authUserId: merchant.accountId },
+          data: { email: newEmail },
+        });
+      }
+    }
     const updated = await prisma.merchant.update({
       where: { id },
       data: data as any,
       include: {
-        category: { select: { id: true, name: true, slug: true } },
+        category: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+        },
         _count: {
           select: {
             offers: true,
@@ -155,17 +154,9 @@ export async function PATCH(
       },
     });
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: "admin",
-        adminId: user.id,
-        action: "MERCHANT_UPDATED",
-        entityType: "merchant",
-        entityId: id,
-        changes: Object.keys(data),
-      },
-    });
-
+    await createAuditLog(fromCurrentUser(user, 'MERCHANT_UPDATED', 'merchant', id, {
+      changes: Object.keys(data),
+    }));
     return NextResponse.json({
       success: true,
       data: updated,
@@ -217,16 +208,11 @@ export async function DELETE(
       data: { deletedAt: new Date(), deletedById: user.id },
     });
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: "admin",
-        adminId: user.id,
-        action: "MERCHANT_DELETED",
-        entityType: "merchant",
-        entityId: id,
-        changes: { businessName: merchant.businessName, email: merchant.email },
+    await createAuditLog(fromCurrentUser(user, 'MERCHANT_DELETED', 'merchant', id, {
+      changes: {
+        businessName: merchant.businessName,
       },
-    });
+    }));
 
     return NextResponse.json({
       success: true,

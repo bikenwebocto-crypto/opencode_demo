@@ -16,6 +16,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
+import { createAuditLog } from '@/services/audit-log.service'
 
 export type ReplacementEvent =
   | 'SUBMITTED'
@@ -140,20 +141,18 @@ export async function logReplacementAudit(args: {
   reason?: string
   reviewNotes?: string
 }) {
-  await prisma.auditLog.create({
-    data: {
-      actorType: args.adminId ? 'admin' : 'merchant',
-      adminId: args.adminId ?? null,
+  await createAuditLog({
+    actorType: args.adminId ? 'admin' : 'merchant',
+    actorId: args.adminId ?? args.merchantId,
+    action: args.event,
+    entityType: 'merchant_offer',
+    entityId: args.newOfferId,
+    metadata: {
+      currentOfferId: args.currentOfferId,
+      newOfferId: args.newOfferId,
       merchantId: args.merchantId,
-      action: args.event,
-      entityType: 'merchant_offer',
-      entityId: args.newOfferId,
-      metadata: {
-        currentOfferId: args.currentOfferId,
-        newOfferId: args.newOfferId,
-        reason: args.reason ?? null,
-        reviewNotes: args.reviewNotes ?? null,
-      } as any,
-    },
+      reason: args.reason ?? null,
+      reviewNotes: args.reviewNotes ?? null,
+    } as any,
   })
 }

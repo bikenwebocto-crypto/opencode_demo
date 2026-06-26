@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/supabase/server';
 import { Prisma } from '@prisma/client';
+import { createAuditLog } from '@/services/audit-log.service';
 
 function unauthorized() {
   return NextResponse.json(
@@ -63,8 +64,10 @@ function runQualityChecks(body: any): { passed: boolean; errors: Record<string, 
 
 async function getMerchantFromUser() {
   const user = await getCurrentUser();
-  if (!user ) return null;
-  return prisma.merchant.findUnique({ where: { email: user.email } });
+  if (!user) return null;
+  const account = await prisma.account.findUnique({ where: { email: user.email }, select: { authUserId: true } });
+  if (!account) return null;
+  return prisma.merchant.findFirst({ where: { accountId: account.authUserId } });
 }
 
 export async function POST(
@@ -179,17 +182,15 @@ export async function POST(
       }
 
       // Audit log
-      await prisma.auditLog.create({
-        data: {
-          actorType: 'MERCHANT',
-          merchantId: merchant.id,
-          action: 'OFFER_SUBMITTED_FOR_APPROVAL',
-          entityType: 'MERCHANT_OFFER',
-          entityId: offer.id,
-          metadata: {
-            title: offer.title,
-            replacesOfferId: offer.replacesOfferId ?? null,
-          },
+      await createAuditLog({
+        actorType: 'merchant',
+        actorId: merchant.id,
+        action: 'OFFER_SUBMITTED_FOR_APPROVAL',
+        entityType: 'MERCHANT_OFFER',
+        entityId: offer.id,
+        metadata: {
+          title: offer.title,
+          replacesOfferId: offer.replacesOfferId ?? null,
         },
       });
     }

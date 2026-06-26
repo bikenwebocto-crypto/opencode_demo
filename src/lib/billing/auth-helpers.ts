@@ -1,3 +1,4 @@
+import { createAuditLog } from '@/services/audit-log.service'
 import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
@@ -17,42 +18,35 @@ function unauthorized() {
 }
 
 export async function requireAdmin(): Promise<
-  | { ok: true; adminId: string | null; userId: string }
+  | { ok: true; profileId: string | null; userId: string }
   | { ok: false; response: NextResponse }
 > {
   const user = await getCurrentUser()
   if (!user) return { ok: false, response: unauthorized() }
   if (user.userType !== 'admin') return { ok: false, response: forbidden(user.userType) }
-  const adminUser = await prisma.adminUser.findUnique({
-    where: { email: user.email },
-    select: { id: true },
-  })
-  return { ok: true, adminId: adminUser?.id ?? null, userId: user.id }
+  return { ok: true, profileId: user.profileId, userId: user.id }
 }
 
 export async function writeBillingAudit(opts: {
   action: BillingAuditAction
   companyId: string
-  adminId: string | null
+  profileId: string | null
   fromStatus?: string
   toStatus?: string
   reason?: string
   metadata?: Record<string, unknown>
 }) {
-  await prisma.auditLog.create({
-    data: {
-      actorType: 'admin',
-      adminId: opts.adminId,
-      companyId: opts.companyId,
-      action: opts.action,
-      entityType: BILLING_AUDIT_ENTITIES.COMPANY,
-      entityId: opts.companyId,
-      changes: {
-        from: opts.fromStatus ?? null,
-        to: opts.toStatus ?? null,
-        reason: opts.reason ?? null,
-        ...(opts.metadata ?? {}),
-      } as any,
+  await createAuditLog({
+    actorType: 'admin',
+    actorId: opts.profileId,
+    action: opts.action,
+    entityType: BILLING_AUDIT_ENTITIES.COMPANY,
+    entityId: opts.companyId,
+    changes: {
+      from: opts.fromStatus ?? null,
+      to: opts.toStatus ?? null,
+      reason: opts.reason ?? null,
+      ...(opts.metadata ?? {}),
     },
   })
 }

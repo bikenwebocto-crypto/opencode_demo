@@ -24,6 +24,7 @@ const CATEGORY_TO_QUEUE_TYPE = {
 export async function GET(_request: NextRequest) {
   try {
     const user = await getCurrentUser()
+    
     if (!user || user.userType !== 'admin') return unauthorized()
 
 

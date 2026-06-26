@@ -7,6 +7,7 @@ import {
   validateReplacement,
 } from "@/lib/offer-replacement";
 import { logReplacementAudit, notifyReplacement } from "@/lib/offer-replacement-notifications";
+import { createAuditLog } from '@/services/audit-log.service';
 const MIN_TITLE_LENGTH = 5;
 const MAX_TITLE_LENGTH = 255;
 const MAX_DESCRIPTION_LENGTH = 2000;
@@ -44,7 +45,9 @@ function internalError(error: unknown) {
 async function getMerchantFromUser() {
   const user = await getCurrentUser();
   if (!user || user.userType !== "merchant") return null;
-  return prisma.merchant.findUnique({ where: { email: user.email } });
+  const account = await prisma.account.findUnique({ where: { email: user.email }, select: { authUserId: true } });
+  if (!account) return null;
+  return prisma.merchant.findFirst({ where: { accountId: account.authUserId } });
 }
 
 function runQualityChecks(body: any): {
@@ -456,17 +459,15 @@ export async function POST(request: NextRequest) {
       }
       console.log('** Created action queue item for offer approval/replacement',);
       // Audit log
-      await prisma.auditLog.create({
-        data: {
-          actorType: "MERCHANT",
-          merchantId: merchant.id,
-          action: "OFFER_SUBMITTED_FOR_APPROVAL",
-          entityType: "MERCHANT_OFFER",
-          entityId: offer.id,
-          metadata: {
-            title,
-            replacesOfferId: replacesOfferId ?? null,
-          },
+      await createAuditLog({
+        actorType: 'merchant',
+        actorId: merchant.id,
+        action: "OFFER_SUBMITTED_FOR_APPROVAL",
+        entityType: "MERCHANT_OFFER",
+        entityId: offer.id,
+        metadata: {
+          title,
+          replacesOfferId: replacesOfferId ?? null,
         },
       });
     }
@@ -540,15 +541,13 @@ export async function DELETE(request: NextRequest) {
     });
 
     for (const offer of offers) {
-      await prisma.auditLog.create({
-        data: {
-          actorType: 'MERCHANT',
-          merchantId: merchant.id,
-          action: 'OFFER_DELETED',
-          entityType: 'MERCHANT_OFFER',
-          entityId: offer.id,
-          metadata: { title: offer.title, previousStatus: offer.status },
-        },
+      await createAuditLog({
+        actorType: 'merchant',
+        actorId: merchant.id,
+        action: 'OFFER_DELETED',
+        entityType: 'MERCHANT_OFFER',
+        entityId: offer.id,
+        metadata: { title: offer.title, previousStatus: offer.status },
       });
     }
 

@@ -16,6 +16,7 @@ export async function getCompanyAdmin() {
     throw new AuthError('Unauthorized')
   }
 
+  if (!user.profileId) throw new AuthError('Unauthorized')
   const companyAdmin = await prisma.companyAdmin.findUnique({
     where: { id: user.profileId },
   })
@@ -83,6 +84,7 @@ export function handleApiError(error: unknown) {
   if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') {
     const prismaError = error as any
     const target = prismaError.meta?.target
+    // Email uniqueness is now on Account only (removed from profile tables)
     if (Array.isArray(target) && target.includes('email')) {
       return NextResponse.json(
         { success: false, error: { code: 'EMAIL_ALREADY_EXISTS', message: 'Email is already assigned to another account' } },

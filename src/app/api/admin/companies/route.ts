@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
+import { createAuditLog, buildAuditData, fromCurrentUser } from '@/services/audit-log.service';
+import { sendCompanyAdminInvitation } from '@/services/company-admin-invitation.service';
 import { getCurrentUser } from '@/lib/supabase/server';
 import { adminCompanyActionSchema } from '@/schemas';
-import * as bcrypt from 'bcryptjs';
 import { validateUserEmail } from '@/services/user-validation.service';
 import { getCityReadiness } from '@/lib/company-activation/city-readiness';
 import { sendLaunchPack } from '@/lib/company-activation/launch-pack';
@@ -77,8 +79,13 @@ export async function GET(request: NextRequest) {
     // into company IDs and OR them into the where clause.
     if (q && q.trim()) {
       const term = q.trim()
+      const matchingAccounts = await prisma.account.findMany({
+        where: { email: { contains: term, mode: 'insensitive' }, profileType: 'COMPANY' },
+        select: { authUserId: true },
+      })
+      const matchingAdminIds = matchingAccounts.map((a) => a.authUserId).filter(Boolean)
       const matchingAdmins = await prisma.companyAdmin.findMany({
-        where: { email: { contains: term, mode: 'insensitive' } },
+        where: { id: { in: matchingAdminIds } },
         select: { companyId: true },
         distinct: ['companyId'],
       })
@@ -188,11 +195,12 @@ export async function POST(request: NextRequest) {
     if (!user || user.userType !== 'admin') return unauthorized();
 
     const body = await request.json();
-    const { name, email, password, firstName, lastName, phone, website, employeeCount, addressLine1, addressLine2, city, state, postalCode, country, taxId } = body;
+    const { name, email, firstName, lastName, phone, website, employeeCount, addressLine1, addressLine2, city, state, postalCode, country, taxId } = body;
+    console.log('[COMPANY_ADMIN_EMAIL][ROUTE] POST /api/admin/companies', { companyName: name, email, firstName, lastName });
 
-    if (!name || !email || !password || !firstName || !lastName) {
+    if (!name || !email || !firstName || !lastName) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION', message: 'Missing required fields: name, email, password, firstName, lastName' } },
+        { success: false, error: { code: 'VALIDATION', message: 'Missing required fields: name, email, firstName, lastName' } },
         { status: 400 },
       );
     }
@@ -205,7 +213,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now();
 
     const result = await prisma.$transaction(async (tx) => {
@@ -229,26 +236,26 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      const pkId = crypto.randomUUID();
+      const account = await tx.account.create({
+        data: {
+          authUserId: pkId,
+          email,
+          role: 'COMPANY_ADMIN',
+          profileType: 'COMPANY',
+          status: 'ACTIVE',
+        },
+      });
+
       const companyAdmin = await tx.companyAdmin.create({
         data: {
+          id: pkId,
           companyId: company.id,
-          email,
-          passwordHash,
+          accountId: pkId,
           firstName,
           lastName,
           isPrimary: true,
           isActive: true,
-        },
-      });
-
-      await tx.account.create({
-        data: {
-          authUserId: companyAdmin.id,
-          email,
-          role: 'COMPANY_ADMIN',
-          profileId: companyAdmin.id,
-          profileType: 'COMPANY',
-          status: 'ACTIVE',
         },
       });
 
@@ -263,25 +270,29 @@ export async function POST(request: NextRequest) {
       });
 
       await tx.auditLog.create({
-        data: {
-          actorType: 'admin',
-          adminId: user.id,
-          action: 'COMPANY_CREATED',
-          entityType: 'company',
-          entityId: company.id,
-          changes: {},
-        },
+        data: buildAuditData(fromCurrentUser(user, 'COMPANY_CREATED', 'company', company.id, { changes: {} })) as any,
       });
 
       return company;
     });
+
+      console.log('[COMPANY_ADMIN_EMAIL][ROUTE] Company created, calling invitation service', { email, companyName: name, companyId: result.id });
+      await sendCompanyAdminInvitation({
+        email,
+        firstName,
+        lastName,
+        companyName: name,
+        companyId: result.id,
+        actorType: user.userType,
+        actorId: user.profileId,
+      })
 
       return NextResponse.json(
         {
           success: true,
           data: result,
           message:
-            'Company created successfully. Use the company detail page to set the city and then mark the company ACTIVE (which will trigger the city-readiness gate and dispatch the launch pack).',
+            'Company created successfully. A welcome email has been sent to the Company Administrator.',
         },
         { status: 201 },
       );
@@ -357,16 +368,9 @@ export async function PATCH(request: NextRequest) {
       },
     });
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'admin',
-        adminId: user.id,
-        action: `COMPANY_${status}`,
-        entityType: 'company',
-        entityId: companyId,
-        changes: { from: previousStatus, to: status, reason },
-      },
-    });
+    await createAuditLog(fromCurrentUser(user, `COMPANY_${status}`, 'company', companyId, {
+      changes: { from: previousStatus, to: status, reason },
+    }));
 
     // Complete pending action queue items
     if (status === 'ACTIVE' || status === 'CANCELLED') {
@@ -426,16 +430,9 @@ export async function DELETE(request: NextRequest) {
       data: { deletedAt: new Date(), deletedById: user.id, status: 'INACTIVE' },
     });
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'admin',
-        adminId: user.id,
-        action: 'COMPANY_DELETED',
-        entityType: 'company',
-        entityId: id,
-        changes: { name: existing.name, email: existing.email },
-      },
-    });
+    await createAuditLog(fromCurrentUser(user, 'COMPANY_DELETED', 'company', id, {
+      changes: { name: existing.name, email: existing.email },
+    }));
 
     return NextResponse.json({ success: true, data: null, message: 'Company and its employees deleted successfully' });
   } catch (error) {

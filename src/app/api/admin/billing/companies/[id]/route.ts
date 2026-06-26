@@ -66,7 +66,7 @@ export async function GET(
       },
       orderBy: { createdAt: 'desc' },
       take: 25,
-      include: { admin: { select: { id: true, firstName: true, lastName: true, email: true } } },
+      include: { admin: { select: { id: true, firstName: true, lastName: true } } },
     })
 
     return NextResponse.json({

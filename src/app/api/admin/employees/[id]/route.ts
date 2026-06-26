@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { adminEmployeeUpdateSchema } from '@/schemas'
-import { validateUserEmail } from '@/services/user-validation.service'
-
+import { buildAuditData, fromCurrentUser } from '@/services/audit-log.service'
 function unauthorized() {
   return NextResponse.json(
     { success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } },
@@ -106,25 +105,6 @@ export async function PATCH(
       update.lastName = data.lastName
       changedFields.push('lastName')
     }
-    if (data.email !== undefined && data.email !== existing.email) {
-      const validation = await validateUserEmail(data.email)
-      if (validation.exists) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: {
-              code: 'EMAIL_ALREADY_EXISTS',
-              message: 'Email is already assigned to another account',
-            },
-          },
-          { status: 409 },
-        )
-      }
-      before.email = existing.email
-      after.email = data.email
-      update.email = data.email
-      changedFields.push('email')
-    }
     if (data.employeeId !== undefined) {
       const next = data.employeeId?.trim() || null
       if (next && next !== existing.employeeId) {
@@ -180,25 +160,10 @@ export async function PATCH(
         },
       })
 
-      if (changedFields.includes('email') || changedFields.includes('status')) {
-        const accountUpdate: Record<string, unknown> = {}
-        if (changedFields.includes('email')) accountUpdate.email = update.email
-        if (changedFields.includes('status')) accountUpdate.status = update.status
-        await tx.account.updateMany({
-          where: { profileId: id, profileType: 'EMPLOYEE' },
-          data: accountUpdate as any,
-        })
-      }
-
       await tx.auditLog.create({
-        data: {
-          actorType: 'admin',
-          adminId: user.id,
-          action: 'EMPLOYEE_UPDATED',
-          entityType: 'employee',
-          entityId: id,
-          changes: { before, after, changedFields } as any,
-        },
+        data: buildAuditData(fromCurrentUser(user, 'EMPLOYEE_UPDATED', 'employee', id, {
+          changes: { before, after, changedFields },
+        })) as any,
       })
 
       return result

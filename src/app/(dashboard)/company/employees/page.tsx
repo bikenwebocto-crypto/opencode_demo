@@ -133,7 +133,7 @@ export default function CompanyEmployeesPage() {
                   { data?.data.map((emp) => (
                     <tr key={emp.id} className="border-b transition-colors hover:bg-muted/50">
                       <td className="p-3 font-medium">{emp.firstName} {emp.lastName}</td>
-                      <td className="p-3 text-muted-foreground">{emp.email}</td>
+                      <td className="p-3 text-muted-foreground">{emp.account ? emp.account?.email : null}</td>
                       <td className="p-3 text-muted-foreground">{emp.department ?? '-'}</td>
                       <td className="p-3"><StatusBadge status={emp.status} /></td>
                       <td className="p-3">{emp._count.redemptions}</td>

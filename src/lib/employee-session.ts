@@ -28,8 +28,14 @@ export type EmployeeSessionResult = EmployeeSession | InactiveCompanySentinel | 
 export async function getEmployeeFromSession(): Promise<EmployeeSessionResult> {
   const user = await getCurrentUser()
   if (!user || user.userType !== 'employee' || !user.profileId) return null
-  const emp = await prisma.employee.findUnique({ where: { id: user.profileId } })
+  const emp = await prisma.employee.findUnique({
+    where: { id: user.profileId },
+  })
   if (!emp) return null
+
+  const acct = emp.accountId
+    ? await prisma.account.findUnique({ where: { authUserId: emp.accountId }, select: { email: true } })
+    : null
 
   // Non-payment cascade: if the company is paused/suspended/cancelled,
   // the employee loses platform access.
@@ -50,7 +56,7 @@ export async function getEmployeeFromSession(): Promise<EmployeeSessionResult> {
 
   return {
     id: emp.id,
-    email: emp.email,
+    email: acct?.email ?? '',
     firstName: emp.firstName,
     lastName: emp.lastName,
     companyId: emp.companyId,

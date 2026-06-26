@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getMerchantFromSession } from '@/lib/merchant-session'
+import { createAuditLog } from '@/services/audit-log.service'
 
 function unauthorized() {
   return NextResponse.json(
@@ -141,16 +142,14 @@ export async function PATCH(request: NextRequest) {
       await prisma.merchant.update({ where: { id: merchant.id }, data: immediateUpdate })
     }
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'MERCHANT',
-        merchantId: merchant.id,
-        action: 'PROFILE_UPDATED',
-        entityType: 'merchant',
-        entityId: merchant.id,
-        changes: { before: beforeSnapshot, after: afterSnapshot } as any,
-        metadata: { hasApprovalChanges },
-      },
+    await createAuditLog({
+      actorType: 'merchant',
+      actorId: merchant.id,
+      action: 'PROFILE_UPDATED',
+      entityType: 'merchant',
+      entityId: merchant.id,
+      changes: { before: beforeSnapshot, after: afterSnapshot } as any,
+      metadata: { hasApprovalChanges },
     })
 
     if (hasApprovalChanges) {
@@ -182,16 +181,14 @@ export async function PATCH(request: NextRequest) {
           },
         })
 
-        await prisma.auditLog.create({
-          data: {
-            actorType: 'MERCHANT',
-            merchantId: merchant.id,
-            action: 'PROFILE_CHANGE_REQUESTED',
-            entityType: 'merchant',
-            entityId: merchant.id,
-            changes: { before: beforeSnapshot, after: afterSnapshot } as any,
-            metadata: { changeReason },
-          },
+        await createAuditLog({
+          actorType: 'merchant',
+          actorId: merchant.id,
+          action: 'PROFILE_CHANGE_REQUESTED',
+          entityType: 'merchant',
+          entityId: merchant.id,
+          changes: { before: beforeSnapshot, after: afterSnapshot } as any,
+          metadata: { changeReason },
         })
       }
     }

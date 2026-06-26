@@ -2,6 +2,7 @@
 // Detects suspicious patterns and abuse attempts
 
 import { prisma } from '@/lib/prisma'
+import { createAuditLog } from '@/services/audit-log.service'
 import type { FraudDetectionResult, FraudFlagType, VoucherVerificationRequest } from '@/types/voucher'
 
 interface AttemptRecord {
@@ -316,27 +317,22 @@ export async function logFraudDetection(
     return // No fraud detected, no need to log
   }
 
-  try {
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'EMPLOYEE',
-        action: 'VOUCHER_FRAUD_DETECTED',
-        entityType: 'voucher_verification',
-        entityId: request.userId,
-        metadata: {
-          code: request.code,
-          userId: request.userId,
-          merchantId: request.merchantId,
-          companyId: request.companyId,
-          ipAddress: request.ipAddress,
-          deviceId: request.deviceId,
-          fraudFlags: result.flags,
-          riskScore: result.riskScore,
-          reason: result.reason,
-        } as any,
-      },
-    })
-  } catch (error) {
-    console.error('Failed to log fraud detection:', error)
-  }
+  await createAuditLog({
+    actorType: 'employee',
+    actorId: request.userId,
+    action: 'VOUCHER_FRAUD_DETECTED',
+    entityType: 'voucher_verification',
+    entityId: request.userId,
+    metadata: {
+      code: request.code,
+      userId: request.userId,
+      merchantId: request.merchantId,
+      companyId: request.companyId,
+      ipAddress: request.ipAddress,
+      deviceId: request.deviceId,
+      fraudFlags: result.flags,
+      riskScore: result.riskScore,
+      reason: result.reason,
+    } as any,
+  })
 }

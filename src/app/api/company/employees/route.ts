@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as crypto from "crypto";
 import { prisma } from "@/lib/prisma";
-import * as bcrypt from "bcryptjs";
 import { getCompanyAdmin, handleApiError, AuthError } from "../helpers";
 import { validateUserEmail } from "@/services/user-validation.service";
 import { emailService } from "@/lib/email/email";
@@ -27,7 +27,6 @@ export async function GET(request: NextRequest) {
       where.OR = [
         { firstName: { contains: q, mode: "insensitive" } },
         { lastName: { contains: q, mode: "insensitive" } },
-        { email: { contains: q, mode: "insensitive" } },
         { department: { contains: q, mode: "insensitive" } },
       ];
     }
@@ -36,12 +35,12 @@ export async function GET(request: NextRequest) {
     const sortMap: Record<string, string> = {
       firstName: "firstName",
       lastName: "lastName",
-      email: "email",
       department: "department",
       status: "status",
       createdAt: "createdAt",
     };
-    orderBy[sortMap[sortBy] ?? "createdAt"] = sortOrder;
+    const sortField = sortMap[sortBy] ?? "createdAt";
+    orderBy[sortField] = sortOrder;
 
     const [employees, total] = await Promise.all([
       prisma.employee.findMany({
@@ -53,7 +52,6 @@ export async function GET(request: NextRequest) {
           id: true,
           firstName: true,
           lastName: true,
-          email: true,
           department: true,
           jobTitle: true,
           status: true,
@@ -62,7 +60,18 @@ export async function GET(request: NextRequest) {
           invitedAt: true,
           lastLoginAt: true,
           joinMethod: true,
-          _count: { select: { redemptions: true } },
+
+          account: {
+            select: {
+              email: true,
+            },
+          },
+
+          _count: {
+            select: {
+              redemptions: true,
+            },
+          },
         },
       }),
       prisma.employee.count({ where }),
@@ -147,15 +156,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const passwordHash = await bcrypt.hash("Welcome@123", 10);
     const empId = employeeId || `EMP-${Date.now()}`;
 
+    const normalizedEmail = email.toLowerCase().trim();
+
     const result = await prisma.$transaction(async (tx) => {
+      const pkId = crypto.randomUUID();
+      const account = await tx.account.create({
+        data: {
+          authUserId: pkId,
+          email: normalizedEmail,
+          role: "EMPLOYEE",
+          profileType: "EMPLOYEE",
+          status: "ACTIVE",
+        },
+      });
+
       const employee = await tx.employee.create({
         data: {
+          id: pkId,
           companyId: company.id,
-          email: email.toLowerCase().trim(),
-          passwordHash,
+          accountId: pkId,
           firstName,
           lastName,
           employeeId: empId,
@@ -164,17 +185,6 @@ export async function POST(request: NextRequest) {
           phone: phone || null,
           status: "ACTIVE",
           joinMethod: joinMethod || "manual",
-        },
-      });
-
-      await tx.account.create({
-        data: {
-          authUserId: employee.id,
-          email: employee.email,
-          role: "EMPLOYEE",
-          profileId: employee.id,
-          profileType: "EMPLOYEE",
-          status: "ACTIVE",
         },
       });
 
@@ -195,7 +205,7 @@ export async function POST(request: NextRequest) {
       });
 
       await emailService.sendEmail({
-        to: employee.email,
+        to: normalizedEmail,
         subject: `Welcome to ${company.name}! Your account has been created.`,
         html: `<div style="font-family: Arial, sans-serif; line-height: 1.6;">
                   <h2>Welcome to ${company.name}</h2>
@@ -205,11 +215,11 @@ export async function POST(request: NextRequest) {
                   <p>Your employee account has been created successfully.</p>
 
                   <p>
-                    <strong>Email:</strong> ${employee.email}
+                    <strong>Email:</strong> ${normalizedEmail}
                   </p>
 
                   <p>
-                    Please log in and change your password after your first login.
+                    Please log in and use the password reset flow to set your password.
                   </p>
 
                   <p>

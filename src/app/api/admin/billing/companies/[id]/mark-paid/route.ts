@@ -41,7 +41,7 @@ export async function POST(
       )
     }
 
-    const adminId = auth.adminId
+    const profileId = auth.profileId
 
     // Advance renewal date by 1 year. If no date is set, default to today + 1y.
     const baseDate = billing.renewalDate ?? new Date()
@@ -60,7 +60,7 @@ export async function POST(
     await writeBillingAudit({
       action: BILLING_AUDIT_ACTIONS.PEAK_RESET,
       companyId: id,
-      adminId,
+      profileId,
       reason: 'Renewal paid — peak headcount reset',
       metadata: {
         previousRenewalDate: billing.renewalDate?.toISOString() ?? null,
@@ -71,7 +71,7 @@ export async function POST(
     await writeBillingAudit({
       action: BILLING_AUDIT_ACTIONS.PAID_CONFIRMED,
       companyId: id,
-      adminId,
+      profileId,
       reason: 'Renewal payment confirmed (QuickBooks source of truth)',
       metadata: {
         nextRenewalDate: nextRenewal.toISOString(),
@@ -80,7 +80,7 @@ export async function POST(
 
     await writeBillingNotification({
       companyId: id,
-      adminId,
+      adminId: profileId,
       title: `Renewal paid: ${billing.company.name}`,
       body: `Payment confirmed in QuickBooks. Peak headcount reset, renewal advanced to ${nextRenewal.toLocaleDateString()}.`,
       referenceType: 'company_billing',

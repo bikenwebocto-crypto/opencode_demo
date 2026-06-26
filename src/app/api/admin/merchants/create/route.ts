@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
-import * as bcrypt from 'bcryptjs';
 import { validateUserEmail, createAccountForProfile } from '@/services/user-validation.service';
 
 function unauthorized() {
@@ -44,16 +44,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
     const slug = businessName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now();
 
     const result = await prisma.$transaction(async (tx) => {
+      const pkId = crypto.randomUUID();
+      const account = await tx.account.create({
+        data: {
+          authUserId: pkId,
+          email,
+          role: 'MERCHANT',
+          profileType: 'MERCHANT',
+          status: 'PENDING',
+        },
+      });
+
       const merchant = await tx.merchant.create({
         data: {
+          id: pkId,
           businessName,
           slug,
-          email,
-          passwordHash,
           contactName,
           contactPhone: contactPhone || null,
           categoryId: categoryId || null,
@@ -67,17 +76,7 @@ export async function POST(request: NextRequest) {
           country: country || null,
           status: 'PENDING',
           onboardingStep: 'DOCUMENTS',
-        },
-      });
-
-      await tx.account.create({
-        data: {
-          authUserId: merchant.id,
-          email,
-          role: 'MERCHANT',
-          profileId: merchant.id,
-          profileType: 'MERCHANT',
-          status: 'PENDING',
+          accountId: pkId,
         },
       });
 

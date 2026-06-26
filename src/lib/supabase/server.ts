@@ -38,7 +38,7 @@ export interface CurrentUser {
   userType: 'admin' | 'merchant' | 'company_admin' | 'employee';
   companyId: string | null;
   profileType: string;
-  profileId: string;
+  profileId: string | null;
   profile: Record<string, unknown> | null;
 }
 
@@ -49,7 +49,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     if (!user) return null
 
     const account = await prisma.account.findUnique({
-      where: { authUserId: user.id },
+      where: { email: user.email, },
     })
     if (!account) return null
     if (account.status !== 'ACTIVE') return null
@@ -63,34 +63,41 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 
     const userType = userTypeMap[account.role] ?? 'employee'
     let companyId: string | null = null
+    let profileId: string | null = null
     let profile: Record<string, unknown> | null = null
 
     switch (account.profileType) {
       case 'ADMIN': {
-        profile = await prisma.adminUser.findUnique({ where: { id: account.profileId } }) as Record<string, unknown> | null
+        const p = await prisma.adminUser.findFirst({ where: { accountId: account.authUserId } })
+        profile = p as Record<string, unknown> | null
+        profileId = p?.id ?? null
         companyId = null
         break
       }
       case 'MERCHANT': {
-        profile = await prisma.merchant.findUnique({ where: { id: account.profileId } }) as Record<string, unknown> | null
+        const p = await prisma.merchant.findFirst({ where: { accountId: account.authUserId } })
+        profile = p as Record<string, unknown> | null
+        profileId = p?.id ?? null
         companyId = null
         break
       }
       case 'COMPANY': {
-        const p = await prisma.companyAdmin.findUnique({ 
-          where: { id: account.profileId },
+        const p = await prisma.companyAdmin.findFirst({ 
+          where: { accountId: account.authUserId },
           include: { company: { select: { name: true } } }
         })
         profile = p as Record<string, unknown> | null
+        profileId = p?.id ?? null
         companyId = p?.companyId ?? null
         break
       }
       case 'EMPLOYEE': {
-        const p = await prisma.employee.findUnique({ 
-          where: { id: account.profileId },
+        const p = await prisma.employee.findFirst({ 
+          where: { accountId: account.authUserId },
           include: { company: { select: { name: true } } }
         })
         profile = p as Record<string, unknown> | null
+        profileId = p?.id ?? null
         companyId = p?.companyId ?? null
         break
       }
@@ -104,7 +111,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       companyId,
       companyName: (profile as any)?.companyName ?? null,
       profileType: account.profileType,
-      profileId: account.profileId,
+      profileId,
       profile,
     }
   } catch (error) {

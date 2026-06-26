@@ -41,8 +41,8 @@ describe('Server Actions – Auth', () => {
 
   describe('loginAction', () => {
     const validForm = new FormData();
-    validForm.set('email', 'admin@example.com');
-    validForm.set('password', 'P@ssw0rd');
+    validForm.set('email', 'bikenwebocto@gmail.com');
+    validForm.set('password', 'biken@123');
     validForm.set('userType', 'admin');
 
     it('should call Supabase signIn then authService.login on valid input', async () => {

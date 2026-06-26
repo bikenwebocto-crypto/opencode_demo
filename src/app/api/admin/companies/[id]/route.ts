@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/supabase/server';
 import { getCityReadiness } from '@/lib/company-activation/city-readiness';
 import { sendLaunchPack, sendBillingReminder } from '@/lib/company-activation/launch-pack';
 import { derivePrimaryAdmin, ensurePrimaryAdmin, summarizeAdmins } from '@/lib/company-contact';
+import { createAuditLog, fromCurrentUser } from '@/services/audit-log.service';
 import { forbidden } from '@/lib/api-auth';
 
 export async function GET(
@@ -166,22 +167,15 @@ export async function PATCH(
         },
       });
 
-      await prisma.auditLog.create({
-        data: {
-          actorType: 'admin',
-          adminId: user.id,
-          action: `COMPANY_${body.status}`,
-          entityType: 'company',
-          entityId: id,
-          changes: { from: previousStatus, to: body.status, reason: body.reason },
-        },
-      });
+      await createAuditLog(fromCurrentUser(user, `COMPANY_${body.status}`, 'company', id, {
+        changes: { from: previousStatus, to: body.status, reason: body.reason },
+      }));
 
       // When activation succeeds, dispatch the launch pack to the
       // company admin + active employees.
       if (body.status === 'ACTIVE' && previousStatus !== 'ACTIVE') {
         try {
-          await sendLaunchPack(id, user.id)
+          if (user.profileId) await sendLaunchPack(id, user.profileId)
         } catch (err) {
           console.error('Launch pack failed for company', id, err)
         }
@@ -218,7 +212,7 @@ export async function PATCH(
         previousBilling?.billingStatus !== 'INVOICE_OVERDUE'
       ) {
         try {
-          await sendBillingReminder(id, user.id)
+          if (user.profileId) await sendBillingReminder(id, user.profileId)
         } catch (err) {
           console.error('Billing reminder failed for company', id, err)
         }

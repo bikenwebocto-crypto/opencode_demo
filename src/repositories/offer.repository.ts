@@ -100,7 +100,7 @@ export class OfferRepository extends BaseRepository<MerchantOffer, OfferCreateIn
         endDate: { lte: threshold, gte: new Date() },
       },
       include: {
-        merchant: { select: { id: true, businessName: true, email: true } },
+        merchant: { select: { id: true, businessName: true } },
       },
     });
   }

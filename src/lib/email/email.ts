@@ -1,8 +1,5 @@
 import nodemailer from 'nodemailer';
 
-/**
- * Email configuration from environment variables
- */
 interface EmailConfig {
   host: string;
   port: number;
@@ -13,9 +10,6 @@ interface EmailConfig {
   };
 }
 
-/**
- * Email sending options
- */
 interface SendEmailOptions {
   to: string | string[];
   subject: string;
@@ -31,18 +25,12 @@ interface SendEmailOptions {
   }>;
 }
 
-/**
- * Email sending result
- */
 interface SendEmailResult {
   success: boolean;
   messageId?: string;
   error?: string;
 }
 
-/**
- * Get email configuration from environment variables
- */
 function getEmailConfig(): EmailConfig {
   const host = process.env.SMTP_HOST;
   const port = process.env.SMTP_PORT;
@@ -66,12 +54,16 @@ function getEmailConfig(): EmailConfig {
   };
 }
 
-/**
- * Create nodemailer transporter
- */
 function createTransporter() {
   const config = getEmailConfig();
-  
+
+  console.log('[EMAIL_PROVIDER] Transporter created', {
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    user: config.auth.user,
+  });
+
   return nodemailer.createTransport({
     host: config.host,
     port: config.port,
@@ -80,33 +72,18 @@ function createTransporter() {
   });
 }
 
-/**
- * Send an email
- * 
- * @param options - Email sending options
- * @returns Promise with send result
- * 
- * @example
- * ```typescript
- * const result = await emailService.sendEmail({
- *   to: 'user@example.com',
- *   subject: 'Welcome!',
- *   html: '<h1>Welcome to our platform</h1>',
- * });
- * 
- * if (result.success) {
- *   console.log('Email sent:', result.messageId);
- * } else {
- *   console.error('Failed to send email:', result.error);
- * }
- * ```
- */
 async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
+  console.log('[EMAIL_PROVIDER] Sending email', {
+    to: Array.isArray(options.to) ? options.to.join(', ') : options.to,
+    subject: options.subject,
+    htmlLength: options.html.length,
+  });
+
   try {
     const transporter = createTransporter();
-    
+
     const from = options.from || process.env.SMTP_FROM || process.env.SMTP_USER;
-    
+
     if (!from) {
       throw new Error('From address not specified. Set SMTP_FROM or SMTP_USER environment variable.');
     }
@@ -122,7 +99,17 @@ async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
       attachments: options.attachments,
     };
 
+    console.log('[EMAIL_PROVIDER] Calling transporter.sendMail');
+
     const info = await transporter.sendMail(mailOptions);
+
+    console.log('[EMAIL_PROVIDER] Success', {
+      to: mailOptions.to,
+      messageId: info.messageId,
+      response: info.response,
+      accepted: info.accepted,
+      rejected: info.rejected,
+    });
 
     return {
       success: true,
@@ -130,8 +117,15 @@ async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    console.error('Email sending failed:', errorMessage);
-    
+    const errorCode = error instanceof Error && 'code' in error ? (error as any).code : undefined;
+
+    console.error('[EMAIL_PROVIDER] Failed', {
+      error: errorMessage,
+      code: errorCode,
+      name: error instanceof Error ? error.name : undefined,
+      stack: error instanceof Error ? error.stack?.split('\n').slice(0, 3).join('\n') : undefined,
+    });
+
     return {
       success: false,
       error: errorMessage,
@@ -139,25 +133,18 @@ async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
   }
 }
 
-/**
- * Verify email configuration
- * 
- * @returns Promise with verification result
- */
 async function verifyConfiguration(): Promise<boolean> {
   try {
     const transporter = createTransporter();
     await transporter.verify();
+    console.log('[EMAIL_PROVIDER] Configuration verified successfully');
     return true;
   } catch (error) {
-    console.error('Email configuration verification failed:', error);
+    console.error('[EMAIL_PROVIDER] Configuration verification failed:', error);
     return false;
   }
 }
 
-/**
- * Email service object
- */
 export const emailService = {
   sendEmail,
   verifyConfiguration,

@@ -75,7 +75,7 @@ export async function PATCH(
     }
 
     const fromStatus = billing.billingStatus
-    const adminId = auth.adminId
+    const profileId = auth.profileId
 
     await prisma.$transaction([
       prisma.companyBilling.update({
@@ -87,7 +87,7 @@ export async function PATCH(
           companyId: id,
           fromStatus: billing.company.status as any,
           toStatus: billing.company.status as any,
-          changedBy: adminId ?? auth.userId,
+          changedBy: profileId ?? auth.userId,
           changedByType: 'admin',
           reason: `Billing status: ${fromStatus} → ${targetStatus}${reason ? ` (${reason})` : ''}`,
         },
@@ -97,7 +97,7 @@ export async function PATCH(
     await writeBillingAudit({
       action: BILLING_AUDIT_ACTIONS.STATUS_CHANGED,
       companyId: id,
-      adminId,
+      profileId,
       fromStatus,
       toStatus: targetStatus,
       reason: reason || undefined,
@@ -105,7 +105,7 @@ export async function PATCH(
 
     await writeBillingNotification({
       companyId: id,
-      adminId,
+      adminId: profileId,
       title: `Billing status changed: ${billing.company.name}`,
       body: `Status transitioned from ${fromStatus} to ${targetStatus}.`,
       referenceType: 'company_billing',

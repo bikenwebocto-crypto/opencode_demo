@@ -11,6 +11,7 @@ import {
 } from "@/lib/fraud-detection";
 import { checkVoucherRateLimits } from "@/lib/rate-limiter";
 import { prisma } from "@/lib/prisma";
+import { createAuditLog } from '@/services/audit-log.service';
 import type {
   VoucherVerificationRequest,
   VoucherVerificationResponse,
@@ -51,31 +52,26 @@ async function logVerificationAttempt(
   errorCode?: VoucherVerificationErrorCode,
   fraudFlags?: string[],
 ): Promise<void> {
-  try {
-    await prisma.auditLog.create({
-      data: {
-        actorType: "EMPLOYEE",
-        action: "VOUCHER_VERIFICATION_ATTEMPT",
-        entityType: "voucher_verification",
-        entityId: request.userId,
-        metadata: {
-          code: request.code,
-          userId: request.userId,
-          merchantId: request.merchantId,
-          companyId: request.companyId,
-          ipAddress: request.ipAddress,
-          deviceId: request.deviceId,
-          userAgent: request.userAgent,
-          result,
-          errorCode,
-          fraudFlags,
-          timestamp: new Date().toISOString(),
-        } as any,
-      },
-    });
-  } catch (error) {
-    console.error("Failed to log verification attempt:", error);
-  }
+  await createAuditLog({
+    actorType: "employee",
+    actorId: request.userId,
+    action: "VOUCHER_VERIFICATION_ATTEMPT",
+    entityType: "voucher_verification",
+    entityId: request.userId,
+    metadata: {
+      code: request.code,
+      userId: request.userId,
+      merchantId: request.merchantId,
+      companyId: request.companyId,
+      ipAddress: request.ipAddress,
+      deviceId: request.deviceId,
+      userAgent: request.userAgent,
+      result,
+      errorCode,
+      fraudFlags,
+      timestamp: new Date().toISOString(),
+    } as any,
+  });
 }
 
 /**

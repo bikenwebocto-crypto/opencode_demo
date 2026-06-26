@@ -15,6 +15,9 @@ export interface EmployeeListItem {
   invitedAt: string | null
   lastLoginAt: string | null
   joinMethod: string | null
+  account: {
+    email: string
+  } | null
   _count: { redemptions: number }
 }
 

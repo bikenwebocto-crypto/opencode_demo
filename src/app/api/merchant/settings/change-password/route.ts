@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import bcrypt from 'bcryptjs'
-import { getCurrentUser } from '@/lib/supabase/server'
+import { createClient, getCurrentUser } from '@/lib/supabase/server'
 import { getMerchantFromSession } from '@/lib/merchant-session'
+import { createAuditLog } from '@/services/audit-log.service'
 
 function unauthorized() {
   return NextResponse.json(
@@ -47,23 +47,16 @@ export async function POST(request: NextRequest) {
       return badRequest('New password must be at least 8 characters')
     }
 
-    const valid = await bcrypt.compare(currentPassword, merchant.passwordHash)
-    if (!valid) return badRequest('Current password is incorrect')
+    const supabase = await createClient()
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    if (error) return badRequest(error.message)
 
-    const hashed = await bcrypt.hash(newPassword, 10)
-    await prisma.merchant.update({
-      where: { id: merchant.id },
-      data: { passwordHash: hashed },
-    })
-
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'MERCHANT',
-        merchantId: merchant.id,
-        action: 'PASSWORD_CHANGED',
-        entityType: 'merchant',
-        entityId: merchant.id,
-      },
+    await createAuditLog({
+      actorType: 'merchant',
+      actorId: merchant.id,
+      action: 'PASSWORD_CHANGED',
+      entityType: 'merchant',
+      entityId: merchant.id,
     })
 
     return NextResponse.json({ success: true, message: 'Password changed successfully' })

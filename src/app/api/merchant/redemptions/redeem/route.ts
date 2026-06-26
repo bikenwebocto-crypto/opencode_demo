@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getMerchantFromSession } from '@/lib/merchant-session'
 import { emailService } from '@/lib/email/email'
+import { createAuditLog } from '@/services/audit-log.service'
 import {
   renderRedemptionSuccessEmployeeTemplate,
   renderRedemptionSuccessMerchantTemplate,
@@ -73,18 +74,18 @@ export async function POST(request: NextRequest) {
         offer: {
           include: {
             merchant: {
-              select: { id: true, businessName: true, email: true },
+              select: { id: true, businessName: true, accountId: true },
             },
           },
         },
         employee: {
-          select: { id: true, firstName: true, lastName: true, email: true },
+          select: { id: true, firstName: true, lastName: true, accountId: true },
         },
         company: {
           select: { id: true, name: true },
         },
         merchant: {
-          select: { id: true, businessName: true },
+          select: { id: true, businessName: true, accountId: true },
         },
       },
     })
@@ -92,6 +93,17 @@ export async function POST(request: NextRequest) {
     if (!redemption) {
       return badRequest('Redemption code not found')
     }
+
+    const [empAccount, merchantAccount] = await Promise.all([
+      redemption.employee.accountId
+        ? prisma.account.findUnique({ where: { authUserId: redemption.employee.accountId }, select: { email: true } })
+        : null,
+      redemption.offer.merchant.accountId
+        ? prisma.account.findUnique({ where: { authUserId: redemption.offer.merchant.accountId }, select: { email: true } })
+        : null,
+    ])
+    const empEmail = empAccount?.email
+    const merchEmail = merchantAccount?.email
 
     if (redemption.isVerified && redemption.verifiedAt) {
       return conflict('ALREADY_REDEEMED', 'This redemption has already been processed')
@@ -120,21 +132,19 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'MERCHANT',
+    await createAuditLog({
+      actorType: 'merchant',
+      actorId: merchant.id,
+      action: 'REDEMPTION_REDEEMED',
+      entityType: 'REDEMPTION',
+      entityId: redemption.id,
+      metadata: {
+        redemptionCode: redemption.redemptionCode,
+        offerId: redemption.offerId,
+        employeeId: redemption.employeeId,
+        companyId: redemption.companyId,
         merchantId: merchant.id,
-        action: 'REDEMPTION_REDEEMED',
-        entityType: 'REDEMPTION',
-        entityId: redemption.id,
-        metadata: {
-          redemptionCode: redemption.redemptionCode,
-          offerId: redemption.offerId,
-          employeeId: redemption.employeeId,
-          companyId: redemption.companyId,
-          merchantId: merchant.id,
-          redeemedAt: now.toISOString(),
-        },
+        redeemedAt: now.toISOString(),
       },
     })
 
@@ -159,10 +169,10 @@ export async function POST(request: NextRequest) {
 
     const emailPromises: Promise<unknown>[] = []
 
-    if (redemption.employee.email) {
+    if (empEmail) {
       emailPromises.push(
         emailService.sendEmail({
-          to: redemption.employee.email,
+          to: empEmail,
           subject: 'Your Reward Has Been Redeemed',
           html: employeeHtml,
         }).catch((err) => {
@@ -171,10 +181,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (redemption.offer.merchant.email) {
+    if (merchEmail) {
       emailPromises.push(
         emailService.sendEmail({
-          to: redemption.offer.merchant.email,
+          to: merchEmail,
           subject: 'Reward Redemption Completed',
           html: merchantHtml,
         }).catch((err) => {
@@ -212,7 +222,7 @@ export async function POST(request: NextRequest) {
         isVerified: true,
         verifiedAt: now.toISOString(),
         employeeName: `${redemption.employee.firstName} ${redemption.employee.lastName}`,
-        employeeEmail: redemption.employee.email,
+        employeeEmail: empEmail ?? '',
         companyName: redemption.company.name,
         offerTitle: redemption.offer.title,
         merchantName: redemption.offer.merchant.businessName,

@@ -302,6 +302,7 @@ export const companyEmployeeUpdateSchema = z.object({
   department: z.string().max(100).optional().nullable(),
   jobTitle: z.string().max(100).optional().nullable(),
   phone: phoneSchema,
+  email:  emailSchema
 }).strict();
 
 export const issueReportSchema = z.object({

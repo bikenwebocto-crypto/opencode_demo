@@ -12,7 +12,12 @@ export class MerchantRepository extends BaseRepository<Merchant, MerchantCreateI
   }
 
   async findByEmail(email: string): Promise<Merchant | null> {
-    return prisma.merchant.findUnique({ where: { email } });
+    const account = await prisma.account.findUnique({
+      where: { email },
+      select: { authUserId: true },
+    })
+    if (!account) return null
+    return prisma.merchant.findFirst({ where: { accountId: account.authUserId } });
   }
 
   async findBySlug(slug: string): Promise<Merchant | null> {
@@ -90,7 +95,6 @@ export class MerchantRepository extends BaseRepository<Merchant, MerchantCreateI
         deletedAt: null,
         OR: [
           { businessName: { contains: query, mode: 'insensitive' } },
-          { email: { contains: query, mode: 'insensitive' } },
           { contactName: { contains: query, mode: 'insensitive' } },
           { city: { contains: query, mode: 'insensitive' } },
         ],

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { createAuditLog } from '@/services/audit-log.service'
 import { getEmployeeFromSession, unauthorized, internalError, companyInactive, notFound, badRequest } from '@/lib/employee-session'
 import {
   checkRedemptionEligibility,
@@ -132,15 +133,13 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'EMPLOYEE',
-        merchantId: offer.merchantId,
-        action: 'REDEMPTION_CREATED',
-        entityType: 'redemption',
-        entityId: redemption.id,
-        metadata: { offerId, method, branchId: validBranchId },
-      },
+    await createAuditLog({
+      actorType: 'employee',
+      actorId: employee.id,
+      action: 'REDEMPTION_CREATED',
+      entityType: 'redemption',
+      entityId: redemption.id,
+      metadata: { offerId, merchantId: offer.merchantId, method, branchId: validBranchId },
     })
 
     return NextResponse.json(

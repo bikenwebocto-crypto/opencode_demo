@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
               imageUrls: true, termsAndConditions: true, description: true, startDate: true, endDate: true,
               discountPercent: true, discountMax: true, minimumSpend: true, maxRedemptions: true,
               redemptionCode: true, redemptionInstructions: true, categoryId: true,
-              merchant: { select: { id: true, businessName: true, email: true } },
+              merchant: { select: { id: true, businessName: true } },
             },
           },
           newOffer: {
@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
               reviewNotes: true, rejectionReason: true,
             },
           },
-          admin: { select: { id: true, email: true } },
+          admin: { select: { id: true } },
         },
       }),
       prisma.offerReplacementRequest.count({ where }),
@@ -126,8 +126,7 @@ export async function PATCH(request: NextRequest) {
       return conflict(`This replacement has already been ${replacementReq.status.toLowerCase()}.`)
     }
 
-    const adminUser = await prisma.adminUser.findUnique({ where: { email: user.email } });
-    const adminId = adminUser?.id ?? null;
+    const adminId = user.profileId;
     const merchantId = replacementReq.currentOffer.merchantId;
     const notes = (adminNotes ?? reason ?? '').toString().trim()
 

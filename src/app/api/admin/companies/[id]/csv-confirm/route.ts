@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import * as bcrypt from 'bcryptjs'
 import { getCurrentUser } from '@/lib/supabase/server'
+import { createAuditLog, fromCurrentUser } from '@/services/audit-log.service'
 import { forbidden } from '@/lib/api-auth'
 import { buildPreview, parseCsvBody, validateRows, type ValidRow } from '@/lib/company-activation/employee-csv'
 
@@ -34,20 +34,6 @@ function internalError(error: unknown) {
 interface ConfirmBody {
   csv?: string
   bodyHash?: string
-}
-
-function defaultPassword(): string {
-  // Random 12-char temporary password. The employee signs in and
-  // is expected to change it. We don't want to email passwords in
-  // this project (no email transport), so they go through the
-  // password-reset flow.
-  const alphabet =
-    'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%^&*'
-  let out = ''
-  for (let i = 0; i < 12; i++) {
-    out += alphabet[Math.floor(Math.random() * alphabet.length)]
-  }
-  return out
 }
 
 export async function POST(
@@ -85,11 +71,17 @@ export async function POST(
     // call above already did this but did not return the full rows
     // for re-derivation; we re-run to get the typed rows.
     const rows = await parseCsvBody(csv)
-    const existing = await prisma.employee.findMany({
+    const existingEmployees = await prisma.employee.findMany({
       where: { companyId: id, deletedAt: null },
-      select: { email: true },
+      select: { accountId: true },
     })
-    const existingEmails = new Set(existing.map((e) => e.email.toLowerCase()))
+    const existingAccountIds = existingEmployees.map((e) => e.accountId).filter(Boolean) as string[]
+    const existingAccounts = existingAccountIds.length > 0
+      ? await prisma.account.findMany({ where: { authUserId: { in: existingAccountIds } }, select: { email: true } })
+      : []
+    const existingEmails = new Set(
+      existingAccounts.map((e) => e.email?.toLowerCase()).filter((e): e is string => !!e)
+    )
     const { valid } = await validateRows(rows, { companyId: id, existingEmails })
 
     if (valid.length === 0) {
@@ -115,13 +107,23 @@ export async function POST(
     })
 
     for (const v of valid) {
-      const tmpPassword = defaultPassword()
-      const passwordHash = await bcrypt.hash(tmpPassword, 10)
+      const pkId = crypto.randomUUID()
+
+      await prisma.account.create({
+        data: {
+          authUserId: pkId,
+          email: v.email,
+          role: 'EMPLOYEE',
+          profileType: 'EMPLOYEE',
+          status: 'PENDING',
+        },
+      })
+
       await prisma.employee.create({
         data: {
+          id: pkId,
+          accountId: pkId,
           companyId: id,
-          email: v.email,
-          passwordHash,
           firstName: v.firstName,
           lastName: v.lastName,
           department: v.department,
@@ -146,20 +148,9 @@ export async function POST(
       })
     }
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'admin',
-        adminId: user.id,
-        action: 'EMPLOYEE_CSV_IMPORTED',
-        entityType: 'company',
-        entityId: id,
-        metadata: {
-          total: preview.totalRows,
-          imported: valid.length,
-          rejected: preview.invalidCount,
-        },
-      },
-    })
+    await createAuditLog(fromCurrentUser(user, 'EMPLOYEE_CSV_IMPORTED', 'company', id, {
+      metadata: { total: preview.totalRows, imported: valid.length, rejected: preview.invalidCount },
+    }))
 
     return NextResponse.json({
       success: true,

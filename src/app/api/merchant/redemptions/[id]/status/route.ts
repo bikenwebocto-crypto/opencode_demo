@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getMerchantFromSession } from '@/lib/merchant-session'
+import { createAuditLog } from '@/services/audit-log.service'
 import {
   deriveStatus,
   rejectedNote,
@@ -96,15 +97,13 @@ export async function PATCH(
       data: updateData,
     })
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'MERCHANT',
-        merchantId: merchant.id,
-        action: auditAction,
-        entityType: 'redemption',
-        entityId: id,
-        metadata: { action, rejectionReason: rejectionReason ?? null, notes: notes ?? null },
-      },
+    await createAuditLog({
+      actorType: 'merchant',
+      actorId: merchant.id,
+      action: auditAction,
+      entityType: 'redemption',
+      entityId: id,
+      metadata: { action, rejectionReason: rejectionReason ?? null, notes: notes ?? null },
     })
 
     return NextResponse.json({
