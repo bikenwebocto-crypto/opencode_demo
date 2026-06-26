@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getMerchantFromSession } from '@/lib/merchant-session'
+import { createAuditLog } from '@/services/audit-log.service'
 
 function unauthorized() {
   return NextResponse.json(
@@ -49,11 +50,12 @@ export async function GET() {
     if (!user || user.userType !== 'merchant') return unauthorized()
     const merchant = await getMerchantFromSession()
     if (!merchant) return notFound()
+    const account = await prisma.account.findUnique({ where: { authUserId: merchant.accountId! }, select: { email: true } })
 
     return NextResponse.json({
       success: true,
       data: {
-        email: merchant.email,
+        email: account?.email ?? '',
         preferences: DEFAULT_PREFS,
       },
     })
@@ -68,24 +70,23 @@ export async function PATCH(request: NextRequest) {
     if (!user || user.userType !== 'merchant') return unauthorized()
     const merchant = await getMerchantFromSession()
     if (!merchant) return notFound()
+    const account = await prisma.account.findUnique({ where: { authUserId: merchant.accountId! }, select: { email: true } })
 
     const body = await request.json()
     const prefs = body?.preferences as Partial<NotificationPrefs> | undefined
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'MERCHANT',
-        merchantId: merchant.id,
-        action: 'NOTIFICATION_PREFERENCES_UPDATED',
-        entityType: 'merchant',
-        entityId: merchant.id,
-        changes: { preferences: prefs } as any,
-      },
+    await createAuditLog({
+      actorType: 'merchant',
+      actorId: merchant.id,
+      action: 'NOTIFICATION_PREFERENCES_UPDATED',
+      entityType: 'merchant',
+      entityId: merchant.id,
+      changes: { preferences: prefs } as any,
     })
 
     return NextResponse.json({
       success: true,
-      data: { email: merchant.email, preferences: { ...DEFAULT_PREFS, ...(prefs ?? {}) } },
+      data: { email: account?.email ?? '', preferences: { ...DEFAULT_PREFS, ...(prefs ?? {}) } },
       message: 'Notification preferences updated',
     })
   } catch (error) {

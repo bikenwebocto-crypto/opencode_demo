@@ -13,13 +13,12 @@ export default function EditMerchantPage({ params }: { params: Promise<{ id: str
   if (error || !data?.data) return <p className="py-12 text-center text-muted-foreground">Merchant not found</p>
 
   const merchant = data.data
-
   return (
     <MerchantForm
       merchantId={id}
       initialData={{
         businessName: merchant.businessName ?? '',
-        email: merchant.email ?? '',
+        email: merchant?.account?.email ?? '',
         password: '',
         contactName: merchant.contactName ?? '',
         contactPhone: merchant.contactPhone ?? '',

@@ -50,7 +50,9 @@ function internalError(error: unknown) {
 async function getMerchantFromUser() {
   const user = await getCurrentUser();
   if (!user || user.userType !== "merchant") return null;
-  return prisma.merchant.findUnique({ where: { email: user.email } });
+  const account = await prisma.account.findUnique({ where: { email: user.email }, select: { authUserId: true } });
+  if (!account) return null;
+  return prisma.merchant.findFirst({ where: { accountId: account.authUserId } });
 }
 
 async function getOwnOffer(merchantId: string, offerId: string) {

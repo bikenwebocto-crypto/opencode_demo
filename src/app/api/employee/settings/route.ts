@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import {
-  getEmployeeFromSession,
-  unauthorized,
-  internalError,
-} from '@/lib/employee-session'
+import { getEmployeeFromSession, unauthorized, internalError, companyInactive } from '@/lib/employee-session'
 
 interface EmployeePrefs {
   newOffers: boolean
@@ -25,6 +21,7 @@ export async function GET() {
   try {
     const employee = await getEmployeeFromSession()
     if (!employee) return unauthorized()
+    if ('inactive' in employee) return companyInactive(employee.companyStatus)
     return NextResponse.json({
       success: true,
       data: { email: employee.email, preferences: DEFAULT_PREFS },
@@ -38,6 +35,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const employee = await getEmployeeFromSession()
     if (!employee) return unauthorized()
+    if ('inactive' in employee) return companyInactive(employee.companyStatus)
     const body = await request.json()
     const prefs: Partial<EmployeePrefs> = body?.preferences ?? {}
     const merged = { ...DEFAULT_PREFS, ...prefs }

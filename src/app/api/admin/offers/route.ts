@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { createAuditLog } from '@/services/audit-log.service';
 import { getCurrentUser } from '@/lib/supabase/server';
 
 function unauthorized() {
@@ -74,7 +75,7 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
-          merchant: { select: { id: true, businessName: true, email: true } },
+          merchant: { select: { id: true, businessName: true } },
           _count: { select: { redemptions: true } },
         },
       }),
@@ -127,7 +128,7 @@ export async function POST(request: NextRequest) {
       return badRequest('Offer is not in a reviewable state');
     }
 
-    const adminId = user.id;
+    const adminId = user.profileId;
     const now = new Date();
 
     if (action === 'APPROVE') {
@@ -155,15 +156,13 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      await prisma.auditLog.create({
-        data: {
-          actorType: 'admin',
-          adminId,
-          action: 'OFFER_APPROVED',
-          entityType: 'MERCHANT_OFFER',
-          entityId: offerId,
-          changes: { from: offer.status, to: 'LIVE' },
-        },
+      await createAuditLog({
+        actorType: 'admin',
+        actorId: adminId,
+        action: 'OFFER_APPROVED',
+        entityType: 'MERCHANT_OFFER',
+        entityId: offerId,
+        changes: { from: offer.status, to: 'LIVE' },
       });
     }
 
@@ -194,15 +193,13 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      await prisma.auditLog.create({
-        data: {
-          actorType: 'admin',
-          adminId,
-          action: 'OFFER_REJECTED',
-          entityType: 'MERCHANT_OFFER',
-          entityId: offerId,
-          changes: { from: offer.status, to: 'REJECTED', reason: rejectionReason },
-        },
+      await createAuditLog({
+        actorType: 'admin',
+        actorId: adminId,
+        action: 'OFFER_REJECTED',
+        entityType: 'MERCHANT_OFFER',
+        entityId: offerId,
+        changes: { from: offer.status, to: 'REJECTED', reason: rejectionReason },
       });
     }
 
@@ -231,15 +228,13 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      await prisma.auditLog.create({
-        data: {
-          actorType: 'admin',
-          adminId,
-          action: 'OFFER_CHANGES_REQUESTED',
-          entityType: 'MERCHANT_OFFER',
-          entityId: offerId,
-          changes: { from: offer.status, to: 'CHANGES_REQUESTED', adminNote },
-        },
+      await createAuditLog({
+        actorType: 'admin',
+        actorId: adminId,
+        action: 'OFFER_CHANGES_REQUESTED',
+        entityType: 'MERCHANT_OFFER',
+        entityId: offerId,
+        changes: { from: offer.status, to: 'CHANGES_REQUESTED', adminNote },
       });
     }
 

@@ -5,7 +5,7 @@ import { getCurrentUser } from '@/lib/supabase/server';
 export async function GET() {
   try {
     // const user = await getCurrentUser();
-    // console.log('Admin overview accessed by user:', user ? { id: user.id, email: user.email } : null);
+    // console.log(' ** Admin overview accessed by user:');
     // if (!user || user.userType !== 'admin') {
     //   return NextResponse.json(
     //     { success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } },
@@ -79,13 +79,13 @@ export async function GET() {
         orderBy: { createdAt: 'desc' },
         take: 10,
         include: {
-          admin: { select: { id: true, firstName: true, lastName: true, email: true } },
+          admin: { select: { id: true, firstName: true, lastName: true} },
           merchant: { select: { id: true, businessName: true } },
           company: { select: { id: true, name: true } },
         },
       }),
     ]);
-
+    console.log('* Admin overview data fetched successfully');  
     const currentDiscount = currentPeriodDiscount._sum.discountAmount
       ? Number(currentPeriodDiscount._sum.discountAmount)
       : 0;
@@ -111,7 +111,8 @@ export async function GET() {
     const totalSavingsAgg = await prisma.redemption.aggregate({
       _sum: { savingsAmount: true },
     });
-
+    console.log('Total discount aggregated:', totalDiscountAgg._sum.discountAmount);
+    console.log('Total savings aggregated:', totalSavingsAgg._sum.savingsAmount);
     return NextResponse.json({
       success: true,
       data: {

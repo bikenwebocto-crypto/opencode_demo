@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getMerchantFromSession } from '@/lib/merchant-session'
+import { createAuditLog } from '@/services/audit-log.service'
 
 function unauthorized() {
   return NextResponse.json(
@@ -34,18 +35,31 @@ const VALID_PRIORITIES = ['low', 'normal', 'high', 'urgent'] as const
 
 async function getOrCreateSystemEmployee(): Promise<string> {
   const sysEmail = 'merchant-issues-system@perks.local'
-  const existing = await prisma.employee.findUnique({ where: { email: sysEmail } })
-  if (existing) return existing.id
+  const account = await prisma.account.findUnique({ where: { email: sysEmail } })
+  if (account) {
+    const existing = await prisma.employee.findFirst({ where: { accountId: account.authUserId } })
+    if (existing) return existing.id
+  }
   const anyCompany = await prisma.company.findFirst({ where: { deletedAt: null }, orderBy: { createdAt: 'asc' } })
   if (!anyCompany) throw new Error('No company available for system employee')
+  const pkId = crypto.randomUUID()
   const sys = await prisma.employee.create({
     data: {
+      id: pkId,
       companyId: anyCompany.id,
-      email: sysEmail,
-      passwordHash: '!locked-system-account!',
       firstName: 'Merchant',
       lastName: 'Issues System',
       status: 'INACTIVE',
+      accountId: pkId,
+    },
+  })
+  await prisma.account.create({
+    data: {
+      authUserId: pkId,
+      email: sysEmail,
+      profileType: 'EMPLOYEE',
+      role: 'EMPLOYEE',
+      status: 'ACTIVE',
     },
   })
   return sys.id
@@ -148,15 +162,13 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'MERCHANT',
-        merchantId: merchant.id,
-        action: 'ISSUE_CREATED',
-        entityType: 'issue_report',
-        entityId: issue.id,
-        metadata: { title, category, priority: priority ?? 'normal' },
-      },
+    await createAuditLog({
+      actorType: 'merchant',
+      actorId: merchant.id,
+      action: 'ISSUE_CREATED',
+      entityType: 'issue_report',
+      entityId: issue.id,
+      metadata: { title, category, priority: priority ?? 'normal' },
     })
 
     return NextResponse.json({ success: true, data: issue, message: 'Issue submitted for review' }, { status: 201 })

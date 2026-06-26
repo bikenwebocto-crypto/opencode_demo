@@ -228,9 +228,9 @@ export function MerchantForm({ merchantId, initialData }: MerchantFormProps) {
               {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium">Password <span className="text-destructive">*</span></label>
+              {/* <label className="mb-1 block text-sm font-medium">Password <span className="text-destructive">*</span></label>
               <Input type="password" className={inputClass('password')} value={form.password} onChange={(e) => setField('password', e.target.value)} placeholder="Min. 8 characters" />
-              {errors.password && <p className="mt-1 text-xs text-destructive">{errors.password}</p>}
+              {errors.password && <p className="mt-1 text-xs text-destructive">{errors.password}</p>} */}
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium">Contact Name <span className="text-destructive">*</span></label>

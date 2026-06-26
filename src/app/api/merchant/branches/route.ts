@@ -9,6 +9,7 @@ import {
   isSignificantLocationChange,
   DEFAULT_OPENING_HOURS,
 } from '@/lib/branch-helpers'
+import { createAuditLog } from '@/services/audit-log.service'
 
 function unauthorized() {
   return NextResponse.json(
@@ -194,15 +195,13 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'merchant',
-        merchantId: merchant.id,
-        action: 'BRANCH_CREATED',
-        entityType: 'merchant_branch',
-        entityId: branch.id,
-        changes: { branchName: branch.name, branchType: branch.branchType, isPrimary: branch.isPrimary } as any,
-      },
+    await createAuditLog({
+      actorType: 'merchant',
+      actorId: merchant.id,
+      action: 'BRANCH_CREATED',
+      entityType: 'merchant_branch',
+      entityId: branch.id,
+      changes: { branchName: branch.name, branchType: branch.branchType, isPrimary: branch.isPrimary } as any,
     })
 
     return NextResponse.json({ success: true, data: branch, message: 'Branch created' }, { status: 201 })

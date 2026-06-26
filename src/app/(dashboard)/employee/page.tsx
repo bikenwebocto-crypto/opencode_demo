@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button'
 import { EmployeeLayout } from '@/components/employee/EmployeeLayout'
 import { OfferCard, type OfferCardData } from '@/components/employee/OfferCard'
 import { RedeemModal, type RedeemModalOffer } from '@/components/employee/RedeemModal'
-import { ShoppingBag, TrendingUp, Gift, Bookmark, ChevronRight, Search } from 'lucide-react'
+import { ShoppingBag, TrendingUp, Gift, Bookmark, ChevronRight, Search, AlertCircle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 
 interface Stats {
@@ -41,14 +41,23 @@ async function fetchOffers(): Promise<OffersResponse> {
 export default function EmployeeHomePage() {
   const [search, setSearch] = useState('')
   const [redeemOffer, setRedeemOffer] = useState<RedeemModalOffer | null>(null)
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { data: stats, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ['employee-dashboard-stats'],
     queryFn: fetchStats,
+    retry: false,
   })
   const { data: offers, isLoading: offersLoading } = useQuery({
     queryKey: ['employee-offers', { featured: true }],
     queryFn: fetchOffers,
+    retry: false,
   })
+
+  // Detect the COMPANY_INACTIVE response from the API. The stats
+  // endpoint rejects with 403 + code COMPANY_INACTIVE when the
+  // employee's company is paused/suspended/cancelled.
+  const companyInactive =
+    (statsError as unknown as { message?: string })?.message?.includes('COMPANY_INACTIVE') ||
+    (stats as unknown as { error?: { code?: string } })?.error?.code === 'COMPANY_INACTIVE'
 
   return (
     <EmployeeLayout>
@@ -59,6 +68,19 @@ export default function EmployeeHomePage() {
             Discover and redeem exclusive offers from local merchants
           </p>
         </div>
+
+        {companyInactive && (
+          <div className="flex items-start gap-3 rounded-md border border-yellow-300 bg-yellow-50 p-4 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-200">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <p className="font-medium">Your company's access is currently inactive.</p>
+              <p className="mt-1 text-xs">
+                Please contact your company administrator to restore access. You can still
+                view your profile and settings, but offers and redemptions are disabled.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <StatCard

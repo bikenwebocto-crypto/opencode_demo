@@ -60,7 +60,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   // Find the best matching title
   const title = Object.entries(pageTitles).find(([path]) => pathname.startsWith(path))?.[1] ?? 'Dashboard'
-
+  console.log('Current user:', user)
   return (
     <div className="flex min-h-screen">
       {/* Mobile overlay */}
@@ -81,18 +81,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           userName={user?.name}
           userEmail={user?.email}
           userRole={user?.role}
+          companyName={user?.companyName}
         />
       </div>
 
       {/* Main content */}
       <div className="flex flex-1 flex-col">
-        <Navbar
+        {/* <Navbar
           title={title}
           onMenuClick={() => setSidebarOpen(true)}
           userName={user?.name}
           userEmail={user?.email}
           userRole={user?.role}
-        />
+        /> */}
         <main className="flex-1 overflow-y-auto p-6">
           {children}
         </main>

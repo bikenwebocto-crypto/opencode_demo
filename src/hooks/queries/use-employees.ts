@@ -73,6 +73,26 @@ export function useBulkUpdateEmployees() {
   });
 }
 
+export function useUpdateEmployee() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string } & Record<string, unknown>) => {
+      const res = await fetch(`/api/admin/employees/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to update employee');
+      return json;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: employeeKeys.lists() });
+    },
+  });
+}
+
 export function useBulkDeleteEmployees() {
   const queryClient = useQueryClient();
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { createAuditLog } from '@/services/audit-log.service'
 import { getCompanyAdmin, handleApiError } from '../../helpers'
 
 export async function POST(request: NextRequest) {
@@ -30,17 +31,16 @@ export async function POST(request: NextRequest) {
           reason,
         },
       }),
-      prisma.auditLog.create({
-        data: {
-          actorType: 'COMPANY_ADMIN',
-          companyId: company.id,
-          action: 'CANCELLATION_REQUESTED',
-          entityType: 'COMPANY',
-          entityId: company.id,
-          metadata: { requestedBy: companyAdmin.id, reason },
-        },
-      }),
     ])
+
+    await createAuditLog({
+      actorType: 'company_admin',
+      actorId: companyAdmin.id,
+      action: 'CANCELLATION_REQUESTED',
+      entityType: 'COMPANY',
+      entityId: company.id,
+      metadata: { requestedBy: companyAdmin.id, reason },
+    });
 
     return NextResponse.json({ success: true, message: 'Cancellation request submitted' })
   } catch (error) {

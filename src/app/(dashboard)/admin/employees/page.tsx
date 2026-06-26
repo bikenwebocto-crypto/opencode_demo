@@ -9,12 +9,13 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { CSVUploadDropzone } from '@/features/csv-uploads/components/csv-upload-dropzone'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plus, Upload, Trash2, CheckCircle, XCircle } from 'lucide-react'
+import { Plus, Upload, Trash2, CheckCircle, XCircle, Pencil } from 'lucide-react'
 import Link from 'next/link'
-import { useEmployees, useBulkUpdateEmployees, useBulkDeleteEmployees } from '@/hooks/queries/use-employees'
+import { useEmployees, useBulkUpdateEmployees, useBulkDeleteEmployees, useUpdateEmployee } from '@/hooks/queries/use-employees'
 import { useCompanies } from '@/hooks/queries/use-companies'
 import { showToast } from '@/hooks/use-toast'
 import { useTablePagination } from '@/hooks/use-table-pagination'
+import { EmployeeEditModal } from '@/components/shared/employee-edit-modal'
 import type { ColumnDef } from '@/types'
 
 type StatusFilter = 'ALL' | 'ACTIVE' | 'INACTIVE' | 'INVITED' | 'SUSPENDED' | 'INELIGIBLE'
@@ -29,6 +30,7 @@ export default function EmployeesPage() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [confirmAction, setConfirmAction] = useState<'delete' | 'deactivate'>('delete')
   const [isProcessing, setIsProcessing] = useState(false)
+  const [editingEmployee, setEditingEmployee] = useState<any | null>(null)
 
   const { page, setPage, pageSize, resetPage } = useTablePagination({ defaultPageSize: 10 })
 
@@ -43,6 +45,7 @@ export default function EmployeesPage() {
   const { data: companiesData } = useCompanies()
   const bulkUpdate = useBulkUpdateEmployees()
   const bulkDelete = useBulkDeleteEmployees()
+  const updateEmployee = useUpdateEmployee()
 
   const employees = data?.data ?? []
   const meta = data?.meta
@@ -57,10 +60,15 @@ export default function EmployeesPage() {
     employees.map((e: any) => ({
       id: e.id,
       name: `${e.firstName} ${e.lastName}`,
+      firstName: e.firstName,
+      lastName: e.lastName,
       email: e.email,
       companyId: e.companyId,
       companyName: e.company?.name ?? '—',
       department: e.department ?? '—',
+      jobTitle: e.jobTitle ?? '',
+      employeeId: e.employeeId ?? '',
+      phone: e.phone ?? '',
       status: e.status,
       totalRedemptions: e._count?.redemptions ?? 0,
       joinedAt: e.createdAt,
@@ -101,6 +109,24 @@ export default function EmployeesPage() {
       key: 'joinedAt',
       header: 'Joined',
       render: (e: any) => new Date(e.joinedAt).toLocaleDateString(),
+    },
+    {
+      key: 'actions',
+      header: '',
+      render: (e: any) => (
+        <div className="flex items-center justify-end gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 w-7 p-0"
+            onClick={() => setEditingEmployee(e)}
+            title="Edit employee"
+            aria-label="Edit employee"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ),
     },
   ]
 
@@ -234,6 +260,18 @@ export default function EmployeesPage() {
           setConfirmOpen(false)
         }}
         onCancel={() => setConfirmOpen(false)}
+      />
+
+      <EmployeeEditModal
+        open={!!editingEmployee}
+        onClose={() => setEditingEmployee(null)}
+        employee={editingEmployee ?? { id: '' }}
+        scope="admin"
+        saving={updateEmployee.isPending}
+        onSave={async (data: Record<string, unknown>) => {
+          if (!editingEmployee?.id) return
+          await updateEmployee.mutateAsync({ id: editingEmployee.id, ...data })
+        }}
       />
     </div>
   )

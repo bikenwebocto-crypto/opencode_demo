@@ -183,7 +183,7 @@ export async function getActionQueueAction(filters?: {
       skip: (page - 1) * pageSize,
       take: pageSize,
       include: {
-        merchant: { select: { id: true, businessName: true, email: true } },
+        merchant: { select: { id: true, businessName: true } },
       },
     }),
     prisma.actionQueueItem.count({ where: where as any }),

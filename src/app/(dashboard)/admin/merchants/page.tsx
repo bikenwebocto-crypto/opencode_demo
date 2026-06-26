@@ -95,7 +95,7 @@ export default function MerchantsPage() {
         </div>
       ),
     },
-    { key: 'category', header: 'Category' },
+    { key: 'category', header: 'Category', render: (m: any) => m.category || 'Unknown' },
     {
       key: 'status',
       header: 'Status',

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createAuditLog } from '@/services/audit-log.service';
 import { getCurrentUser } from "@/lib/supabase/server";
 import { getEntityKindFromReferenceType } from "@/lib/action-queue-types";
 
@@ -53,7 +54,7 @@ async function loadEntity(queueItem: { id: string; referenceType: string; refere
       include: {
         merchant: {
           select: {
-            id: true, businessName: true, email: true, status: true, logoUrl: true,
+            id: true, businessName: true, status: true, logoUrl: true,
             city: true, state: true, categoryId: true, contactName: true, contactPhone: true,
             description: true, website: true, addressLine1: true, addressLine2: true, postalCode: true,
           },
@@ -67,7 +68,7 @@ async function loadEntity(queueItem: { id: string; referenceType: string; refere
         where: { id: meta.currentOfferId as string },
         include: {
           merchant: {
-            select: { id: true, businessName: true, email: true, status: true, logoUrl: true, city: true, state: true },
+            select: { id: true, businessName: true, status: true, logoUrl: true, city: true, state: true },
           },
         },
       });
@@ -91,8 +92,8 @@ async function loadEntity(queueItem: { id: string; referenceType: string; refere
     return prisma.issueReport.findUnique({
       where: { id: issueId },
       include: {
-        merchant: { select: { id: true, businessName: true, email: true, status: true, city: true } },
-        employee: { select: { id: true, firstName: true, lastName: true, email: true } },
+        merchant: { select: { id: true, businessName: true, status: true, city: true } },
+        employee: { select: { id: true, firstName: true, lastName: true } },
       },
     });
   }
@@ -120,7 +121,7 @@ export async function GET(
     const queueItem = await prisma.actionQueueItem.findUnique({
       where: { id },
       include: {
-        merchant: { select: { id: true, businessName: true, email: true } },
+        merchant: { select: { id: true, businessName: true } },
       },
     });
 
@@ -133,7 +134,7 @@ export async function GET(
       orderBy: { createdAt: "desc" },
       take: 100,
       include: {
-        admin: { select: { id: true, firstName: true, lastName: true, email: true } },
+        admin: { select: { id: true, firstName: true, lastName: true } },
       },
     });
 
@@ -167,7 +168,8 @@ export async function POST(
       return badRequest("This item has already been finalized");
     }
 
-    const adminId = user.id;
+    if (!user.profileId) return badRequest('Admin profile not found');
+    const adminId = user.profileId;
     const now = new Date();
 
     if (action === "APPROVE") {
@@ -446,19 +448,17 @@ async function performApprove(
     },
   });
 
-  await prisma.auditLog.create({
-    data: {
-      actorType: "admin",
-      adminId,
-      action: "ACTION_QUEUE_APPROVED",
-      entityType: "ACTION_QUEUE",
-      entityId: queueItem.id,
-      changes: {
-        from: previousStatus,
-        to: "COMPLETED",
-        queueType: queueItem.type,
-      } as any,
-    },
+  await createAuditLog({
+    actorType: "admin",
+    actorId: adminId,
+    action: "ACTION_QUEUE_APPROVED",
+    entityType: "ACTION_QUEUE",
+    entityId: queueItem.id,
+    changes: {
+      from: previousStatus,
+      to: "COMPLETED",
+      queueType: queueItem.type,
+    } as any,
   });
 
   console.log(
@@ -509,15 +509,13 @@ async function performReject(queueItem: any, adminId: string, rejectionReason: s
     },
   });
 
-  await prisma.auditLog.create({
-    data: {
-      actorType: "admin",
-      adminId,
-      action: "ACTION_QUEUE_REJECTED",
-      entityType: "action_queue",
-      entityId: queueItem.id,
-      changes: { from: previousStatus, to: "FAILED", reason: rejectionReason, entityKind: kind } as any,
-    },
+  await createAuditLog({
+    actorType: "admin",
+    actorId: adminId,
+    action: "ACTION_QUEUE_REJECTED",
+    entityType: "action_queue",
+    entityId: queueItem.id,
+    changes: { from: previousStatus, to: "FAILED", reason: rejectionReason, entityKind: kind } as any,
   });
 }
 
@@ -531,15 +529,13 @@ async function performRemark(queueItem: any, adminId: string, remark: string) {
     data: { metadata: { ...existingMeta, remarks } as any },
   });
 
-  await prisma.auditLog.create({
-    data: {
-      actorType: "admin",
-      adminId,
-      action: "ACTION_QUEUE_REMARK_ADDED",
-      entityType: "action_queue",
-      entityId: queueItem.id,
-      changes: { remark } as any,
-    },
+  await createAuditLog({
+    actorType: "admin",
+    actorId: adminId,
+    action: "ACTION_QUEUE_REMARK_ADDED",
+    entityType: "action_queue",
+    entityId: queueItem.id,
+    changes: { remark } as any,
   });
 }
 
@@ -585,15 +581,13 @@ async function performEditAndApprove(queueItem: any, adminId: string, edits: Rec
     }
   }
 
-  await prisma.auditLog.create({
-    data: {
-      actorType: "admin",
-      adminId,
-      action: "ACTION_QUEUE_EDITED",
-      entityType: "action_queue",
-      entityId: queueItem.id,
-      changes: { edits, entityKind: kind } as any,
-    },
+  await createAuditLog({
+    actorType: "admin",
+    actorId: adminId,
+    action: "ACTION_QUEUE_EDITED",
+    entityType: "action_queue",
+    entityId: queueItem.id,
+    changes: { edits, entityKind: kind } as any,
   });
 
   await performApprove(queueItem, adminId, now);

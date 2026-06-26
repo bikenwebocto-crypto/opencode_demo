@@ -113,6 +113,13 @@ vi.mock('@/lib/prisma', () => ({
     auditLog: {
       create: vi.fn(),
     },
+    account: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      create: vi.fn(),
+    },
     adminUser: {
       findUnique: vi.fn(),
     },

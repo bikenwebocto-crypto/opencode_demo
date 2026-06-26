@@ -10,8 +10,6 @@ datasource db {
 
 model AdminUser {
   id                   String                       @id @default(uuid()) @db.Uuid
-  email                String                       @unique @db.VarChar(255)
-  passwordHash         String                       @db.VarChar(255)
   firstName            String                       @db.VarChar(100)
   lastName             String                       @db.VarChar(100)
   role                 AdminRole                    @default(SUPPORT_ADMIN)
@@ -20,6 +18,7 @@ model AdminUser {
   lastLoginAt          DateTime?
   createdAt            DateTime                     @default(now())
   updatedAt            DateTime                     @updatedAt
+  accountId            String?                      @db.Uuid
   actionQueueItems     ActionQueueItem[]
   auditLogs            AuditLog[]                   @relation("AdminAuditLogs")
   issueReviews         IssueReport[]                @relation("AdminIssueReview")
@@ -28,7 +27,6 @@ model AdminUser {
   notifications        NotificationEvent[]          @relation("AdminNotification")
   offerReplacementReqs OfferReplacementRequest[]    @relation("AdminOfferReplacement")
 
-  @@index([email])
   @@index([role])
   @@map("admin_users")
 }
@@ -37,7 +35,6 @@ model Account {
   authUserId  String        @id @default(uuid()) @db.Uuid
   email       String        @unique @db.VarChar(255)
   role        AccountRole
-  profileId   String        @db.Uuid
   profileType ProfileType
   status      AccountStatus @default(PENDING)
   createdBy   String?       @db.VarChar(255)
@@ -45,11 +42,13 @@ model Account {
   lastLoginAt DateTime?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+  employees Employee[] @relation("EmployeeAccount")
+  merchants   Merchant[]
 
   @@index([role])
   @@index([status])
-  @@index([profileId])
   @@map("accounts")
+  
 }
 
 model Company {
@@ -126,8 +125,6 @@ model CompanyBilling {
 model CompanyAdmin {
   id            String              @id @default(uuid()) @db.Uuid
   companyId     String              @db.Uuid
-  email         String              @unique @db.VarChar(255)
-  passwordHash  String              @db.VarChar(255)
   firstName     String              @db.VarChar(100)
   lastName      String              @db.VarChar(100)
   isPrimary     Boolean             @default(false)
@@ -135,20 +132,20 @@ model CompanyAdmin {
   lastLoginAt   DateTime?
   createdAt     DateTime            @default(now())
   updatedAt     DateTime            @updatedAt
+  accountId     String?             @db.Uuid
   company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   loginSessions LoginSession[]
   notifications NotificationEvent[] @relation("CompanyAdminNotification")
+  auditLogs     AuditLog[]            @relation("CompanyAdminAuditLogs")
 
-  @@index([email])
   @@index([companyId])
   @@map("company_admins")
 }
 
 model Employee {
-  id            String              @id @default(uuid()) @db.Uuid
-  companyId     String              @db.Uuid
-  email         String              @unique @db.VarChar(255)
-  passwordHash  String              @db.VarChar(255)
+  id        String @id @default(uuid()) @db.Uuid
+  companyId String @db.Uuid
+
   firstName     String              @db.VarChar(100)
   lastName      String              @db.VarChar(100)
   employeeId    String?             @db.VarChar(100)
@@ -166,13 +163,14 @@ model Employee {
   joinMethod    String?             @db.VarChar(50)
   approvedById  String?             @db.Uuid
   deletedById   String?             @db.Uuid
+  accountId     String?             @db.Uuid
   company       Company             @relation(fields: [companyId], references: [id])
   reports       IssueReport[]
   loginSessions LoginSession[]
   notifications NotificationEvent[] @relation("EmployeeNotification")
   redemptions   Redemption[]
-
-  @@index([email])
+  auditLogs     AuditLog[]            @relation("EmployeeAuditLogs")
+  account Account? @relation("EmployeeAccount", fields: [accountId], references: [authUserId])
   @@index([companyId])
   @@index([status])
   @@index([companyId, status])
@@ -183,8 +181,6 @@ model Merchant {
   id                  String                       @id @default(uuid()) @db.Uuid
   businessName        String                       @db.VarChar(255)
   slug                String                       @unique @db.VarChar(255)
-  email               String                       @unique @db.VarChar(255)
-  passwordHash        String                       @db.VarChar(255)
   contactName         String                       @db.VarChar(255)
   contactPhone        String?                      @db.VarChar(50)
   description         String?
@@ -219,6 +215,7 @@ model Merchant {
   liveAt              DateTime?
   approvedById        String?                      @db.Uuid
   deletedById         String?                      @db.Uuid
+  accountId           String?                      @db.Uuid
   actionQueueItems    ActionQueueItem[]
   audits              AuditLog[]                   @relation("MerchantAuditLogs")
   heroBanners         HeroBanner[]
@@ -233,6 +230,8 @@ model Merchant {
   notifications       NotificationEvent[]          @relation("MerchantNotification")
   redemptions         Redemption[]
   weeklyPicks         WeeklyPick[]
+
+  account Account? @relation(fields: [accountId], references: [authUserId])
 
   @@index([status])
   @@index([slug])
@@ -342,6 +341,9 @@ model MerchantOffer {
   submissionNotes        String?
   validationErrors       Json?
   adminNote              String?
+  isReplacement          Boolean                   @default(false)
+  replacementReason      String?
+  reviewNotes            String?
   merchant               Merchant                  @relation(fields: [merchantId], references: [id])
   replacesOffer          MerchantOffer?            @relation("OfferReplacement", fields: [replacesOfferId], references: [id])
   replacedBy             MerchantOffer[]           @relation("OfferReplacement")
@@ -354,6 +356,7 @@ model MerchantOffer {
   @@index([startDate, endDate])
   @@index([merchantId, status])
   @@index([status, startDate, endDate])
+  @@index([replacesOfferId])
   @@map("merchant_offers")
 }
 
@@ -596,26 +599,32 @@ model CSVRejectedRow {
 }
 
 model AuditLog {
-  id         String     @id @default(uuid()) @db.Uuid
-  actorType  String     @db.VarChar(50)
-  adminId    String?    @db.Uuid
-  merchantId String?    @db.Uuid
-  companyId  String?    @db.Uuid
-  action     String     @db.VarChar(100)
-  entityType String     @db.VarChar(50)
-  entityId   String     @db.Uuid
-  changes    Json?
-  metadata   Json?
-  ipAddress  String?    @db.VarChar(45)
-  userAgent  String?    @db.VarChar(500)
-  createdAt  DateTime   @default(now())
-  admin      AdminUser? @relation("AdminAuditLogs", fields: [adminId], references: [id])
-  company    Company?   @relation("CompanyAuditLogs", fields: [companyId], references: [id])
-  merchant   Merchant?  @relation("MerchantAuditLogs", fields: [merchantId], references: [id])
+  id             String         @id @default(uuid()) @db.Uuid
+  actorType      String         @db.VarChar(50)
+  adminId        String?        @db.Uuid
+  merchantId     String?        @db.Uuid
+  companyId      String?        @db.Uuid
+  companyAdminId String?        @db.Uuid
+  employeeId     String?        @db.Uuid
+  action         String         @db.VarChar(100)
+  entityType     String         @db.VarChar(50)
+  entityId       String         @db.Uuid
+  changes        Json?
+  metadata       Json?
+  ipAddress      String?        @db.VarChar(45)
+  userAgent      String?        @db.VarChar(500)
+  createdAt      DateTime       @default(now())
+  admin          AdminUser?     @relation("AdminAuditLogs", fields: [adminId], references: [id])
+  company        Company?       @relation("CompanyAuditLogs", fields: [companyId], references: [id])
+  merchant       Merchant?      @relation("MerchantAuditLogs", fields: [merchantId], references: [id])
+  companyAdmin   CompanyAdmin?  @relation("CompanyAdminAuditLogs", fields: [companyAdminId], references: [id])
+  employee       Employee?      @relation("EmployeeAuditLogs", fields: [employeeId], references: [id])
 
   @@index([adminId])
   @@index([merchantId])
   @@index([companyId])
+  @@index([companyAdminId])
+  @@index([employeeId])
   @@index([entityType, entityId])
   @@index([action])
   @@index([createdAt])

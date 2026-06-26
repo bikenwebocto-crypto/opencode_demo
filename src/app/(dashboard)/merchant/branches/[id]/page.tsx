@@ -7,6 +7,7 @@ import {
   ArrowLeft, Pencil, Power, PowerOff, Trash2, Star, Building2, Globe, MapPin, Phone, Mail,
   Clock, Accessibility, ImageIcon, Info, Calendar, AlertTriangle, ExternalLink, Car,
 } from 'lucide-react'
+import { Alert } from '@/components/ui/alert'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -37,6 +38,7 @@ export default function BranchDetailPage({ params }: { params: Promise<{ id: str
   const updateBranch = useUpdateBranch(id)
   const deleteBranch = useDeleteBranch()
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [showMinBranchesAlert, setShowMinBranchesAlert] = useState(true)
 
   if (isLoading) {
     return (
@@ -372,11 +374,16 @@ export default function BranchDetailPage({ params }: { params: Promise<{ id: str
         </Card>
       )}
 
-      {totalBranches <= 1 && (
-        <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300">
-          <AlertTriangle className="h-4 w-4" />
-          You must keep at least one branch. Closing is disabled until you add another.
-        </div>
+      {totalBranches <= 1 && showMinBranchesAlert && (
+        <Alert
+          className="mt-3"
+          variant="warning"
+          title="Branch limit"
+          message="You must keep at least one branch. Closing is disabled until you add another."
+          icon={AlertTriangle}
+          dismissible
+          onClose={() => setShowMinBranchesAlert(false)}
+        />
       )}
 
       <ConfirmDialog

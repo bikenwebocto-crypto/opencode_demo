@@ -22,7 +22,9 @@ export async function GET(request: NextRequest) {
     const user = await getCurrentUser();
     if (!user || user.userType !== 'merchant') return unauthorized();
 
-    const merchant = await prisma.merchant.findUnique({ where: { email: user.email } });
+    const account = await prisma.account.findUnique({ where: { email: user.email }, select: { authUserId: true } });
+    if (!account) return unauthorized();
+    const merchant = await prisma.merchant.findFirst({ where: { accountId: account.authUserId } });
     if (!merchant) return unauthorized();
 
     const { searchParams } = new URL(request.url);
@@ -67,7 +69,9 @@ export async function POST() {
     const user = await getCurrentUser();
     if (!user || user.userType !== 'merchant') return unauthorized();
 
-    const merchant = await prisma.merchant.findUnique({ where: { email: user.email } });
+    const account = await prisma.account.findUnique({ where: { email: user.email }, select: { authUserId: true } });
+    if (!account) return unauthorized();
+    const merchant = await prisma.merchant.findFirst({ where: { accountId: account.authUserId } });
     if (!merchant) return unauthorized();
 
     await prisma.notificationEvent.updateMany({

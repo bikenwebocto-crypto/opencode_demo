@@ -37,6 +37,7 @@ export async function GET() {
       name: resolved.name,
       userType: resolved.userType,
       role: resolved.role,
+      companyName: resolved.companyName,
       avatarUrl,
     },
   })

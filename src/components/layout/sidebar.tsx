@@ -41,6 +41,7 @@ interface SidebarProps {
   userName?: string
   userEmail?: string
   userRole?: string | null
+  companyName?: string | null
   onLogout?: () => void
 }
 
@@ -54,8 +55,8 @@ const navConfig: Record<string, NavItem[]> = {
     { label: 'Companies', href: '/admin/companies', icon: Building2 },
     { label: 'Employees', href: '/admin/employees', icon: Users },
     { label: 'CSV Uploads', href: '/admin/csv-uploads', icon: Upload },
-    { label: 'Content', href: '/admin/content', icon: Sparkles },
-    { label: 'Reports', href: '/admin/reports', icon: BarChart3 },
+    // { label: 'Content', href: '/admin/content', icon: Sparkles },
+    // { label: 'Reports', href: '/admin/reports', icon: BarChart3 },
     { label: 'Audit Logs', href: '/admin/audit-logs', icon: Search },
     { label: 'Billing', href: '/admin/billing', icon: CreditCard },
     { label: 'Settings', href: '/admin/settings', icon: Settings },
@@ -73,7 +74,7 @@ const navConfig: Record<string, NavItem[]> = {
   company_admin: [
     { label: 'Overview', href: '/company', icon: LayoutDashboard },
     { label: 'Employees', href: '/company/employees', icon: Users },
-    { label: 'Analytics', href: '/company/analytics', icon: BarChart3 },
+    // { label: 'Analytics', href: '/company/analytics', icon: BarChart3 },
     { label: 'Billing', href: '/company/billing', icon: CreditCard },
     { label: 'Settings', href: '/company/settings', icon: Settings },
   ],
@@ -88,17 +89,21 @@ const navConfig: Record<string, NavItem[]> = {
   ],
 }
 
-export function Sidebar({ userType, userName, userEmail, userRole }: SidebarProps) {
+export function Sidebar({ userType, userName, userEmail, userRole, companyName }: SidebarProps) {
   const pathname = usePathname()
   const navItems = navConfig[userType] ?? []
   const router = useRouter()
+  const displayName = userType === 'company_admin' ? userName : userName
+  const userCompany = companyName
+  const initials = displayName?.charAt(0)?.toUpperCase() ?? 'U'
+
   const logout = async() => {
     try {
       // await fetch('/api/auth/logout', {
       //   method: 'POST',
       // })
      const res = await supabase.auth.signOut()
-     console.log('Logout response:', res) 
+    //  console.log('Logout response:', res) 
      router.push('/login')
     } 
     catch (error) {
@@ -117,11 +122,14 @@ export function Sidebar({ userType, userName, userEmail, userRole }: SidebarProp
       {/* User info */}
       <div className="flex items-center gap-3 border-b px-6 py-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
-          {userName?.charAt(0)?.toUpperCase() ?? 'U'}
+          {initials}
         </div>
         <div className="flex-1 overflow-hidden">
-          <p className="truncate text-sm font-medium">{userName ?? 'NA'}</p>
+          <p className="truncate text-sm font-medium">{displayName ?? 'NA'}</p>
           <p className="truncate text-xs text-muted-foreground">{userEmail ?? 'NA'}</p>
+          {userCompany && (
+            <p className="truncate text-xs text-muted-foreground">{userCompany}</p>
+          )}
           {userRole && (
             <span className="inline-block mt-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
               {userRole.replace(/_/g, ' ')}

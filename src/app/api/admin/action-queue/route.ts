@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createAuditLog, fromCurrentUser } from '@/services/audit-log.service';
 import { getCurrentUser } from "@/lib/supabase/server";
 import { QUEUE_TYPE_MAP, getPriorityLabel } from "@/lib/action-queue-types";
 
@@ -125,7 +126,7 @@ export async function GET(request: NextRequest) {
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
-          merchant: { select: { id: true, businessName: true, email: true } },
+          merchant: { select: { id: true, businessName: true } },
         },
       }),
       prisma.actionQueueItem.count({ where: where as any }),
@@ -166,7 +167,7 @@ export async function GET(request: NextRequest) {
     });
 
     const tabCounts: Record<string, number> = { ALL: typeCounts };
-    for (const tabKey of ["MERCHANT_APPLICATIONS", "OFFER_APPROVALS", "COMPANY_ACTIVATION", "ISSUES", "ALERTS"]) {
+    for (const tabKey of ["MERCHANT_APPROVAL", "OFFER_APPROVALS", "COMPANY_ACTIVATION", "ISSUES", "ALERTS"]) {
       const tabQueueTypes = Object.entries(QUEUE_TYPE_MAP)
         .filter(([, m]) => m.tabCategory === tabKey)
         .map(([k]) => k);
@@ -240,20 +241,13 @@ export async function POST(request: NextRequest) {
                 : undefined,
         },
         include: {
-          merchant: { select: { id: true, businessName: true, email: true } },
+          merchant: { select: { id: true, businessName: true } },
         },
       });
 
-      await prisma.auditLog.create({
-        data: {
-          actorType: "admin",
-          adminId: user.id,
-          action: `ACTION_QUEUE_${status}`,
-          entityType: "action_queue",
-          entityId: id,
-          changes: { from: existing.status, to: status } as any,
-        },
-      });
+      await createAuditLog(fromCurrentUser(user, `ACTION_QUEUE_${status}`, "action_queue", id, {
+        changes: { from: existing.status, to: status } as any,
+      }));
 
       return NextResponse.json({
         success: true,
@@ -287,7 +281,7 @@ export async function POST(request: NextRequest) {
         metadata: metadata ?? undefined,
       },
       include: {
-        merchant: { select: { id: true, businessName: true, email: true } },
+        merchant: { select: { id: true, businessName: true } },
       },
     });
 
@@ -344,21 +338,14 @@ export async function PATCH(request: NextRequest) {
       where: { id },
       data: data as any,
       include: {
-        merchant: { select: { id: true, businessName: true, email: true } },
+        merchant: { select: { id: true, businessName: true } },
       },
     });
 
     if (status) {
-      await prisma.auditLog.create({
-        data: {
-          actorType: "admin",
-          adminId: user.id,
-          action: `ACTION_QUEUE_${status}`,
-          entityType: "action_queue",
-          entityId: id,
-          changes: { from: existing.status, to: status } as any,
-        },
-      });
+      await createAuditLog(fromCurrentUser(user, `ACTION_QUEUE_${status}`, "action_queue", id, {
+        changes: { from: existing.status, to: status } as any,
+      }));
     }
 
     return NextResponse.json({
@@ -402,16 +389,9 @@ export async function DELETE(request: NextRequest) {
       data: { status: "SKIPPED" },
     });
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: "admin",
-        adminId: user.id,
-        action: "ACTION_QUEUE_SKIPPED",
-        entityType: "action_queue",
-        entityId: id,
+      await createAuditLog(fromCurrentUser(user, "ACTION_QUEUE_SKIPPED", "action_queue", id, {
         changes: { from: existing.status, to: "SKIPPED" } as any,
-      },
-    });
+      }));
 
     return NextResponse.json({
       success: true,

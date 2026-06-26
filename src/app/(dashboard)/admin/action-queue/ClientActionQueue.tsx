@@ -97,7 +97,7 @@ export default function ActionQueuePage() {
     if (!meta?.tabCounts) {
       return {
         ALL: 0,
-        MERCHANT_APPLICATIONS: 0,
+        MERCHANT_APPROVAL: 0,
         OFFER_APPROVALS: 0,
         COMPANY_ACTIVATION: 0,
         ISSUES: 0,
@@ -106,7 +106,7 @@ export default function ActionQueuePage() {
     }
     return {
       ALL: meta.tabCounts.ALL ?? 0,
-      MERCHANT_APPLICATIONS: meta.tabCounts.MERCHANT_APPLICATIONS ?? 0,
+      MERCHANT_APPROVAL: meta.tabCounts.MERCHANT_APPROVAL ?? 0,
       OFFER_APPROVALS: meta.tabCounts.OFFER_APPROVALS ?? 0,
       COMPANY_ACTIVATION: meta.tabCounts.COMPANY_ACTIVATION ?? 0,
       ISSUES: meta.tabCounts.ISSUES ?? 0,

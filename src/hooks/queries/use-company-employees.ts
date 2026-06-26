@@ -15,6 +15,9 @@ export interface EmployeeListItem {
   invitedAt: string | null
   lastLoginAt: string | null
   joinMethod: string | null
+  account: {
+    email: string
+  } | null
   _count: { redemptions: number }
 }
 
@@ -98,6 +101,27 @@ export function useReactivateCompanyEmployee() {
       })
       const body = await res.json()
       if (!res.ok) throw new Error(body.error?.message ?? 'Failed to reactivate employee')
+      return body
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: companyEmployeeKeys.all })
+      queryClient.invalidateQueries({ queryKey: companyDashboardKeys.all })
+    },
+  })
+}
+
+export function useUpdateCompanyEmployee() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string } & Record<string, unknown>) => {
+      const res = await fetch(`/api/company/employees/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error?.message ?? 'Failed to update employee')
       return body
     },
     onSuccess: () => {

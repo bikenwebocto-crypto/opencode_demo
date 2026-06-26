@@ -5,15 +5,10 @@ import { StatCard } from '@/components/shared/stat-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Alert } from '@/components/ui/alert'
 import { useCompanyDashboard } from '@/hooks/queries/use-company-dashboard'
 import { useCompanyEmployees } from '@/hooks/queries/use-company-employees'
 import { Users, ShoppingBag, TrendingUp, CreditCard, ArrowRight, AlertCircle, Info, AlertTriangle } from 'lucide-react'
-
-const alertStyles: Record<string, string> = {
-  info: 'border-blue-200 bg-blue-50 dark:bg-blue-950/20',
-  warning: 'border-amber-200 bg-amber-50 dark:bg-amber-950/20',
-  error: 'border-red-200 bg-red-50 dark:bg-red-950/20',
-}
 
 const alertIcons: Record<string, React.ElementType> = {
   NO_EMPLOYEES: Info,
@@ -21,12 +16,6 @@ const alertIcons: Record<string, React.ElementType> = {
   INVOICE_OVERDUE: AlertCircle,
   ACCOUNT_ON_HOLD: AlertCircle,
   LOW_ENGAGEMENT: AlertTriangle,
-}
-
-const iconColors: Record<string, string> = {
-  info: 'text-blue-600',
-  warning: 'text-amber-600',
-  error: 'text-red-600',
 }
 
 export default function CompanyDashboard() {
@@ -57,16 +46,15 @@ export default function CompanyDashboard() {
         <div className="space-y-2">
           {stats.alerts.map((a, i) => {
             const Icon = alertIcons[a.type] ?? AlertCircle
-            const borderStyle = alertStyles[a.severity] ?? ''
-            const iconColor = iconColors[a.severity] ?? ''
+            const severity = (a.severity?.toLowerCase() as 'info' | 'warning' | 'error') ?? 'info'
             return (
-              <div key={i} className={`flex items-start gap-3 rounded-md border p-4 ${borderStyle}`}>
-                <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${iconColor}`} />
-                <div>
-                  <p className="text-sm font-medium capitalize">{a.type.replace(/_/g, ' ')}</p>
-                  <p className="text-sm text-muted-foreground">{a.message}</p>
-                </div>
-              </div>
+              <Alert
+                key={i}
+                title={a.type.replace(/_/g, ' ')}
+                description={a.message}
+                variant={severity}
+                icon={Icon}
+              />
             )
           })}
         </div>

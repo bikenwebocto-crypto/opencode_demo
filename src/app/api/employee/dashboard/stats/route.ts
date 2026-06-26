@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getEmployeeFromSession, unauthorized, internalError } from '@/lib/employee-session'
+import { getEmployeeFromSession, unauthorized, internalError, companyInactive, notFound, badRequest } from '@/lib/employee-session'
 
 export async function GET(_request: NextRequest) {
   try {
     const employee = await getEmployeeFromSession()
     if (!employee) return unauthorized()
+    if ('inactive' in employee) return companyInactive(employee.companyStatus)
 
     const now = new Date()
     const startOfDay = new Date(now)

@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { showToast } from '@/hooks/use-toast'
-import { Plus, Pencil, ExternalLink, Gift, RefreshCw, Clock, History, Trash2 } from 'lucide-react'
+import { Plus, Pencil, ExternalLink, Gift, RefreshCw, Clock, History, Trash2, BadgeCheck, AlertCircle } from 'lucide-react'
+import { Alert } from '@/components/ui/alert'
 import type { ColumnDef } from '@/types'
 
 const statusLabels: Record<string, string> = {
@@ -21,9 +22,14 @@ const statusLabels: Record<string, string> = {
   EXPIRED: 'Expired',
   REPLACED: 'Replaced',
   ARCHIVED: 'Archived',
+  CHANGES_REQUESTED: 'Changes Requested',
+  PENDING_APPROVAL: 'Pending Approval',
+  REPLACEMENT_PENDING: 'Replacement Pending',
 }
 
 export default function MerchantOffersPage() {
+  const [showAdminNotes, setShowAdminNotes] = useState(true)
+  const [showRejectionReason, setShowRejectionReason] = useState(true)
   const [tab, setTab] = useState<'all' | 'drafts' | 'history'>('all')
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
@@ -42,6 +48,7 @@ export default function MerchantOffersPage() {
   const offers = data?.data ?? []
   const currentLive = data?.currentLive ?? null
   const pendingReplacement = data?.pendingReplacement ?? null
+  const pendingReplacementRequest = data?.pendingReplacementRequest ?? null
   const meta = data?.meta ?? { total: 0, totalPages: 1 }
 
   const columns: ColumnDef<any>[] = [
@@ -62,7 +69,21 @@ export default function MerchantOffersPage() {
     {
       key: 'status',
       header: 'Status',
-      render: (o: any) => <StatusBadge status={o.status} label={statusLabels[o.status]} />,
+      render: (o: any) => (
+        <div className="flex flex-col gap-1">
+          <StatusBadge status={o.status} label={statusLabels[o.status] ?? o.status} />
+          {o.status === 'LIVE' && (
+            <span className="inline-flex w-fit items-center gap-1 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-green-800 dark:bg-green-900/40 dark:text-green-200">
+              <BadgeCheck className="h-3 w-3" /> LIVE
+            </span>
+          )}
+          {currentLive && o.id === currentLive.id && pendingReplacement && (
+            <span className="inline-flex w-fit items-center gap-1 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-blue-800 dark:bg-blue-900/40 dark:text-blue-200">
+              <Clock className="h-3 w-3" /> Replacement Pending
+            </span>
+          )}
+        </div>
+      ),
     },
     {
       key: 'currentRedemptions',
@@ -98,7 +119,7 @@ export default function MerchantOffersPage() {
               <Pencil className="h-3.5 w-3.5" />
             </Link>
           )}
-          {o.status === 'LIVE' && (
+          {o.status === 'LIVE' && !pendingReplacement && (
             <Link
               href={`/merchant/offers/${o.id}/replace`}
               onClick={(e) => e.stopPropagation()}
@@ -107,6 +128,14 @@ export default function MerchantOffersPage() {
             >
               <RefreshCw className="h-3.5 w-3.5" /> Replace
             </Link>
+          )}
+          {o.status === 'LIVE' && pendingReplacement && (
+            <span
+              className="inline-flex cursor-not-allowed items-center gap-1 text-sm text-muted-foreground"
+              title="You already have a replacement under review."
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Replace
+            </span>
           )}
           {['DRAFT', 'VALIDATION_FAILED', 'REJECTED', 'EXPIRED', 'REPLACED', 'AWAITING_APPROVAL'].includes(o.status) && (
             <button
@@ -143,16 +172,37 @@ export default function MerchantOffersPage() {
       {currentLive ? (
         <Card className="border-green-200">
           <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Gift className="h-5 w-5 text-green-600" />
-              Current Live Offer
-            </CardTitle>
             <div className="flex items-center gap-2">
-              <Link href={`/merchant/offers/${currentLive.id}/replace`}>
-                <Button size="sm" variant="outline">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Gift className="h-5 w-5 text-green-600" />
+                Current Live Offer
+              </CardTitle>
+              <span className="inline-flex items-center gap-1 rounded bg-green-100 px-2 py-0.5 text-xs font-semibold uppercase text-green-800 dark:bg-green-900/40 dark:text-green-200">
+                <BadgeCheck className="h-3 w-3" /> LIVE
+              </span>
+              {pendingReplacement && (
+                <span className="inline-flex items-center gap-1 rounded bg-blue-100 px-2 py-0.5 text-xs font-semibold uppercase text-blue-800 dark:bg-blue-900/40 dark:text-blue-200">
+                  <Clock className="h-3 w-3" /> Replacement Pending
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {pendingReplacement ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled
+                  title="You already have a replacement under review."
+                >
                   <RefreshCw className="mr-1 h-3.5 w-3.5" /> Replace My Offer
                 </Button>
-              </Link>
+              ) : (
+                <Link href={`/merchant/offers/${currentLive.id}/replace`}>
+                  <Button size="sm" variant="outline">
+                    <RefreshCw className="mr-1 h-3.5 w-3.5" /> Replace My Offer
+                  </Button>
+                </Link>
+              )}
             </div>
           </CardHeader>
           <CardContent>
@@ -188,21 +238,62 @@ export default function MerchantOffersPage() {
         </Card>
       )}
 
-      {/* Pending Replacement Banner */}
-      {pendingReplacement && (
-        <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950/20">
-          <CardContent className="p-4 flex items-center gap-3">
-            <Clock className="h-5 w-5 text-blue-600 shrink-0" />
-            <div className="text-sm">
-              <p className="font-medium">Replacement offer in review</p>
-              <p className="text-muted-foreground mt-0.5">
-                &ldquo;{pendingReplacement.title}&rdquo; is {statusLabels[pendingReplacement.status]?.toLowerCase() ?? 'in review'}.
-                Your current offer stays live until the replacement is approved.
-              </p>
+      {/* Replacement Status Card */}
+      {pendingReplacement && currentLive && (
+        <Card className="border-blue-300">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              {pendingReplacement.status === 'CHANGES_REQUESTED' ? (
+                <AlertCircle className="h-4 w-4 text-amber-600" />
+              ) : (
+                <Clock className="h-4 w-4 text-blue-600" />
+              )}
+              Replacement {pendingReplacementRequest?.status === 'CLARIFICATION_REQUESTED' || pendingReplacement.status === 'CHANGES_REQUESTED' ? 'Changes Requested' : 'Pending Approval'}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="rounded-md border bg-muted/30 p-3">
+                <p className="text-xs uppercase text-muted-foreground">Current Offer</p>
+                <p className="mt-1 font-medium">{currentLive.title}</p>
+                <p className="text-xs text-muted-foreground">${Number(currentLive.discountValue).toFixed(2)}</p>
+              </div>
+              <div className="rounded-md border-2 border-blue-300 bg-blue-50/50 p-3 dark:bg-blue-950/20">
+                <p className="text-xs uppercase text-muted-foreground">Replacement</p>
+                <p className="mt-1 font-medium">{pendingReplacement.title}</p>
+                <p className="text-xs text-muted-foreground">${Number(pendingReplacement.discountValue).toFixed(2)}</p>
+              </div>
             </div>
-            <Link href={`/merchant/offers/${pendingReplacement.id}/edit`}>
-              <Button size="sm" variant="outline">View</Button>
-            </Link>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+              <div className="text-muted-foreground">
+                <span>Submitted {new Date(pendingReplacement.createdAt ?? pendingReplacement.submittedAt ?? Date.now()).toLocaleDateString()}</span>
+                <span className="mx-2">·</span>
+                <span>Status: <strong className="text-foreground">{statusLabels[pendingReplacement.status] ?? pendingReplacement.status}</strong></span>
+              </div>
+              <Link href={`/merchant/offers/${pendingReplacement.id}/edit`}>
+                <Button size="sm" variant="outline">View Replacement</Button>
+              </Link>
+            </div>
+            {pendingReplacement.status === 'CHANGES_REQUESTED' && pendingReplacement.reviewNotes && showAdminNotes && (
+              <Alert
+                className="mt-3"
+                variant="warning"
+                title="Admin notes"
+                message={pendingReplacement.reviewNotes}
+                dismissible
+                onClose={() => setShowAdminNotes(false)}
+              />
+            )}
+            {pendingReplacement.status === 'REJECTED' && pendingReplacement.rejectionReason && showRejectionReason && (
+              <Alert
+                className="mt-3"
+                variant="error"
+                title="Rejection reason"
+                message={pendingReplacement.rejectionReason}
+                dismissible
+                onClose={() => setShowRejectionReason(false)}
+              />
+            )}
           </CardContent>
         </Card>
       )}

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
-import * as bcrypt from 'bcryptjs'
+import { createAuditLog } from '@/services/audit-log.service'
+import { createClient } from '@/lib/supabase/server'
 import { getCompanyAdmin, handleApiError } from '../../helpers'
 
 export async function POST(request: NextRequest) {
@@ -23,31 +23,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const valid = await bcrypt.compare(currentPassword, companyAdmin.passwordHash)
-    if (!valid) {
+    const supabase = await createClient()
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    if (error) {
       return NextResponse.json(
-        { success: false, error: { code: 'INVALID_PASSWORD', message: 'Current password is incorrect' } },
+        { success: false, error: { code: 'VALIDATION', message: error.message } },
         { status: 400 },
       )
     }
 
-    const passwordHash = await bcrypt.hash(newPassword, 10)
-
-    await prisma.$transaction([
-      prisma.companyAdmin.update({
-        where: { id: companyAdmin.id },
-        data: { passwordHash },
-      }),
-      prisma.auditLog.create({
-        data: {
-          actorType: 'COMPANY_ADMIN',
-          companyId: company.id,
-          action: 'PASSWORD_CHANGED',
-          entityType: 'COMPANY_ADMIN',
-          entityId: companyAdmin.id,
-        },
-      }),
-    ])
+    await createAuditLog({
+      actorType: 'company_admin',
+      actorId: companyAdmin.id,
+      action: 'PASSWORD_CHANGED',
+      entityType: 'COMPANY_ADMIN',
+      entityId: companyAdmin.id,
+    })
 
     return NextResponse.json({ success: true, message: 'Password changed successfully' })
   } catch (error) {

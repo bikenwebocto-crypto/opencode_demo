@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/supabase/server';
+import { createAuditLog, fromCurrentUser } from '@/services/audit-log.service';
 import { adminApproveMerchantSchema } from '@/schemas';
 
 function unauthorized() {
@@ -32,22 +33,29 @@ export async function GET(request: NextRequest) {
     // if (!user || user.userType !== 'admin') return unauthorized();
 
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get('stat us');
+    const status = searchParams.get('status');
     const categoryId = searchParams.get('categoryId');
     const page = Math.max(1, parseInt(searchParams.get('page') ?? '1'));
     const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get('pageSize') ?? '20')));
     const q = searchParams.get('q');
     
 
-    const where: Record<string, unknown> = { deletedAt: null };
+    const where: any = { deletedAt: null };
     if (status && status !== 'ALL') where.status = status;
     if (categoryId && categoryId !== 'ALL') where.categoryId = categoryId;
     if (q) {
+      const matchingAccounts = await prisma.account.findMany({
+        where: { email: { contains: q, mode: 'insensitive' }, profileType: 'MERCHANT' },
+        select: { authUserId: true },
+      })
+      const accountAuthUserIds = matchingAccounts.map((a) => a.authUserId).filter(Boolean)
       where.OR = [
         { businessName: { contains: q, mode: 'insensitive' } },
-        { email: { contains: q, mode: 'insensitive' } },
         { contactName: { contains: q, mode: 'insensitive' } },
-      ];
+      ]
+      if (accountAuthUserIds.length > 0) {
+        where.OR.push({ accountId: { in: accountAuthUserIds } })
+      }
     }
 
     const [merchants, total] = await Promise.all([
@@ -181,22 +189,13 @@ export async function POST(request: NextRequest) {
     console.log('13. Creating audit log');
     console.log('13a. adminId:', user.id);
 
-    const auditLog = await prisma.auditLog.create({
-      data: {
-        actorType: 'admin',
-        adminId: user.id,
-        action: `MERCHANT_${status}`,
-        entityType: 'merchant',
-        entityId: merchantId,
-        changes: {
-          from: previousStatus,
-          to: status,
-          rejectionReason,
-        },
-      },
-    });
+    await createAuditLog(
+      fromCurrentUser(user, `MERCHANT_${status}`, 'merchant', merchantId, {
+        changes: { from: previousStatus, to: status, rejectionReason },
+      }),
+    );
 
-    console.log('14. Audit log created:', auditLog.id);
+    console.log('14. Audit log created');
 
     console.log('15. Updating action queue');
 
@@ -257,16 +256,9 @@ export async function PATCH(request: NextRequest) {
       data: updates,
     });
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'admin',
-        adminId: user.id,
-        action: 'MERCHANT_UPDATED',
-        entityType: 'merchant',
-        entityId: id,
-        changes: updates,
-      },
-    });
+    await createAuditLog(
+      fromCurrentUser(user, 'MERCHANT_UPDATED', 'merchant', id, { changes: updates }),
+    );
 
     return NextResponse.json({ success: true, data: merchant, message: 'Merchant updated successfully' });
   } catch (error) {
@@ -297,16 +289,9 @@ export async function DELETE(request: NextRequest) {
       data: { deletedAt: new Date(), status: 'ARCHIVED' },
     });
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'admin',
-        adminId: user.id,
-        action: 'MERCHANT_DELETED',
-        entityType: 'merchant',
-        entityId: id,
-        changes: {},
-      },
-    });
+    await createAuditLog(
+      fromCurrentUser(user, 'MERCHANT_DELETED', 'merchant', id, { changes: {} }),
+    );
 
     return NextResponse.json({ success: true, data: null, message: 'Merchant deleted successfully' });
   } catch (error) {

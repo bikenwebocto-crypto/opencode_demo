@@ -6,18 +6,6 @@ const JWT_EXPIRES_IN = '15m';
 const REFRESH_TOKEN_BYTES = 64;
 
 export class AuthService {
-  private readonly saltRounds = 12;
-
-  async hashPassword(password: string): Promise<string> {
-    const bcrypt = await import('bcryptjs');
-    return bcrypt.hash(password, this.saltRounds);
-  }
-
-  async verifyPassword(password: string, hash: string): Promise<boolean> {
-    const bcrypt = await import('bcryptjs');
-    return bcrypt.compare(password, hash);
-  }
-
   generateAccessToken(payload: JWTPayload): string {
     const jwt = require('jsonwebtoken');
     const { exp, ...claims } = payload;
@@ -50,18 +38,21 @@ export class AuthService {
     const account = await prisma.account.findUnique({ where: { email } });
     if (!account || account.status !== 'ACTIVE') return null;
 
-    // Find the actual profile record to verify password
+    // Find the actual profile record
     const user = await this.findUserByType(email, userType);
     if (!user) return null;
 
-    const valid = await this.verifyPassword(password, user.passwordHash);
-    if (!valid) return null;
+    // Verify credentials via Supabase Auth
+    const { createClient } = await import('@/lib/supabase/server');
+    const supabase = await createClient();
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    if (authError) return null;
 
     if (!this.isUserActive(user, userType)) return null;
 
     const payload: JWTPayload = {
       sub: user.id,
-      email: user.email,
+      email: account.email,
       user_type: userType,
       account_role: account.role,
       ...(userType === 'admin' && { admin_role: (user as any).role }),
@@ -93,7 +84,7 @@ export class AuthService {
     });
 
     return {
-      user: this.mapToAuthUser(user, userType),
+      user: this.mapToAuthUser(user, userType, account.email),
       accessToken,
       refreshToken,
       expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
@@ -116,13 +107,11 @@ export class AuthService {
     const userType = session.userType as UserType;
     if (!user || !this.isUserActive(user, userType)) return null;
 
-    const account = await prisma.account.findUnique({ where: { email: user.email } });
-
     const payload: JWTPayload = {
       sub: user.id,
-      email: user.email,
+      email: user.account?.email ?? '',
       user_type: userType,
-      account_role: account?.role,
+      account_role: user.account?.role ?? undefined,
       ...(userType === 'admin' && { admin_role: (user as any).role }),
       ...(userType === 'merchant' && { merchant_id: user.id }),
       ...((userType === 'company_admin' || userType === 'employee') && {
@@ -140,7 +129,7 @@ export class AuthService {
     });
 
     return {
-      user: this.mapToAuthUser(user, userType),
+      user: this.mapToAuthUser(user, userType, user.account?.email ?? ''),
       accessToken,
       refreshToken,
       expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
@@ -165,19 +154,25 @@ export class AuthService {
   // --- Private helpers ---
 
   private async findUserByType(email: string, userType: UserType) {
+    const account = await prisma.account.findUnique({
+      where: { email },
+      select: { authUserId: true },
+    })
+    if (!account) return null
+
     switch (userType) {
       case 'admin':
-        return prisma.adminUser.findUnique({ where: { email } });
+        return prisma.adminUser.findFirst({ where: { accountId: account.authUserId } });
       case 'merchant':
-        return prisma.merchant.findUnique({ where: { email } });
+        return prisma.merchant.findFirst({ where: { accountId: account.authUserId } });
       case 'company_admin':
-        return prisma.companyAdmin.findUnique({
-          where: { email },
+        return prisma.companyAdmin.findFirst({
+          where: { accountId: account.authUserId },
           include: { company: { select: { id: true } } },
         });
       case 'employee':
-        return prisma.employee.findUnique({
-          where: { email },
+        return prisma.employee.findFirst({
+          where: { accountId: account.authUserId },
           include: { company: { select: { id: true } } },
         });
       default:
@@ -186,18 +181,29 @@ export class AuthService {
   }
 
   private async findUserById(id: string, userType: string) {
+    let user;
     switch (userType) {
       case 'admin':
-        return prisma.adminUser.findUnique({ where: { id } });
+        user = await prisma.adminUser.findUnique({ where: { id } });
+        break;
       case 'merchant':
-        return prisma.merchant.findUnique({ where: { id } });
+        user = await prisma.merchant.findUnique({ where: { id } });
+        break;
       case 'company_admin':
-        return prisma.companyAdmin.findUnique({ where: { id }, include: { company: { select: { id: true } } } });
+        user = await prisma.companyAdmin.findUnique({ where: { id }, include: { company: { select: { id: true } } } });
+        break;
       case 'employee':
-        return prisma.employee.findUnique({ where: { id }, include: { company: { select: { id: true } } } });
+        user = await prisma.employee.findUnique({ where: { id }, include: { company: { select: { id: true } } } });
+        break;
       default:
         return null;
     }
+    if (!user) return null;
+    const acct = await prisma.account.findUnique({
+      where: { authUserId: user.accountId! },
+      select: { email: true, role: true },
+    });
+    return { ...user, account: acct ?? { email: '', role: null } };
   }
 
   private async updateLastLogin(userId: string, userType: UserType): Promise<void> {
@@ -215,10 +221,10 @@ export class AuthService {
     }
   }
 
-  private mapToAuthUser(user: any, userType: UserType): AuthUser {
+  private mapToAuthUser(user: any, userType: UserType, email: string): AuthUser {
     return {
       id: user.id,
-      email: user.email,
+      email,
       userType,
       role: user.role,
       merchantId: userType === 'merchant' ? user.id : undefined,

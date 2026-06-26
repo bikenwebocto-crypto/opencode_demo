@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { createAuditLog } from '@/services/audit-log.service'
 import { getCompanyAdmin, handleApiError } from '../../helpers'
 
 export async function POST() {
@@ -9,7 +10,7 @@ export async function POST() {
     const [employees, billing, redemptions] = await Promise.all([
       prisma.employee.findMany({
         where: { companyId: company.id, deletedAt: null },
-        select: { firstName: true, lastName: true, email: true, department: true, status: true, createdAt: true },
+        select: { accountId: true, firstName: true, lastName: true, department: true, status: true, createdAt: true },
       }),
       prisma.companyBilling.findUnique({ where: { companyId: company.id } }),
       prisma.redemption.findMany({
@@ -46,15 +47,13 @@ export async function POST() {
       exportedAt: new Date().toISOString(),
     }
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'COMPANY_ADMIN',
-        companyId: company.id,
-        action: 'EXPORT_GENERATED',
-        entityType: 'COMPANY',
-        entityId: company.id,
-        metadata: { exportedBy: companyAdmin.id },
-      },
+    await createAuditLog({
+      actorType: 'company_admin',
+      actorId: companyAdmin.id,
+      action: 'EXPORT_GENERATED',
+      entityType: 'COMPANY',
+      entityId: company.id,
+      metadata: { exportedBy: companyAdmin.id },
     })
 
     return NextResponse.json({

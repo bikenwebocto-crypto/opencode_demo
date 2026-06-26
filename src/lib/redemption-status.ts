@@ -4,7 +4,7 @@
 
 import { prisma } from '@/lib/prisma'
 
-export type RedemptionStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED'
+export type RedemptionStatus = 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED' | 'REDEEMED'
 export type RedemptionMethod = 'IN_STORE' | 'ONLINE' | 'QR_CODE' | 'MANUAL_CODE'
 
 const METHOD_PREFIX = 'METHOD:'
@@ -41,7 +41,7 @@ export function cancelledNote(reason: string): string {
   return `${CANCELLED_PREFIX}${reason}`
 }
 
-export const REDEMPTION_STATUSES: RedemptionStatus[] = ['PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED', 'EXPIRED']
+export const REDEMPTION_STATUSES: RedemptionStatus[] = ['PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED', 'EXPIRED', 'REDEEMED']
 export const REDEMPTION_METHODS: RedemptionMethod[] = ['IN_STORE', 'ONLINE', 'QR_CODE', 'MANUAL_CODE']
 
 export const STATUS_LABELS: Record<RedemptionStatus, string> = {
@@ -50,6 +50,7 @@ export const STATUS_LABELS: Record<RedemptionStatus, string> = {
   REJECTED: 'Rejected',
   CANCELLED: 'Cancelled',
   EXPIRED: 'Expired',
+  REDEEMED: 'Redeemed',
 }
 
 export const METHOD_LABELS: Record<RedemptionMethod, string> = {

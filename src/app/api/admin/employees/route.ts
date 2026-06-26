@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/supabase/server';
 import { adminEmployeeActionSchema } from '@/schemas';
-import * as bcrypt from 'bcryptjs';
+import { createAuditLog, fromCurrentUser } from '@/services/audit-log.service';
 import { validateUserEmail } from '@/services/user-validation.service';
 
 function unauthorized() {
@@ -31,7 +31,7 @@ function internalError(error: unknown) {
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    console.log('Employee Current user:', user);
+    
     if (!user) return unauthorized();
 
     const { searchParams } = new URL(request.url);
@@ -44,12 +44,20 @@ export async function GET(request: NextRequest) {
     const where: Record<string, unknown> = { deletedAt: null };
     if (status && status !== 'ALL') where.status = status;
     if (companyId && companyId !== 'ALL') where.companyId = companyId;
+    let matchingAccountIds: string[] = [];
     if (q) {
-      where.OR = [
+      const matchingAccounts = await prisma.account.findMany({
+        where: { email: { contains: q, mode: 'insensitive' } },
+        select: { authUserId: true },
+      });
+      matchingAccountIds = matchingAccounts.map((a) => a.authUserId);
+      (where as any).OR = [
         { firstName: { contains: q, mode: 'insensitive' } },
         { lastName: { contains: q, mode: 'insensitive' } },
-        { email: { contains: q, mode: 'insensitive' } },
       ];
+      if (matchingAccountIds.length > 0) {
+        (where as any).OR.push({ accountId: { in: matchingAccountIds } });
+      }
     }
 
     const [employees, total] = await Promise.all([
@@ -115,14 +123,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const passwordHash = await bcrypt.hash('Welcome@123', 10);
+    const pkId = crypto.randomUUID();
 
     const result = await prisma.$transaction(async (tx) => {
+      await tx.account.create({
+        data: {
+          authUserId: pkId,
+          email,
+          role: 'EMPLOYEE',
+          profileType: 'EMPLOYEE',
+          status: 'PENDING',
+        },
+      });
+
       const employee = await tx.employee.create({
         data: {
+          id: pkId,
+          accountId: pkId,
           companyId,
-          email,
-          passwordHash,
           firstName,
           lastName,
           employeeId,
@@ -139,27 +157,11 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      await tx.account.create({
-        data: {
-          authUserId: employee.id,
-          email,
-          role: 'EMPLOYEE',
-          profileId: employee.id,
-          profileType: 'EMPLOYEE',
-          status: 'PENDING',
-        },
-      });
-
-      await tx.auditLog.create({
-        data: {
-          actorType: 'admin',
-          adminId: user.id,
-          action: 'EMPLOYEE_CREATED',
-          entityType: 'employee',
-          entityId: employee.id,
+      await createAuditLog(
+        fromCurrentUser(user, 'EMPLOYEE_CREATED', 'employee', employee.id, {
           changes: { email, companyId, department },
-        },
-      });
+        }),
+      );
 
       return employee;
     });
@@ -207,16 +209,11 @@ export async function PATCH(request: NextRequest) {
       data: { status: status as any },
     });
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'admin',
-        adminId: user.id,
-        action: `EMPLOYEES_BULK_${status}`,
-        entityType: 'employee',
-        entityId: `bulk-${Date.now()}`,
+    await createAuditLog(
+      fromCurrentUser(user, `EMPLOYEES_BULK_${status}`, 'employee', `bulk-${Date.now()}`, {
         changes: { employeeIds, status, reason, count: result.count },
-      },
-    });
+      }),
+    );
 
     return NextResponse.json({
       success: true,
@@ -263,16 +260,15 @@ export async function DELETE(request: NextRequest) {
       data: { deletedAt: new Date(), deletedById: user.id, status: 'INACTIVE' },
     });
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'admin',
-        adminId: user.id,
-        action: employeeIds.length === 1 ? 'EMPLOYEE_DELETED' : 'EMPLOYEES_BULK_DELETED',
-        entityType: 'employee',
-        entityId: employeeIds.length === 1 ? employeeIds[0]! : `bulk-${Date.now()}`,
-        changes: { employeeIds, count: result.count },
-      },
-    });
+    await createAuditLog(
+      fromCurrentUser(
+        user,
+        employeeIds.length === 1 ? 'EMPLOYEE_DELETED' : 'EMPLOYEES_BULK_DELETED',
+        'employee',
+        employeeIds.length === 1 ? employeeIds[0]! : `bulk-${Date.now()}`,
+        { changes: { employeeIds, count: result.count } },
+      ),
+    );
 
     return NextResponse.json({
       success: true,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
-import * as bcrypt from 'bcryptjs';
 import { parse } from 'csv-parse/sync';
 import { validateUserEmail } from '@/services/user-validation.service';
 
@@ -43,7 +43,6 @@ export async function POST(request: NextRequest) {
         const businessName = (row.businessName ?? '').trim();
         const email = (row.email ?? '').trim().toLowerCase();
         const contactName = (row.contactName ?? '').trim();
-        const password = (row.password ?? '').trim();
 
         if (!businessName || !email || !contactName) {
           failed++;
@@ -51,18 +50,18 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        const existing = await prisma.merchant.findUnique({ where: { email } });
-        if (existing) {
-          if (!password) {
-            skipped++;
-            results.push({ row: i + 1, businessName, success: true, action: 'skipped', error: 'Already exists (no password provided)' });
+        const existingAccount = await prisma.account.findUnique({ where: { email } });
+        if (existingAccount) {
+          if (existingAccount.profileType !== 'MERCHANT') {
+            failed++;
+            results.push({ row: i + 1, businessName, success: false, action: 'failed', error: 'Email is already assigned to another account type' });
             continue;
           }
-          const passwordHash = await bcrypt.hash(password, 10);
+          const existingMerchant = await prisma.merchant.findFirst({ where: { accountId: existingAccount.authUserId } });
+          if (!existingMerchant) { failed++; results.push({ row: i + 1, businessName, success: false, action: 'failed', error: 'Merchant record not found' }); continue; }
           await prisma.merchant.update({
-            where: { email },
+            where: { id: existingMerchant.id },
             data: {
-              passwordHash,
               contactName,
               contactPhone: (row.contactPhone ?? '').trim() || null,
               description: (row.description ?? '').trim() || null,
@@ -88,19 +87,6 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        if (!password) {
-          failed++;
-          results.push({ row: i + 1, businessName, success: false, action: 'failed', error: 'Password is required for new merchants' });
-          continue;
-        }
-
-        if (password.length < 8) {
-          failed++;
-          results.push({ row: i + 1, businessName, success: false, action: 'failed', error: 'Password must be at least 8 characters' });
-          continue;
-        }
-
-        const passwordHash = await bcrypt.hash(password, 10);
         const slug = businessName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now() + '-' + i;
         const rawStatus = (row.status ?? '').trim().toUpperCase();
         const status = ['PENDING', 'ACTIVE', 'SUSPENDED', 'REJECTED'].includes(rawStatus) ? rawStatus : 'PENDING';
@@ -108,12 +94,23 @@ export async function POST(request: NextRequest) {
         const accountStatus = status === 'ACTIVE' ? 'ACTIVE' : 'PENDING';
 
         await prisma.$transaction(async (tx) => {
+          const pkId = crypto.randomUUID();
+          const account = await tx.account.create({
+            data: {
+              authUserId: pkId,
+              email,
+              role: 'MERCHANT',
+              profileType: 'MERCHANT',
+              status: accountStatus as any,
+            },
+          });
+
           const merchant = await tx.merchant.create({
             data: {
+              id: pkId,
+              accountId: pkId,
               businessName,
               slug,
-              email,
-              passwordHash,
               contactName,
               contactPhone: (row.contactPhone ?? '').trim() || null,
               description: (row.description ?? '').trim() || null,
@@ -127,17 +124,6 @@ export async function POST(request: NextRequest) {
               country: (row.country ?? '').trim() || null,
               status: status as any,
               onboardingStep: status === 'ACTIVE' ? 'COMPLETE' : 'APPLICATION',
-            },
-          });
-
-          await tx.account.create({
-            data: {
-              authUserId: merchant.id,
-              email,
-              role: 'MERCHANT',
-              profileId: merchant.id,
-              profileType: 'MERCHANT',
-              status: accountStatus as any,
             },
           });
         });

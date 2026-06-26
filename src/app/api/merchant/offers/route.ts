@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { Prisma, OfferStatus } from "@prisma/client";
+import {
+  ReplacementValidationError,
+  validateReplacement,
+} from "@/lib/offer-replacement";
+import { logReplacementAudit, notifyReplacement } from "@/lib/offer-replacement-notifications";
+import { createAuditLog } from '@/services/audit-log.service';
 const MIN_TITLE_LENGTH = 5;
 const MAX_TITLE_LENGTH = 255;
 const MAX_DESCRIPTION_LENGTH = 2000;
@@ -39,7 +45,9 @@ function internalError(error: unknown) {
 async function getMerchantFromUser() {
   const user = await getCurrentUser();
   if (!user || user.userType !== "merchant") return null;
-  return prisma.merchant.findUnique({ where: { email: user.email } });
+  const account = await prisma.account.findUnique({ where: { email: user.email }, select: { authUserId: true } });
+  if (!account) return null;
+  return prisma.merchant.findFirst({ where: { accountId: account.authUserId } });
 }
 
 function runQualityChecks(body: any): {
@@ -176,7 +184,9 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Get pending replacement (if any)
+    // Get pending replacement (if any). CHANGES_REQUESTED counts as
+    // "still in flight" — merchant must edit+resubmit or delete before
+    // a fresh replacement can be created.
     const pendingReplacement = currentLive
       ? await prisma.merchantOffer.findFirst({
           where: {
@@ -187,9 +197,20 @@ export async function GET(request: NextRequest) {
                 "VALIDATION_IN_PROGRESS",
                 "AWAITING_APPROVAL",
                 "VALIDATION_FAILED",
+                "CHANGES_REQUESTED",
               ],
             },
           },
+        })
+      : null;
+
+    // The replacement-request row carries the status (AWAITING_APPROVAL /
+    // CLARIFICATION_REQUESTED) — surface it so the merchant UI can show
+    // the right copy.
+    const pendingReplacementRequest = pendingReplacement
+      ? await prisma.offerReplacementRequest.findFirst({
+          where: { newOfferId: pendingReplacement.id },
+          orderBy: { createdAt: 'desc' },
         })
       : null;
 
@@ -198,6 +219,7 @@ export async function GET(request: NextRequest) {
       data: offers,
       currentLive,
       pendingReplacement,
+      pendingReplacementRequest,
       meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     });
   } catch (error) {
@@ -232,6 +254,7 @@ export async function POST(request: NextRequest) {
       categoryId,
       submissionNotes,
       replacesOfferId,
+      replacementReason,
       saveAsDraft,
     } = body;
 
@@ -273,6 +296,28 @@ export async function POST(request: NextRequest) {
       return badRequest(
         "An offer with this title already exists (live, awaiting approval, or in review)",
       );
+    }
+
+    // Replacement validation: only LIVE offers can be replaced,
+    // no chains, no concurrent pending replacements.
+    if (replacesOfferId) {
+      try {
+        await validateReplacement(prisma, {
+          merchantId: merchant.id,
+          targetOfferId: replacesOfferId,
+        })
+      } catch (err) {
+        if (err instanceof ReplacementValidationError) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: { code: err.code, message: err.message },
+            },
+            { status: 400 },
+          )
+        }
+        throw err
+      }
     }
 
     // Only one pending draft per merchant (Phase 5)
@@ -326,6 +371,8 @@ export async function POST(request: NextRequest) {
         categoryId: categoryId ?? null,
         replacesOfferId: replacesOfferId ?? null,
         submissionNotes: submissionNotes ?? null,
+        isReplacement: !!replacesOfferId,
+        replacementReason: body.replacementReason ?? null,
         validationErrors: qcResult.passed
           ? Prisma.DbNull
           : (qcResult.errors as any),
@@ -343,6 +390,7 @@ export async function POST(request: NextRequest) {
             currentOfferId: replacesOfferId,
             newOfferId: offer.id,
             status: "AWAITING_APPROVAL",
+            reason: body.replacementReason ?? null,
           },
         });
 
@@ -358,9 +406,31 @@ export async function POST(request: NextRequest) {
             metadata: {
               currentOfferId: replacesOfferId,
               newOfferId: offer.id,
+              reason: body.replacementReason ?? null,
             },
           },
         });
+
+        // Audit + notifications
+        await logReplacementAudit({
+          event: 'OFFER_REPLACEMENT_CREATED',
+          merchantId: merchant.id,
+          newOfferId: offer.id,
+          currentOfferId: replacesOfferId,
+          reason: body.replacementReason,
+        })
+        await notifyReplacement({
+          event: 'SUBMITTED',
+          merchantId: merchant.id,
+          newOfferId: offer.id,
+          currentOfferId: replacesOfferId,
+        }).catch((err) => console.error('Replacement submit notify failed', err))
+        await notifyReplacement({
+          event: 'ADMIN_PENDING',
+          merchantId: merchant.id,
+          newOfferId: offer.id,
+          currentOfferId: replacesOfferId,
+        }).catch((err) => console.error('Replacement admin notify failed', err))
       } else {
         // Prevent duplicate queue items
         const existingItems = await prisma.actionQueueItem.findMany({
@@ -389,17 +459,15 @@ export async function POST(request: NextRequest) {
       }
       console.log('** Created action queue item for offer approval/replacement',);
       // Audit log
-      await prisma.auditLog.create({
-        data: {
-          actorType: "MERCHANT",
-          merchantId: merchant.id,
-          action: "OFFER_SUBMITTED_FOR_APPROVAL",
-          entityType: "MERCHANT_OFFER",
-          entityId: offer.id,
-          metadata: {
-            title,
-            replacesOfferId: replacesOfferId ?? null,
-          },
+      await createAuditLog({
+        actorType: 'merchant',
+        actorId: merchant.id,
+        action: "OFFER_SUBMITTED_FOR_APPROVAL",
+        entityType: "MERCHANT_OFFER",
+        entityId: offer.id,
+        metadata: {
+          title,
+          replacesOfferId: replacesOfferId ?? null,
         },
       });
     }
@@ -473,15 +541,13 @@ export async function DELETE(request: NextRequest) {
     });
 
     for (const offer of offers) {
-      await prisma.auditLog.create({
-        data: {
-          actorType: 'MERCHANT',
-          merchantId: merchant.id,
-          action: 'OFFER_DELETED',
-          entityType: 'MERCHANT_OFFER',
-          entityId: offer.id,
-          metadata: { title: offer.title, previousStatus: offer.status },
-        },
+      await createAuditLog({
+        actorType: 'merchant',
+        actorId: merchant.id,
+        action: 'OFFER_DELETED',
+        entityType: 'MERCHANT_OFFER',
+        entityId: offer.id,
+        metadata: { title: offer.title, previousStatus: offer.status },
       });
     }
 

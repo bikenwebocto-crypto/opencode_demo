@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
+import { createAuditLog, buildAuditData, fromCurrentUser } from '@/services/audit-log.service';
+import { sendCompanyAdminInvitation } from '@/services/company-admin-invitation.service';
 import { getCurrentUser } from '@/lib/supabase/server';
 import { adminCompanyActionSchema } from '@/schemas';
-import * as bcrypt from 'bcryptjs';
 import { validateUserEmail } from '@/services/user-validation.service';
+import { getCityReadiness } from '@/lib/company-activation/city-readiness';
+import { sendLaunchPack } from '@/lib/company-activation/launch-pack';
+import { derivePrimaryAdmin, summarizeAdmins } from '@/lib/company-contact';
+import type { CompanyStatus } from '@/types';
 
 function unauthorized() {
   return NextResponse.json(
@@ -28,24 +34,83 @@ function internalError(error: unknown) {
 }
 
 // GET /api/admin/companies — list all companies
+//
+// Query params:
+//   - status      : company status (ALL | PENDING | ACTIVE | PAUSED | SUSPENDED | CANCELLED | APPROVED_PENDING_PAYMENT)
+//   - adminStatus : filter to companies whose primary admin is ACTIVE/INACTIVE
+//   - page, pageSize
+//   - q           : free-text search across company name, company contact email, and admin email
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    // if (!user || user.userType !== 'admin') return unauthorized();
+    if (!user) return unauthorized();
+    if (user.userType !== 'admin') {
+      return NextResponse.json(
+        { success: false, error: { code: 'FORBIDDEN', message: 'Admin access required' } },
+        { status: 403 },
+      );
+    }
 
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
+    const adminStatus = searchParams.get('adminStatus');
     const page = Math.max(1, parseInt(searchParams.get('page') ?? '1'));
     const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get('pageSize') ?? '20')));
     const q = searchParams.get('q');
 
     const where: Record<string, unknown> = { deletedAt: null };
-    if (status && status !== 'ALL') where.status = status;
-    if (q) {
-      where.OR = [
-        { name: { contains: q, mode: 'insensitive' } },
-        { email: { contains: q, mode: 'insensitive' } },
-      ];
+    if (status && status !== 'ALL') where.status = status as CompanyStatus;
+
+    // When adminStatus='ACTIVE'|'INACTIVE', restrict to companies that have
+    // at least one admin matching that flag. We resolve those company IDs
+    // up-front to keep the main query simple.
+    if (adminStatus === 'ACTIVE' || adminStatus === 'INACTIVE') {
+      const isActive = adminStatus === 'ACTIVE'
+      const matchingAdmins = await prisma.companyAdmin.findMany({
+        where: { isActive },
+        select: { companyId: true },
+        distinct: ['companyId'],
+      })
+      where.id = { in: matchingAdmins.map((a) => a.companyId) }
+    }
+
+    // Free-text search: company name, company contact email, or any
+    // matching company admin email. We pre-resolve admin email matches
+    // into company IDs and OR them into the where clause.
+    if (q && q.trim()) {
+      const term = q.trim()
+      const matchingAccounts = await prisma.account.findMany({
+        where: { email: { contains: term, mode: 'insensitive' }, profileType: 'COMPANY' },
+        select: { authUserId: true },
+      })
+      const matchingAdminIds = matchingAccounts.map((a) => a.authUserId).filter(Boolean)
+      const matchingAdmins = await prisma.companyAdmin.findMany({
+        where: { id: { in: matchingAdminIds } },
+        select: { companyId: true },
+        distinct: ['companyId'],
+      })
+      const adminEmailCompanyIds = matchingAdmins.map((a) => a.companyId)
+
+      const orClauses: Record<string, unknown>[] = [
+        { name: { contains: term, mode: 'insensitive' } },
+        { email: { contains: term, mode: 'insensitive' } },
+      ]
+      if (adminEmailCompanyIds.length > 0) {
+        orClauses.push({ id: { in: adminEmailCompanyIds } })
+      }
+
+      // Combine with adminStatus id-in filter if both present.
+      const existingIdIn = (where.id as { in?: string[] } | undefined)?.in
+      if (existingIdIn) {
+        const intersected = adminEmailCompanyIds.length > 0
+          ? adminEmailCompanyIds.filter((id) => existingIdIn.includes(id))
+          : existingIdIn
+        where.id = { in: intersected }
+        delete (where as any).OR
+        where.AND = [{ OR: orClauses }]
+      } else {
+        where.OR = orClauses
+      }
     }
 
     const [companies, total] = await Promise.all([
@@ -57,14 +122,58 @@ export async function GET(request: NextRequest) {
         include: {
           _count: { select: { employees: true, redemptions: true, csvUploads: true } },
           billing: { select: { plan: true, isTrial: true, trialEndsAt: true, billingStatus: true, renewalDate: true } },
+          companyAdmins: {
+            orderBy: { createdAt: 'asc' },
+          },
         },
       }),
       prisma.company.count({ where: where as any }),
     ]);
 
+    const data = companies.map((c) => {
+      const admins = summarizeAdmins(c.companyAdmins)
+      const activeAdmins = admins.filter((a) => a.isActive)
+      const primaryAdmin = derivePrimaryAdmin(c.companyAdmins)
+      return {
+        id: c.id,
+        name: c.name,
+        email: c.email,
+        phone: c.phone,
+        website: c.website,
+        city: c.city,
+        country: c.country,
+        industry: c.industry,
+        logoUrl: c.logoUrl,
+        status: c.status,
+        employeeCount: c._count?.employees ?? 0,
+        activeRedemptions: c._count?.redemptions ?? 0,
+        joinedAt: c.createdAt,
+        createdAt: c.createdAt,
+        billing: c.billing,
+        companyContact: {
+          id: c.id,
+          companyName: c.name,
+          companyEmail: c.email,
+          phone: c.phone,
+          website: c.website,
+          status: c.status,
+          city: c.city,
+          country: c.country,
+          industry: c.industry,
+          logoUrl: c.logoUrl,
+          employeeCount: c._count?.employees ?? 0,
+          createdAt: c.createdAt,
+        },
+        primaryAdmin,
+        admins,
+        adminCount: admins.length,
+        activeAdminCount: activeAdmins.length,
+      }
+    })
+
     return NextResponse.json({
       success: true,
-      data: companies,
+      data,
       meta: {
         page,
         pageSize,
@@ -86,11 +195,12 @@ export async function POST(request: NextRequest) {
     if (!user || user.userType !== 'admin') return unauthorized();
 
     const body = await request.json();
-    const { name, email, password, firstName, lastName, phone, website, employeeCount, addressLine1, addressLine2, city, state, postalCode, country, taxId } = body;
+    const { name, email, firstName, lastName, phone, website, employeeCount, addressLine1, addressLine2, city, state, postalCode, country, taxId } = body;
+    console.log('[COMPANY_ADMIN_EMAIL][ROUTE] POST /api/admin/companies', { companyName: name, email, firstName, lastName });
 
-    if (!name || !email || !password || !firstName || !lastName) {
+    if (!name || !email || !firstName || !lastName) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION', message: 'Missing required fields: name, email, password, firstName, lastName' } },
+        { success: false, error: { code: 'VALIDATION', message: 'Missing required fields: name, email, firstName, lastName' } },
         { status: 400 },
       );
     }
@@ -103,7 +213,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now();
 
     const result = await prisma.$transaction(async (tx) => {
@@ -122,31 +231,31 @@ export async function POST(request: NextRequest) {
           postalCode,
           country,
           taxId,
-          status: 'ACTIVE',
+          status: 'APPROVED_PENDING_PAYMENT',
           approvedAt: new Date(),
+        },
+      });
+
+      const pkId = crypto.randomUUID();
+      const account = await tx.account.create({
+        data: {
+          authUserId: pkId,
+          email,
+          role: 'COMPANY_ADMIN',
+          profileType: 'COMPANY',
+          status: 'ACTIVE',
         },
       });
 
       const companyAdmin = await tx.companyAdmin.create({
         data: {
+          id: pkId,
           companyId: company.id,
-          email,
-          passwordHash,
+          accountId: pkId,
           firstName,
           lastName,
           isPrimary: true,
           isActive: true,
-        },
-      });
-
-      await tx.account.create({
-        data: {
-          authUserId: companyAdmin.id,
-          email,
-          role: 'COMPANY_ADMIN',
-          profileId: companyAdmin.id,
-          profileType: 'COMPANY',
-          status: 'ACTIVE',
         },
       });
 
@@ -161,23 +270,32 @@ export async function POST(request: NextRequest) {
       });
 
       await tx.auditLog.create({
-        data: {
-          actorType: 'admin',
-          adminId: user.id,
-          action: 'COMPANY_CREATED',
-          entityType: 'company',
-          entityId: company.id,
-          changes: {},
-        },
+        data: buildAuditData(fromCurrentUser(user, 'COMPANY_CREATED', 'company', company.id, { changes: {} })) as any,
       });
 
       return company;
     });
 
-    return NextResponse.json(
-      { success: true, data: result, message: 'Company created successfully' },
-      { status: 201 },
-    );
+      console.log('[COMPANY_ADMIN_EMAIL][ROUTE] Company created, calling invitation service', { email, companyName: name, companyId: result.id });
+      await sendCompanyAdminInvitation({
+        email,
+        firstName,
+        lastName,
+        companyName: name,
+        companyId: result.id,
+        actorType: user.userType,
+        actorId: user.profileId,
+      })
+
+      return NextResponse.json(
+        {
+          success: true,
+          data: result,
+          message:
+            'Company created successfully. A welcome email has been sent to the Company Administrator.',
+        },
+        { status: 201 },
+      );
   } catch (error: any) {
     if (error?.code === 'P2002') {
       return NextResponse.json(
@@ -211,6 +329,25 @@ export async function PATCH(request: NextRequest) {
 
     const previousStatus = existing.status;
 
+    // City Readiness Gate: cannot transition to ACTIVE unless the
+    // headquarters city meets the merchant/category thresholds.
+    if (status === 'ACTIVE') {
+      const readiness = await getCityReadiness(existing.city)
+      if (!readiness.ready) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: {
+              code: 'CITY_NOT_READY',
+              message: readiness.message,
+              details: readiness,
+            },
+          },
+          { status: 422 }
+        )
+      }
+    }
+
     const company = await prisma.company.update({
       where: { id: companyId },
       data: {
@@ -231,16 +368,9 @@ export async function PATCH(request: NextRequest) {
       },
     });
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'admin',
-        adminId: user.id,
-        action: `COMPANY_${status}`,
-        entityType: 'company',
-        entityId: companyId,
-        changes: { from: previousStatus, to: status, reason },
-      },
-    });
+    await createAuditLog(fromCurrentUser(user, `COMPANY_${status}`, 'company', companyId, {
+      changes: { from: previousStatus, to: status, reason },
+    }));
 
     // Complete pending action queue items
     if (status === 'ACTIVE' || status === 'CANCELLED') {
@@ -248,6 +378,15 @@ export async function PATCH(request: NextRequest) {
         where: { referenceId: companyId, referenceType: 'company', status: 'PENDING' },
         data: { status: 'COMPLETED', completedAt: new Date() },
       });
+    }
+
+    // Dispatch the launch pack on a successful first-time activation.
+    if (status === 'ACTIVE' && previousStatus !== 'ACTIVE') {
+      try {
+        await sendLaunchPack(companyId, user.id)
+      } catch (err) {
+        console.error('Launch pack failed for company', companyId, err)
+      }
     }
 
     return NextResponse.json({ success: true, data: company, message: `Company ${status.toLowerCase()} successfully` });
@@ -291,16 +430,9 @@ export async function DELETE(request: NextRequest) {
       data: { deletedAt: new Date(), deletedById: user.id, status: 'INACTIVE' },
     });
 
-    await prisma.auditLog.create({
-      data: {
-        actorType: 'admin',
-        adminId: user.id,
-        action: 'COMPANY_DELETED',
-        entityType: 'company',
-        entityId: id,
-        changes: { name: existing.name, email: existing.email },
-      },
-    });
+    await createAuditLog(fromCurrentUser(user, 'COMPANY_DELETED', 'company', id, {
+      changes: { name: existing.name, email: existing.email },
+    }));
 
     return NextResponse.json({ success: true, data: null, message: 'Company and its employees deleted successfully' });
   } catch (error) {

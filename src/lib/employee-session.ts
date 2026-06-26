@@ -14,16 +14,49 @@ export interface EmployeeSession {
   avatarUrl: string | null
   phone: string | null
   employeeId: string | null
+  companyStatus?: string
 }
 
-export async function getEmployeeFromSession(): Promise<EmployeeSession | null> {
+export interface InactiveCompanySentinel {
+  inactive: true
+  companyStatus: string
+  message: string
+}
+
+export type EmployeeSessionResult = EmployeeSession | InactiveCompanySentinel | null
+
+export async function getEmployeeFromSession(): Promise<EmployeeSessionResult> {
   const user = await getCurrentUser()
   if (!user || user.userType !== 'employee' || !user.profileId) return null
-  const emp = await prisma.employee.findUnique({ where: { id: user.profileId } })
+  const emp = await prisma.employee.findUnique({
+    where: { id: user.profileId },
+  })
   if (!emp) return null
+
+  const acct = emp.accountId
+    ? await prisma.account.findUnique({ where: { authUserId: emp.accountId }, select: { email: true } })
+    : null
+
+  // Non-payment cascade: if the company is paused/suspended/cancelled,
+  // the employee loses platform access.
+  const company = await prisma.company.findUnique({
+    where: { id: emp.companyId },
+    select: { id: true, status: true, deletedAt: true },
+  })
+  if (!company || company.deletedAt || company.status === 'CANCELLED') {
+    return null
+  }
+  if (company.status === 'PAUSED' || company.status === 'SUSPENDED') {
+    return {
+      inactive: true,
+      companyStatus: company.status,
+      message: `Your company's access is currently inactive.`,
+    }
+  }
+
   return {
     id: emp.id,
-    email: emp.email,
+    email: acct?.email ?? '',
     firstName: emp.firstName,
     lastName: emp.lastName,
     companyId: emp.companyId,
@@ -33,6 +66,7 @@ export async function getEmployeeFromSession(): Promise<EmployeeSession | null> 
     avatarUrl: emp.avatarUrl,
     phone: emp.phone,
     employeeId: emp.employeeId,
+    companyStatus: company.status,
   }
 }
 
@@ -54,6 +88,20 @@ export function badRequest(message: string, details?: Record<string, string>) {
   return NextResponse.json(
     { success: false, error: { code: 'VALIDATION', message, details } },
     { status: 400 }
+  )
+}
+
+export function companyInactive(companyStatus: string) {
+  return NextResponse.json(
+    {
+      success: false,
+      error: {
+        code: 'COMPANY_INACTIVE',
+        message: `Your company's access is currently inactive.`,
+        companyStatus,
+      },
+    },
+    { status: 403 }
   )
 }
 

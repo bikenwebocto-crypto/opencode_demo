@@ -7,7 +7,7 @@ const SALT_ROUNDS = 10;
 async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, SALT_ROUNDS);
 }
-
+  
 async function main() {
   console.log('🌱 Seeding database...');
 
@@ -49,47 +49,47 @@ async function main() {
   const pw = await hashPassword('Test@123456');
 
   // ── Admins ────────────────────────────────────────────
+  const superAdminAccount = await prisma.account.create({
+    data: { email: 'admin@perks.com', role: 'SUPER_ADMIN', profileType: 'ADMIN', status: 'ACTIVE' },
+  });
   const superAdmin = await prisma.adminUser.create({
     data: {
-      email: 'admin@perks.com',
-      passwordHash: pw,
+      accountId: superAdminAccount.authUserId,
       firstName: 'Super',
       lastName: 'Admin',
       role: 'SUPER_ADMIN',
       isActive: true,
     },
   });
-  await prisma.account.create({
-    data: { authUserId: superAdmin.id, email: 'admin@perks.com', role: 'SUPER_ADMIN', profileId: superAdmin.id, profileType: 'ADMIN', status: 'ACTIVE' },
-  });
+ 
 
+  const supportAdminAccount = await prisma.account.create({
+    data: { email: 'support@perks.com',  role: 'SUPER_ADMIN', profileType: 'ADMIN', status: 'ACTIVE' },
+  });
   const supportAdmin = await prisma.adminUser.create({
     data: {
-      email: 'support@perks.com',
-      passwordHash: pw,
+      accountId: supportAdminAccount.authUserId,
       firstName: 'Support',
       lastName: 'Agent',
       role: 'SUPPORT_ADMIN',
       isActive: true,
     },
   });
-  await prisma.account.create({
-    data: { authUserId: supportAdmin.id, email: 'support@perks.com', role: 'SUPER_ADMIN', profileId: supportAdmin.id, profileType: 'ADMIN', status: 'ACTIVE' },
-  });
 
+
+  const financeAdminAccount = await prisma.account.create({
+    data: { email: 'finance@perks.com',  role: 'SUPER_ADMIN', profileType: 'ADMIN', status: 'ACTIVE' },
+  });
   const financeAdmin = await prisma.adminUser.create({
     data: {
-      email: 'finance@perks.com',
-      passwordHash: pw,
+      accountId: financeAdminAccount.authUserId,
       firstName: 'Finance',
       lastName: 'Admin',
       role: 'FINANCE_ADMIN',
       isActive: true,
     },
   });
-  await prisma.account.create({
-    data: { authUserId: financeAdmin.id, email: 'finance@perks.com', role: 'SUPER_ADMIN', profileId: financeAdmin.id, profileType: 'ADMIN', status: 'ACTIVE' },
-  });
+
 
   // ── Companies ─────────────────────────────────────────
   const techCorp = await prisma.company.create({
@@ -208,12 +208,13 @@ async function main() {
     { companyId: northStar.id, email: 'charlie@northstar.com', firstName: 'Charlie', lastName: 'Brown' },
   ];
   for (const ca of companyAdminInputs) {
+    const acct = await prisma.account.create({
+      data: { email: ca.email,  role: 'COMPANY_ADMIN', profileType: 'COMPANY', status: 'ACTIVE' },
+    });
     const admin = await prisma.companyAdmin.create({
-      data: { ...ca, passwordHash: pw, isPrimary: true, isActive: true },
+      data: { companyId: ca.companyId, firstName: ca.firstName, lastName: ca.lastName, isPrimary: true, isActive: true, accountId: acct.authUserId },
     });
-    await prisma.account.create({
-      data: { authUserId: admin.id, email: ca.email, role: 'COMPANY_ADMIN', profileId: admin.id, profileType: 'ADMIN', status: 'ACTIVE' },
-    });
+  
   }
 
   // ── Categories per Company ──────────────────────────
@@ -251,11 +252,19 @@ async function main() {
 
   for (const { company, prefix, count, statuses } of companyEmployeeData) {
     for (let i = 0; i < count; i++) {
+      const email = `${prefix}.emp${i + 1}@${company.slug}.com`;
+      const acct = await prisma.account.create({
+        data: {
+          email,
+          role: 'EMPLOYEE',
+          profileType: 'EMPLOYEE',
+          status: statuses[i] === 'INVITED' ? 'PENDING' : 'ACTIVE',
+        },
+      });
       const emp = await prisma.employee.create({
         data: {
           companyId: company.id,
-          email: `${prefix}.emp${i + 1}@${company.slug}.com`,
-          passwordHash: pw,
+          accountId: acct.authUserId,
           firstName: firstNames[i % firstNames.length]!,
           lastName: lastNames[i % lastNames.length]!,
           employeeId: `EMP-${prefix.toUpperCase()}-${String(i + 1).padStart(3, '0')}`,
@@ -266,16 +275,7 @@ async function main() {
           invitedBy: supportAdmin.id,
         },
       });
-      await prisma.account.create({
-        data: {
-          authUserId: emp.id,
-          email: `${prefix}.emp${i + 1}@${company.slug}.com`,
-          role: 'EMPLOYEE',
-          profileId: emp.id,
-          profileType: 'EMPLOYEE',
-          status: statuses[i] === 'INVITED' ? 'PENDING' : 'ACTIVE',
-        },
-      });
+     
       allEmployees.push(emp);
     }
   }
@@ -295,15 +295,23 @@ async function main() {
   ];
 
   const createdMerchants: Awaited<ReturnType<typeof prisma.merchant.create>>[] = [];
+  const merchantEmails = new Map<string, string>();
 
   for (const m of merchantInputs) {
     const cat = allCategories.find((c) => c.name === m.category && c.companyId === techCorp.id);
+    const acct = await prisma.account.create({
+      data: {
+        email: m.email,
+        role: 'MERCHANT',
+        profileType: 'MERCHANT',
+        status: m.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING',
+      },
+    });
     const merchant = await prisma.merchant.create({
       data: {
+        accountId: acct.authUserId,
         businessName: m.businessName,
         slug: m.slug,
-        email: m.email,
-        passwordHash: pw,
         contactName: m.contactName,
         contactPhone: m.contactPhone,
         categoryId: cat?.id ?? allCategories[0]!.id,
@@ -323,17 +331,9 @@ async function main() {
         approvedAt: m.status !== 'PENDING' ? new Date('2025-06-01') : undefined,
       },
     });
-    await prisma.account.create({
-      data: {
-        authUserId: merchant.id,
-        email: m.email,
-        role: 'MERCHANT',
-        profileId: merchant.id,
-        profileType: 'MERCHANT',
-        status: m.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING',
-      },
-    });
+ 
     createdMerchants.push(merchant);
+    merchantEmails.set(merchant.id, m.email);
   }
 
   // ── Merchant Branches ────────────────────────────────
@@ -348,7 +348,7 @@ async function main() {
         postalCode: '10001',
         country: 'United States',
         phone: merchant.contactPhone,
-        email: merchant.email,
+        email: merchantEmails.get(merchant.id) ?? '',
         isActive: true,
       },
     });
@@ -448,11 +448,12 @@ async function main() {
   // ── Action Queue Items ──────────────────────────────
   const pendingMerchants = createdMerchants.filter((m) => m.status === 'PENDING');
   for (const pm of pendingMerchants) {
+    const email = merchantEmails.get(pm.id) ?? '';
     await prisma.actionQueueItem.create({
       data: {
         type: 'MERCHANT_APPROVAL',
         title: `Approve merchant: ${pm.businessName}`,
-        description: `New merchant registration from ${pm.email} — review and approve their application.`,
+        description: `New merchant registration from ${email} — review and approve their application.`,
         referenceId: pm.id,
         referenceType: 'merchant',
         status: 'PENDING',
@@ -571,7 +572,7 @@ async function main() {
   console.log('   Admin:        admin@perks.com');
   console.log('   Company Admin: john@techcorp.com');
   console.log('   Employee:      techcorp.emp1@techcorp-inc.com');
-  console.log(`   Merchants:     ${createdMerchants.map((m) => m.email).join(', ')}`);
+  console.log(`   Merchants:     ${merchantInputs.map((m) => m.email).join(', ')}`);
 }
 
 main()

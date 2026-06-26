@@ -3,7 +3,7 @@ import ClientActionQueue from './ClientActionQueue'
 
 export default function Page() {
   return (
-    <Suspense fallback={<div /> }>
+    <Suspense fallback={<div />}>
       <ClientActionQueue />
     </Suspense>
   )
