@@ -279,8 +279,7 @@ export default function MerchantOffersPage() {
                 className="mt-3"
                 variant="warning"
                 title="Admin notes"
-                message={pendingReplacement.reviewNotes}
-                dismissible
+                description={pendingReplacement.reviewNotes}
                 onClose={() => setShowAdminNotes(false)}
               />
             )}
@@ -289,8 +288,7 @@ export default function MerchantOffersPage() {
                 className="mt-3"
                 variant="error"
                 title="Rejection reason"
-                message={pendingReplacement.rejectionReason}
-                dismissible
+                description={pendingReplacement.rejectionReason}
                 onClose={() => setShowRejectionReason(false)}
               />
             )}

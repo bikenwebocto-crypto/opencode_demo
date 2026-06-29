@@ -120,7 +120,8 @@ class RateLimiter {
     for (const type of ['user', 'ip', 'device'] as const) {
       const store = this.stores[type]
       for (const key in store) {
-        if (now > store[key].resetAt) {
+        const entry = store[key]
+        if (entry && now > entry.resetAt) {
           delete store[key]
         }
       }
