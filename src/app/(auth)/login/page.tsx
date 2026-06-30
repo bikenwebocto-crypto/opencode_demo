@@ -25,6 +25,7 @@ export default function LoginPage() {
     setIsSyncing(true); // Show loading for slow API
 
     try {
+      console.log('session token:', session.access_token)
       const res = await fetch("/api/auth/sync-admin", {
         method: "POST",
         headers: { Authorization: `Bearer ${session.access_token}` },

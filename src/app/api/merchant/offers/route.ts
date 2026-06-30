@@ -336,6 +336,7 @@ export async function POST(request: NextRequest) {
 
     // Run quality checks for ALL submitted offers (not just replacements)
     let qcResult = { passed: true, errors: {} as Record<string, string> };
+    
     if (!saveAsDraft) {
       qcResult = runQualityChecks(body);
     }

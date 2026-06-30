@@ -94,7 +94,7 @@ export async function POST(
       return notFound();
     }
 
-    if (!['DRAFT', 'VALIDATION_FAILED', 'CHANGES_REQUESTED'].includes(offer.status)) {
+    if (!['DRAFT', 'VALIDATION_FAILED', 'CHANGES_REQUESTED', 'ARCHIVED'].includes(offer.status)) {
       return forbidden(
         'Only draft, validation-failed, or changes-requested offers can be submitted',
       );

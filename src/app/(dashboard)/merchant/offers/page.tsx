@@ -109,7 +109,7 @@ export default function MerchantOffersPage() {
       header: '',
       render: (o: any) => (
         <div className="flex items-center gap-2">
-          {['DRAFT', 'VALIDATION_FAILED'].includes(o.status) && (
+          {['DRAFT', 'VALIDATION_FAILED','ARCHIVED'].includes(o.status) && (
             <Link
               href={`/merchant/offers/${o.id}/edit`}
               onClick={(e) => e.stopPropagation()}
