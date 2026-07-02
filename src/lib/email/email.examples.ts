@@ -4,7 +4,7 @@
  * This file demonstrates how to use the email service in your application.
  */
 
-import { emailService } from '@/lib/email';
+import { emailService } from '@/lib/email/email';
 
 /**
  * Example 1: Send a simple welcome email

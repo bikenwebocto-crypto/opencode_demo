@@ -25,8 +25,10 @@ const ATTEMPT_WINDOW_MS = 10 * 60 * 1000 // 10 minutes
  */
 function cleanupOldAttempts(): void {
   const cutoff = Date.now() - ATTEMPT_WINDOW_MS
-  while (recentAttempts.length > 0 && recentAttempts[0].timestamp.getTime() < cutoff) {
+  let first = recentAttempts[0]
+  while (first && first.timestamp.getTime() < cutoff) {
     recentAttempts.shift()
+    first = recentAttempts[0]
   }
 }
 

@@ -151,6 +151,30 @@ export default function AdminBillingDetailPage() {
       showToast({ type: 'error', title: 'Failed', description: err.message }),
   })
 
+  const submitReview = useMutation({
+    mutationFn: async (action: 'READY' | 'FLAGGED') => {
+      const res = await fetch(`/api/admin/billing/companies/${id}/review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, note: reviewNote }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed')
+      return json
+    },
+    onSuccess: (_d, action) => {
+      showToast({
+        type: 'success',
+        title:
+          action === 'READY' ? 'Marked ready for renewal' : 'Flagged for review',
+      })
+      setReviewNote('')
+      refresh()
+    },
+    onError: (err: Error) =>
+      showToast({ type: 'error', title: 'Failed', description: err.message }),
+  })
+
   const markPaid = useMutation({
     mutationFn: async () => {
       const res = await fetch(

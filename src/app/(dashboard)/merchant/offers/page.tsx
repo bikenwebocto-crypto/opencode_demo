@@ -109,7 +109,7 @@ export default function MerchantOffersPage() {
       header: '',
       render: (o: any) => (
         <div className="flex items-center gap-2">
-          {['DRAFT', 'VALIDATION_FAILED'].includes(o.status) && (
+          {['DRAFT', 'VALIDATION_FAILED','ARCHIVED'].includes(o.status) && (
             <Link
               href={`/merchant/offers/${o.id}/edit`}
               onClick={(e) => e.stopPropagation()}
@@ -279,8 +279,7 @@ export default function MerchantOffersPage() {
                 className="mt-3"
                 variant="warning"
                 title="Admin notes"
-                message={pendingReplacement.reviewNotes}
-                dismissible
+                description={pendingReplacement.reviewNotes}
                 onClose={() => setShowAdminNotes(false)}
               />
             )}
@@ -289,8 +288,7 @@ export default function MerchantOffersPage() {
                 className="mt-3"
                 variant="error"
                 title="Rejection reason"
-                message={pendingReplacement.rejectionReason}
-                dismissible
+                description={pendingReplacement.rejectionReason}
                 onClose={() => setShowRejectionReason(false)}
               />
             )}

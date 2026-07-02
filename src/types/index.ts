@@ -397,7 +397,7 @@ export const UPLOAD_CONFIGS: Record<string, UploadConfig> = {
     bucket: 'offer-images',
     path: '{merchantId}/offers/{offerId}',
     maxSizeBytes: 5 * 1024 * 1024, // 5MB
-    allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/avif'],
+    allowedMimeTypes: ['image/jpeg', 'image/png', 'image/svg+xml', 'image/webp', 'image/gif'],
     isPublic: true,
   },
   heroBanner: {

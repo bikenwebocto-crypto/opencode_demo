@@ -379,9 +379,8 @@ export default function BranchDetailPage({ params }: { params: Promise<{ id: str
           className="mt-3"
           variant="warning"
           title="Branch limit"
-          message="You must keep at least one branch. Closing is disabled until you add another."
+          description="You must keep at least one branch. Closing is disabled until you add another."
           icon={AlertTriangle}
-          dismissible
           onClose={() => setShowMinBranchesAlert(false)}
         />
       )}
