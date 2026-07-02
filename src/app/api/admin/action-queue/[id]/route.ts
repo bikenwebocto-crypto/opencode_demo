@@ -598,7 +598,6 @@ case "PROFILE_CHANGE_APPROVAL": {
       changedBy: adminId,
       changedByType: "admin",
       reason: meta.reason || "Profile edit approved via action queue",
-      changes: changesJSON,
     },
   });
   console.log(`[PROFILE_EDIT_REQUEST] ✅ Status history created with simplified changes`);
