@@ -1,0 +1,945 @@
+================================================================================
+MOBILE EMPLOYEE API - PAYLOAD & RESPONSE REFERENCE
+================================================================================
+
+Base URL:  /api/mobile
+Audit:     All successful state-changing actions emit an AuditLog entry
+           via createAuditLog (fire-and-forget, never blocks the response).
+
+Common envelope (success):
+{
+  "success": true,
+  "data": { ... }
+}
+
+Common envelope (error):
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION",
+    "message": "First name is required"
+  }
+}
+
+Error codes used across the mobile API:
+  UNAUTHORIZED          401  Missing / invalid / expired Supabase token
+  ACCOUNT_DISABLED      403  Account.status != ACTIVE
+  ROLE_NOT_ALLOWED      403  Account.role != EMPLOYEE
+  EMPLOYEE_INACTIVE     403  Employee.status != ACTIVE (or soft-deleted)
+  COMPANY_INACTIVE      403  Company is CANCELLED / PAUSED / SUSPENDED
+  FORBIDDEN             403  Cross-role access denied
+  VALIDATION            400  Bad input
+  NOT_FOUND             404  Resource does not exist
+  INTERNAL              500  Unhandled exception (never exposes Prisma)
+
+================================================================================
+MOBILE AUTHENTICATION ARCHITECTURE
+================================================================================
+
+1. Single authentication provider
+---------------------------------
+Supabase is the ONLY authentication provider for the mobile app.
+The backend does NOT generate, store, or sign custom JWTs. There is
+no application token system. Supabase access tokens are the only
+credentials the mobile app needs.
+
+2. Login flow
+-------------
+a. The mobile app calls the Supabase Auth SDK (signInWithPassword,
+   signInWithIdToken, OAuth, etc.). Supabase returns:
+     - access_token       (short-lived, default 1h)
+     - refresh_token      (long-lived, default 30d)
+     - user.id            (UUID, immutable, == Account.authUserId)
+     - user.email
+b. The mobile app stores both tokens securely on the device
+   (Keychain on iOS, EncryptedSharedPreferences on Android — never
+   in plain SharedPreferences, UserDefaults, AsyncStorage, or logs).
+c. The mobile app calls POST /api/mobile/auth/sync with
+   Authorization: Bearer <access_token> to bridge the Supabase user
+   with the application Account / Employee / Company records.
+d. The sync endpoint returns the employee profile. The app is now
+   logged in. No application JWT is ever issued or returned.
+
+3. Authorization header
+-----------------------
+Every protected mobile endpoint requires:
+
+  Authorization: Bearer <access_token>
+
+The backend validates the token via `supabase.auth.getUser(token)`,
+then loads the application Account by `authUserId = user.id`. There
+is NO support for cookie-based auth on /api/mobile/* — Bearer is
+the only transport. (The web app uses cookies; the mobile app does
+not.)
+
+4. Reusable helper — getAuthenticatedMobileEmployee(request)
+-----------------------------------------------------------
+File: src/lib/mobile-auth.ts
+
+Every protected mobile route uses this helper. It:
+  1. Reads the Authorization: Bearer header
+  2. Validates the token via supabase.auth.getUser(token)
+  3. Finds the application Account by authUserId
+  4. Verifies Account.status === 'ACTIVE'
+  5. Verifies Account.role   === 'EMPLOYEE'
+  6. Loads the Employee via the Account.employee relation
+  7. Verifies Employee.status === 'ACTIVE' AND deletedAt == null
+  8. Loads the Company
+  9. Verifies the Company is ACTIVE (rejects CANCELLED / PAUSED /
+     SUSPENDED / soft-deleted)
+ 10. Returns { ok: true, user, account, employee, company } on success
+     or { ok: false, response } with a ready-to-emit NextResponse
+     on failure
+
+Usage in a route:
+  const auth = await getAuthenticatedMobileEmployee(request)
+  if (!auth.ok) return auth.response
+  const { user, account, employee, company } = auth
+
+5. Token lifecycle and refresh
+------------------------------
+- The Supabase access_token has a 1-hour expiry by default.
+- When a mobile endpoint returns 401 UNAUTHORIZED, the mobile app
+  MUST call supabase.auth.refreshSession() to obtain a new
+  access_token + refresh_token, persist them, and retry the
+  original request once. If refresh fails, the user is signed out
+  and routed to the login screen.
+- The mobile app MUST treat both tokens as opaque strings. They
+  must never be decoded client-side.
+- The mobile app MUST NEVER log the access_token or refresh_token,
+  even in debug builds.
+- POST /api/mobile/auth/logout calls supabase.auth.signOut()
+  server-side, which invalidates the refresh token. The mobile app
+  should clear both tokens from secure storage on success.
+
+6. Authentication error responses
+---------------------------------
+The helper emits one of the following error responses. All routes
+inherit the same envelope and codes — do not introduce new ones.
+
+  401 UNAUTHORIZED
+    Missing Bearer token
+      { "success": false,
+        "error": { "code": "UNAUTHORIZED",
+                   "message": "Missing Bearer token" } }
+
+  401 UNAUTHORIZED
+    Invalid or expired token
+      { "success": false,
+        "error": { "code": "UNAUTHORIZED",
+                   "message": "Invalid or expired token" } }
+
+  403 ACCOUNT_NOT_MAPPED
+    No application Account row for the Supabase user
+      { "success": false,
+        "error": { "code": "ACCOUNT_NOT_MAPPED",
+                   "message": "You are not mapped to any account. Please contact your administrator." } }
+
+  403 ACCOUNT_DISABLED
+    Account.status != ACTIVE
+      { "success": false,
+        "error": { "code": "ACCOUNT_DISABLED",
+                   "message": "Account is inactive or suspended." } }
+
+  403 ROLE_NOT_ALLOWED
+    Account.role != EMPLOYEE
+      { "success": false,
+        "error": { "code": "ROLE_NOT_ALLOWED",
+                   "message": "This endpoint is only available for employee accounts." } }
+
+  404 EMPLOYEE_NOT_FOUND
+    No Employee row linked to the Account
+      { "success": false,
+        "error": { "code": "EMPLOYEE_NOT_FOUND",
+                   "message": "No employee profile is linked to this account." } }
+
+  403 EMPLOYEE_INACTIVE
+    Employee.status != ACTIVE (or deletedAt != null)
+      { "success": false,
+        "error": { "code": "EMPLOYEE_INACTIVE",
+                   "message": "Your account is not active. Please contact your administrator.",
+                   "employeeStatus": "SUSPENDED" } }
+
+  403 COMPANY_INACTIVE
+    Company is CANCELLED / PAUSED / SUSPENDED / soft-deleted
+      { "success": false,
+        "error": { "code": "COMPANY_INACTIVE",
+                   "message": "Your company's access is currently inactive.",
+                   "companyStatus": "PAUSED" } }
+
+  500 INTERNAL
+    Unexpected exception (never exposes Prisma)
+      { "success": false,
+        "error": { "code": "INTERNAL",
+                   "message": "Internal server error" } }
+
+7. Protected mobile endpoints
+-----------------------------
+All routes below require `Authorization: Bearer <access_token>` and
+return 401 UNAUTHORIZED on a missing / invalid token.
+
+  Authentication / session
+    POST   /api/mobile/auth/sync
+    POST   /api/mobile/auth/logout
+
+  Home feed
+    GET    /api/mobile/employee/home
+
+  Offers
+    GET    /api/mobile/offers
+    GET    /api/mobile/offers/[id]
+    POST   /api/mobile/offers/[id]/click
+    POST   /api/mobile/offers/[id]/save
+    DELETE /api/mobile/offers/[id]/save
+    POST   /api/mobile/offers/[id]/redeem
+
+  Brands
+    GET    /api/mobile/brands
+    GET    /api/mobile/brands/[id]
+
+  Categories
+    GET    /api/mobile/categories
+
+  Profile
+    GET    /api/mobile/profile
+    PATCH  /api/mobile/profile
+
+  Notifications
+    GET    /api/mobile/notifications
+    PATCH  /api/mobile/notifications/read
+
+The only mobile route that is NOT behind the Bearer check is
+POST /api/mobile/auth/sync — but even there, the Bearer token is
+REQUIRED (the mobile app must sign in at Supabase first and then
+pass that token to /sync).
+
+================================================================================
+END OF MOBILE AUTHENTICATION ARCHITECTURE
+================================================================================
+  VALIDATION            400  Bad input
+  NOT_FOUND             404  Resource does not exist
+  INTERNAL              500  Unhandled exception (never exposes Prisma)
+
+================================================================================
+1. POST /api/mobile/auth/sync
+================================================================================
+
+Purpose:  Bridge the Supabase Auth user with the application employee
+          record. The mobile app calls this immediately after Supabase
+          signIn / on app resume.
+
+Auth:     Bearer token (Supabase access_token). userType must be 'employee'.
+
+Request:
+  POST /api/mobile/auth/sync
+  Content-Type: application/json
+
+  Body (all fields optional):
+  
+
+Response 200:
+  {
+    "success": true,
+    "data": {
+      "employeeId":  "7c1a3e62-9a40-4f4d-bd11-3f8a0c5a2e91",
+      "firstName":   "Alice",
+      "lastName":    "Williams",
+      "email":       "alice@techcorp.com",
+      "avatarUrl":   "https://cdn.example.com/avatars/alice.jpg",
+      "company": {
+        "id":     "0c4b9c12-3e5b-4f2a-8b6e-1f2d3c4b5a67",
+        "name":   "Tech Corp",
+        "status": "ACTIVE"
+      },
+      "role": "EMPLOYEE"
+    }
+  }
+
+Response 401:
+  { "success": false, "error": { "code": "UNAUTHORIZED", "message": "Unauthorized" } }
+
+Response 403 (employee inactive):
+  {
+    "success": false,
+    "error": {
+      "code": "EMPLOYEE_INACTIVE",
+      "message": "Your account is not active. Please contact your administrator.",
+      "employeeStatus": "SUSPENDED"
+    }
+  }
+
+Response 403 (company cancelled):
+  { "success": false, "error": { "code": "COMPANY_INACTIVE", "message": "Company is not active" } }
+
+Response 404 (employee record missing):
+  { "success": false, "error": { "code": "EMPLOYEE_NOT_FOUND", "message": "Employee not found" } }
+
+Audit:   MOBILE_AUTH_SYNC
+Side effects:
+  - Account.lastLoginAt = now()
+  - Employee.lastLoginAt = now()
+
+================================================================================
+2. POST /api/mobile/auth/logout
+================================================================================
+
+Purpose:  Properly end the mobile session. Calls supabase.auth.signOut()
+          server-side (invalidation of the refresh token) and clears
+          the session cookies.
+
+Auth:     Bearer token (any authenticated user; the logout endpoint accepts any valid Supabase user).
+
+Request:
+  POST /api/mobile/auth/logout
+  (no body)
+
+Response 200:
+  { "success": true }
+
+Side effects:
+  - supabase.auth.signOut() is called
+  - sb-access-token cookie deleted
+  - sb-refresh-token cookie deleted
+
+Audit:   MOBILE_LOGOUT
+
+================================================================================
+3. GET /api/mobile/employee/home
+================================================================================
+
+Purpose:  Curated home feed. The mobile app's landing screen after login.
+
+Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
+
+Query parameters (all optional):
+  lat   number  -90..90     Employee latitude for distance-aware sections
+  lng   number  -180..180   Employee longitude for distance-aware sections
+
+Request:
+  GET /api/mobile/employee/home?lat=37.7749&lng=-122.4194
+
+Response 200:
+  {
+    "success": true,
+    "data": {
+      "user": {
+        "id":        "7c1a3e62-9a40-4f4d-bd11-3f8a0c5a2e91",
+        "firstName": "Alice",
+        "lastName":  "Williams",
+        "company":   "Tech Corp",
+        "avatarUrl": "https://cdn.example.com/avatars/alice.jpg"
+      },
+      "sections": [
+        {
+          "id":    "discover",
+          "title": "Discover Now",
+          "type":  "hero",
+          "items": [
+            {
+              "id":               "f4b8...uuid",
+              "title":            "20% Off All Menu Items",
+              "shortDescription": "Enjoy 20% off any order, dine-in or takeout.",
+              "imageUrl":         "https://cdn.example.com/offers/abc.jpg",
+              "merchantId":       "m1a2...uuid",
+              "merchantName":     "Bistro 88",
+              "merchantLogo":     "https://cdn.example.com/merchants/bistro88.png",
+              "category": {
+                "id":   "c1a2...uuid",
+                "name": "Food & Drink",
+                "icon": "utensils"
+              },
+              "offerType":       "PERCENTAGE",
+              "discountValue":   20,
+              "discountPercent": 20,
+              "startDate":       "2026-06-01T00:00:00.000Z",
+              "endDate":         "2026-08-31T23:59:59.000Z",
+              "isFeatured":      true,
+              "isExclusive":     false,
+              "distance":        null
+            }
+          ]
+        },
+        {
+          "id":    "nearBrands",
+          "title": "Brands Near You",
+          "type":  "merchant",
+          "items": [
+            {
+              "id":         "m1a2...uuid",
+              "name":       "Bistro 88",
+              "logo":       "https://cdn.example.com/merchants/bistro88.png",
+              "category":   { "id": "c1a2", "name": "Food & Drink", "icon": "utensils" },
+              "distance":   1.24,
+              "offerCount": 4
+            }
+          ]
+        },
+        {
+          "id":    "forYou",
+          "title": "Recommended For You",
+          "type":  "offer",
+          "items": []
+        },
+        {
+          "id":    "nearbyOffers",
+          "title": "Nearby Offers",
+          "type":  "offer",
+          "items": []
+        },
+        {
+          "id":    "newArrivals",
+          "title": "New Arrivals",
+          "type":  "offer",
+          "items": []
+        },
+        {
+          "id":    "popular",
+          "title": "Most Popular",
+          "type":  "offer",
+          "items": []
+        },
+        {
+          "id":    "today",
+          "title": "Today's Hot Picks",
+          "type":  "offer",
+          "items": []
+        }
+      ]
+    }
+  }
+
+Section limits (max items):
+  discover      5    (LIVE offers, featured DESC, createdAt DESC)
+  nearBrands    10   (active merchants w/ branch, distance or featured/name)
+  forYou        10   (redemption-history-weighted; excludes redeemed)
+  nearbyOffers  10   (nearest LIVE offers or newest if no location)
+  newArrivals   10   (createdAt DESC)
+  popular       10   (currentRedemptions, viewCount, saveCount DESC)
+  today         10   (redemptions today; falls back to popular)
+
+Audit:   MOBILE_HOME_VIEWED
+
+================================================================================
+4. GET /api/mobile/offers
+================================================================================
+
+Purpose:  Paginated, searchable list of LIVE offers.
+
+Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
+
+Query parameters (all optional):
+  page       number   1..n       Default 1
+  pageSize   number   1..50      Default 20
+  q          string              Substring search on title/description/merchant
+  categoryId string (uuid)        Filter by category
+  featured   "true"               Only featured offers
+
+Request:
+  GET /api/mobile/offers?page=1&pageSize=20&q=pizza&categoryId=c1a2...&featured=true
+
+Response 200:
+  {
+    "success": true,
+    "data": [
+      {
+        "id":               "f4b8...uuid",
+        "title":            "Buy 1 Get 1 Pizza",
+        "shortDescription": "Order any pizza and get another free.",
+        "imageUrls":        ["https://cdn.example.com/offers/pizza.jpg"],
+        "offerType":        "BUY_X_GET_Y",
+        "discountValue":    1,
+        "discountPercent":  null,
+        "startDate":        "2026-06-01T00:00:00.000Z",
+        "endDate":          "2026-08-31T23:59:59.000Z",
+        "isFeatured":       true,
+        "isExclusive":      false,
+        "createdAt":        "2026-05-15T10:00:00.000Z",
+        "merchant": {
+          "id":            "m1a2...uuid",
+          "businessName":  "Bistro 88",
+          "logoUrl":       "https://cdn.example.com/merchants/bistro88.png",
+          "averageRating": 4.5,
+          "city":          "San Francisco",
+          "state":         "CA",
+          "category":      { "id": "c1a2", "name": "Food & Drink", "icon": "utensils" }
+        },
+        "_count":   { "redemptions": 42 },
+        "isSaved":   true,
+        "isRedeemed": false
+      }
+    ],
+    "meta": {
+      "page":       1,
+      "pageSize":   20,
+      "total":      87,
+      "totalPages": 5
+    }
+  }
+
+================================================================================
+5. GET /api/mobile/offers/[id]
+================================================================================
+
+Purpose:  Single offer detail.
+
+Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
+
+Request:
+  GET /api/mobile/offers/f4b8...uuid
+
+Response 200:
+  {
+    "success": true,
+    "data": {
+      "id":               "f4b8...uuid",
+      "title":            "Buy 1 Get 1 Pizza",
+      "description":      "Order any large pizza and get a second one of equal or lesser value for free. Dine-in only.",
+      "shortDescription": "Order any pizza and get another free.",
+      "termsAndConditions":"Limit one per visit. Cannot be combined with other offers.",
+      "imageUrls":        ["https://cdn.example.com/offers/pizza.jpg", "https://cdn.example.com/offers/pizza-2.jpg"],
+      "offerType":        "BUY_X_GET_Y",
+      "discountValue":    1,
+      "discountMax":      null,
+      "discountPercent":  null,
+      "minimumSpend":     null,
+      "maxRedemptions":   500,
+      "currentRedemptions": 42,
+      "startDate":        "2026-06-01T00:00:00.000Z",
+      "endDate":          "2026-08-31T23:59:59.000Z",
+      "daysOfWeek":       [0, 1, 2, 3, 4, 5, 6],
+      "isFeatured":       true,
+      "isExclusive":      false,
+      "status":           "LIVE",
+      "merchant": {
+        "id":           "m1a2...uuid",
+        "businessName": "Bistro 88",
+        "logoUrl":      "https://cdn.example.com/merchants/bistro88.png",
+        "averageRating": 4.5,
+        "city":         "San Francisco",
+        "state":        "CA",
+        "category":     { "id": "c1a2", "name": "Food & Drink", "icon": "utensils" },
+        "branches": [
+          { "id": "b1a2", "name": "Bistro 88 - Downtown", "addressLine1": "123 Market St", "city": "San Francisco", "state": "CA", "postalCode": "94103", "branchType": "IN_STORE", "latitude": 37.7937, "longitude": -122.3965 }
+        ]
+      },
+      "_count":   { "redemptions": 42 },
+      "isVisible": true,
+      "visibilityReason": null,
+      "isSaved":   true,
+      "isRedeemed": false
+    }
+  }
+
+Response 404:
+  { "success": false, "error": { "code": "NOT_FOUND", "message": "Offer not found" } }
+
+================================================================================
+6. POST /api/mobile/offers/[id]/click
+================================================================================
+
+Purpose:  Track a click / open. Increments MerchantOffer.viewCount so
+          the home feed's "Most Popular" section ranks correctly.
+
+Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
+
+Request:
+  POST /api/mobile/offers/f4b8...uuid/click
+  (no body)
+
+Response 200:
+  { "success": true }
+
+Response 400 (offer not currently visible):
+  { "success": false, "error": { "code": "NOT_FOUND", "message": "Offer not found or not currently visible" } }
+
+Side effects:
+  - MerchantOffer.viewCount += 1
+Audit:   OFFER_CLICKED
+
+================================================================================
+7. POST /api/mobile/offers/[id]/save
+================================================================================
+
+Purpose:  Save an offer to the employee's "Saved" tab. Stored as a
+          NotificationEvent with referenceType='saved_offer'. Also
+          increments MerchantOffer.saveCount.
+
+Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
+
+Request:
+  POST /api/mobile/offers/f4b8...uuid/save
+  (no body)
+
+Response 201:
+  {
+    "success": true,
+    "data": { "id": "ne1a2...uuid" }
+  }
+
+Response 200 (already saved):
+  {
+    "success": true,
+    "data": { "id": "ne1a2...uuid" },
+    "message": "Already saved"
+  }
+
+Side effects:
+  - NotificationEvent row created (recipientType=EMPLOYEE)
+  - MerchantOffer.saveCount += 1
+Audit:   OFFER_SAVED
+
+================================================================================
+8. DELETE /api/mobile/offers/[id]/save
+================================================================================
+
+Purpose:  Unsave an offer.
+
+Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
+
+Request:
+  DELETE /api/mobile/offers/f4b8...uuid/save
+  (no body)
+
+Response 200:
+  { "success": true }
+
+Response 404:
+  { "success": false, "error": { "code": "NOT_FOUND", "message": "Saved offer not found" } }
+
+Side effects:
+  - NotificationEvent row deleted
+  - MerchantOffer.saveCount -= 1 (best-effort)
+Audit:   OFFER_UNSAVED
+
+================================================================================
+9. POST /api/mobile/offers/[id]/redeem
+================================================================================
+
+Purpose:  Issue a redemption code. Creates a Redemption row.
+
+Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
+
+Request:
+  POST /api/mobile/offers/f4b8...uuid/redeem
+  Content-Type: application/json
+
+  {
+    "method":      "IN_STORE",       // IN_STORE | ONLINE | QR_CODE | MANUAL_CODE
+    "branchId":    "b1a2...uuid",    // optional, must belong to offer's merchant
+    "notes":       "Window seat, around 7pm",  // optional
+    "spentAmount": 25.50             // optional, used for ONLINE method
+  }
+
+Response 201:
+  {
+    "success": true,
+    "data": {
+      "id":             "r1a2...uuid",
+      "redemptionCode": "RED-LXYZ12-A4B5C6",
+      "method":         "IN_STORE",
+      "status":         "PENDING",
+      "message":        "Redemption submitted. Show this code to the merchant."
+    }
+  }
+
+Response 400 (validation):
+  { "success": false, "error": { "code": "VALIDATION", "message": "method must be one of: IN_STORE, ONLINE, QR_CODE, MANUAL_CODE" } }
+
+Response 400 (ineligible):
+  { "success": false, "error": { "code": "VALIDATION", "message": "You have already redeemed this offer" } }
+
+Response 400 (bad branch):
+  { "success": false, "error": { "code": "VALIDATION", "message": "Invalid branchId for this offer" } }
+
+Side effects:
+  - Redemption row created (isVerified=false)
+  - MerchantOffer.currentRedemptions += 1
+Audit:   REDEMPTION_CREATED
+
+================================================================================
+10. GET /api/mobile/brands
+================================================================================
+
+Purpose:  Paginated list of active merchants (brands).
+
+Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
+
+Query parameters (all optional):
+  page       number   1..n       Default 1
+  pageSize   number   1..50      Default 20
+  q          string              Substring search on businessName (case-insensitive)
+  categoryId string (uuid)        Filter by category
+  lat        number  -90..90     Latitude for distance-aware sort
+  lng        number  -180..180   Longitude for distance-aware sort
+
+Request:
+  GET /api/mobile/brands?page=1&pageSize=20&categoryId=c1a2&lat=37.7749&lng=-122.4194
+
+Response 200:
+  {
+    "success": true,
+    "data": [
+      {
+        "id":               "m1a2...uuid",
+        "businessName":     "Bistro 88",
+        "description":      "Modern American bistro in the heart of downtown.",
+        "logoUrl":          "https://cdn.example.com/merchants/bistro88.png",
+        "coverImageUrl":    "https://cdn.example.com/merchants/bistro88-cover.jpg",
+        "averageRating":    4.5,
+        "totalRedemptions": 1250,
+        "isFeatured":       true,
+        "isTopRated":       true,
+        "category":         { "id": "c1a2", "name": "Food & Drink", "icon": "utensils" },
+        "distance":         1.24,
+        "_count":           { "offers": 4 }
+      }
+    ],
+    "meta": { "page": 1, "pageSize": 20 }
+  }
+
+================================================================================
+11. GET /api/mobile/brands/[id]
+================================================================================
+
+Purpose:  Brand detail with branches and currently-live offers.
+
+Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
+
+Request:
+  GET /api/mobile/brands/m1a2...uuid
+
+Response 200:
+  {
+    "success": true,
+    "data": {
+      "id":               "m1a2...uuid",
+      "businessName":     "Bistro 88",
+      "description":      "Modern American bistro in the heart of downtown.",
+      "logoUrl":          "https://cdn.example.com/merchants/bistro88.png",
+      "coverImageUrl":    "https://cdn.example.com/merchants/bistro88-cover.jpg",
+      "averageRating":    4.5,
+      "isFeatured":       true,
+      "isTopRated":       true,
+      "category":         { "id": "c1a2", "name": "Food & Drink", "icon": "utensils" },
+      "branches": [
+        {
+          "id":           "b1a2...uuid",
+          "name":         "Bistro 88 - Downtown",
+          "addressLine1": "123 Market St",
+          "city":         "San Francisco",
+          "state":        "CA",
+          "postalCode":   "94103",
+          "country":      "US",
+          "branchType":   "IN_STORE",
+          "latitude":     37.7937,
+          "longitude":    -122.3965,
+          "isActive":     true,
+          "isPrimary":    true
+        }
+      ],
+      "offers": [
+        {
+          "id":              "f4b8...uuid",
+          "title":           "Buy 1 Get 1 Pizza",
+          "shortDescription":"Order any pizza and get another free.",
+          "imageUrls":       ["https://cdn.example.com/offers/pizza.jpg"],
+          "offerType":       "BUY_X_GET_Y",
+          "discountValue":   1,
+          "discountPercent": null,
+          "startDate":       "2026-06-01T00:00:00.000Z",
+          "endDate":         "2026-08-31T23:59:59.000Z",
+          "isFeatured":      true,
+          "isExclusive":     false
+        }
+      ],
+      "_count": { "offers": 4, "branches": 1 }
+    }
+  }
+
+Response 404:
+  { "success": false, "error": { "code": "NOT_FOUND", "message": "Brand not found" } }
+
+================================================================================
+12. GET /api/mobile/categories
+================================================================================
+
+Purpose:  Active categories scoped to the employee's company.
+
+Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
+
+Request:
+  GET /api/mobile/categories
+
+Response 200:
+  {
+    "success": true,
+    "data": [
+      {
+        "id":          "c1a2...uuid",
+        "name":        "Food & Drink",
+        "slug":        "food-and-drink",
+        "description": "Restaurants, cafes, bars, and food delivery",
+        "icon":        "utensils"
+      },
+      {
+        "id":          "c1a3...uuid",
+        "name":        "Wellness",
+        "slug":        "wellness",
+        "description": "Gyms, spas, and mental health services",
+        "icon":        "heart"
+      }
+    ]
+  }
+
+================================================================================
+13. GET /api/mobile/profile
+================================================================================
+
+Purpose:  Current employee profile for the Profile tab.
+
+Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
+
+Request:
+  GET /api/mobile/profile
+
+Response 200:
+  {
+    "success": true,
+    "data": {
+      "id":              "e1a2...uuid",
+      "companyId":       "0c4b9c12-3e5b-4f2a-8b6e-1f2d3c4b5a67",
+      "firstName":       "Alice",
+      "lastName":        "Williams",
+      "employeeId":      "TC-0042",
+      "department":      "Engineering",
+      "jobTitle":        "Senior Engineer",
+      "phone":           "+1-555-0100",
+      "avatarUrl":       "https://cdn.example.com/avatars/alice.jpg",
+      "status":          "ACTIVE",
+      "joinMethod":      "manual",
+      "createdAt":       "2025-09-01T00:00:00.000Z",
+      "updatedAt":       "2026-06-15T12:34:56.000Z",
+      "company": {
+        "id":             "0c4b9c12-3e5b-4f2a-8b6e-1f2d3c4b5a67",
+        "name":           "Tech Corp",
+        "approvedDomain": "techcorp.com"
+      }
+    }
+  }
+
+================================================================================
+14. PATCH /api/mobile/profile
+================================================================================
+
+Purpose:  Update mutable profile fields.
+
+Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
+
+Allow-listed fields (any subset, no others accepted):
+  firstName, lastName, phone, jobTitle, department, avatarUrl
+
+Request:
+  PATCH /api/mobile/profile
+  Content-Type: application/json
+
+  {
+    "firstName":  "Alice",
+    "lastName":   "Williams",
+    "phone":      "+1-555-0199",
+    "jobTitle":   "Staff Engineer",
+    "department": "Platform",
+    "avatarUrl":  "https://cdn.example.com/avatars/alice-v2.jpg"
+  }
+
+Response 200:
+  { "success": true, "data": { ... updated employee ... } }
+
+Response 200 (no changes):
+  { "success": true, "message": "No changes" }
+
+Response 400:
+  { "success": false, "error": { "code": "VALIDATION", "message": "First name is required" } }
+
+Audit:   EMPLOYEE_PROFILE_UPDATED (metadata: { changed: ['firstName', 'phone'] })
+
+================================================================================
+15. GET /api/mobile/notifications
+================================================================================
+
+Purpose:  Paginated in-app notifications for the employee.
+
+Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
+
+Query parameters (all optional):
+  page       number   1..n       Default 1
+  pageSize   number   1..50      Default 20
+  unread     "true"               (reserved for future per-employee filtering)
+
+Request:
+  GET /api/mobile/notifications?page=1&pageSize=20
+
+Response 200:
+  {
+    "success": true,
+    "data": [
+      {
+        "id":             "n1a2...uuid",
+        "recipientType":  "EMPLOYEE",
+        "employeeId":     "e1a2...uuid",
+        "title":          "New offer from Bistro 88",
+        "body":           "20% off all menu items. Redeem by Aug 31.",
+        "channel":        "IN_APP",
+        "priority":       "NORMAL",
+        "referenceType":  "merchantOffer",
+        "referenceId":    "f4b8...uuid",
+        "isRead":         false,
+        "readAt":         null,
+        "sentAt":         null,
+        "deliveredAt":    null,
+        "createdAt":      "2026-06-20T10:00:00.000Z"
+      }
+    ],
+    "unread": 3,
+    "meta": {
+      "page":       1,
+      "pageSize":   20,
+      "total":      47,
+      "totalPages": 3
+    }
+  }
+
+Note:  NotificationEvent rows with referenceType='saved_offer' are
+       excluded (they power the Saved Offers tab, not the inbox).
+
+================================================================================
+16. PATCH /api/mobile/notifications/read
+================================================================================
+
+Purpose:  Mark notifications as read. Supports both "mark specific" and
+          "mark all" modes.
+
+Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
+
+Request (mark specific):
+  PATCH /api/mobile/notifications/read
+  Content-Type: application/json
+
+  {
+    "notificationIds": ["n1a2...uuid", "n1a3...uuid"]
+  }
+
+Request (mark all):
+  PATCH /api/mobile/notifications/read
+  Content-Type: application/json
+
+  { "notificationIds": [] }
+
+Response 200:
+  { "success": true, "data": { "marked": 2 } }
+
+Response 400:
+  { "success": false, "error": { "code": "VALIDATION", "message": "notificationIds must be an array" } }
+
+================================================================================
+END OF FILE
+================================================================================
