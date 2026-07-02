@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { Upload, Loader2, RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { showToast } from '@/hooks/use-toast'
 import type { UploadImageOptions } from '@/lib/upload/image'
@@ -18,9 +18,16 @@ export interface PendingImage {
   error?: string
 }
 
+export interface DeferredFile {
+  file: File
+  previewUrl: string
+}
+
 export interface ImageUploaderProps {
-  /** Called once with pending items, then again with final results. */
-  onImagesReady: (images: PendingImage[]) => void
+  /** Called once with pending items, then again with final results (immediate mode only). */
+  onImagesReady?: (images: PendingImage[]) => void
+  /** Called in deferred mode when files are selected. Provides File objects + local previews. */
+  onFilesSelected?: (files: DeferredFile[]) => void
   /** Disables the entire drop zone. */
   disabled?: boolean
   /** Number of images already uploaded (used to compute remaining slots). */
@@ -47,6 +54,12 @@ export interface ImageUploaderProps {
   previewClassName?: string
   /** Text shown below the preview image. */
   previewHint?: string
+  /**
+   * Upload mode.
+   * - 'immediate' (default): uploads files as soon as they are selected. Returns URLs via onImagesReady.
+   * - 'deferred': stores File objects locally and returns them via onFilesSelected. Parent is responsible for uploading.
+   */
+  uploadMode?: 'immediate' | 'deferred'
 }
 
 // ---------------------------------------------------------------------------
@@ -69,6 +82,7 @@ const DEFAULT_MAX_FILES = 5
 
 export function ImageUploader({
   onImagesReady,
+  onFilesSelected,
   disabled = false,
   currentCount,
   uploadOptions,
@@ -82,12 +96,14 @@ export function ImageUploader({
   currentImageUrl = null,
   previewClassName,
   previewHint,
+  uploadMode = 'immediate',
 }: ImageUploaderProps) {
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadSuccess, setUploadSuccess] = useState(false)
   const [lastUploadedUrl, setLastUploadedUrl] = useState<string | null>(null)
+  const [deferredPreviewUrl, setDeferredPreviewUrl] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const acceptAttr = accept ?? acceptedTypes.join(',')
@@ -96,8 +112,19 @@ export function ImageUploader({
     .map((t) => t.split('/')[1]?.toUpperCase() ?? t)
     .join(', ')
 
-  // The preview URL to show — either the newly uploaded URL or the existing one
-  const previewUrl = lastUploadedUrl ?? currentImageUrl
+  // In deferred mode, show the local preview; in immediate mode, show uploaded URL or existing URL
+  const previewUrl = uploadMode === 'deferred'
+    ? (deferredPreviewUrl ?? currentImageUrl)
+    : (lastUploadedUrl ?? currentImageUrl)
+
+  // Cleanup object URLs on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (deferredPreviewUrl) {
+        URL.revokeObjectURL(deferredPreviewUrl)
+      }
+    }
+  }, [deferredPreviewUrl])
 
   // ---- Validation --------------------------------------------------------
 
@@ -130,17 +157,40 @@ export function ImageUploader({
     [currentCount, maxFiles, acceptedTypes, maxFileSize, maxFileSizeMB],
   )
 
-  // ---- Upload ------------------------------------------------------------
+  // ---- Deferred mode: select files without uploading ---------------------
 
-  const processFiles = async (files: FileList | File[]) => {
+  const processFilesDeferred = (files: FileList | File[]) => {
     const valid = validateFiles(files)
     if (valid.length === 0) return
 
-    // Clear previous states
     setUploadError(null)
     setUploadSuccess(false)
 
-    console.log('[ImageUploader] Processing files:', valid.map((f) => f.name))
+    // Revoke previous deferred preview
+    if (deferredPreviewUrl) {
+      URL.revokeObjectURL(deferredPreviewUrl)
+    }
+
+    const file = valid[0]
+    if (!file) return
+
+    const localPreview = URL.createObjectURL(file)
+    setDeferredPreviewUrl(localPreview)
+
+    if (onFilesSelected) {
+      onFilesSelected([{ file, previewUrl: localPreview }])
+    }
+  }
+
+  // ---- Immediate mode: upload files right away ---------------------------
+
+  const processFilesImmediate = async (files: FileList | File[]) => {
+    const valid = validateFiles(files)
+    if (valid.length === 0) return
+
+    setUploadError(null)
+    setUploadSuccess(false)
+
     const pending: PendingImage[] = valid.map((file) => ({
       id: `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
       file,
@@ -148,7 +198,7 @@ export function ImageUploader({
       status: 'pending' as const,
     }))
 
-    onImagesReady(pending)
+    onImagesReady?.(pending)
 
     setUploading(true)
     const results: PendingImage[] = []
@@ -167,13 +217,22 @@ export function ImageUploader({
         item.error = err.message || 'Upload failed'
         setUploadError(err.message || 'Upload failed')
         setUploadSuccess(false)
-        console.error('[ImageUploader] Upload error:', err)
       }
       results.push({ ...item })
     }
 
     setUploading(false)
-    onImagesReady(results)
+    onImagesReady?.(results)
+  }
+
+  // ---- Unified entry point -----------------------------------------------
+
+  const processFiles = (files: FileList | File[]) => {
+    if (uploadMode === 'deferred') {
+      processFilesDeferred(files)
+    } else {
+      processFilesImmediate(files)
+    }
   }
 
   // ---- Event handlers ----------------------------------------------------
@@ -270,8 +329,8 @@ export function ImageUploader({
         />
       </div>
 
-      {/* Upload success message */}
-      {uploadSuccess && !uploading && (
+      {/* Upload success message (immediate mode only) */}
+      {uploadMode === 'immediate' && uploadSuccess && !uploading && (
         <div className="flex items-center gap-2 rounded-md bg-green-50 p-2 text-sm text-green-800 dark:bg-green-900/20 dark:text-green-300">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           <span>Upload successful</span>

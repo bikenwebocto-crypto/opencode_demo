@@ -544,25 +544,33 @@ case "PROFILE_CHANGE_APPROVAL": {
   const updateData: Record<string, any> = {};
   const simplifiedChanges: Record<string, any> = {};
 
-  for (const field of validFields) {
-    if (requestedFields[field] !== undefined) {
-      const originalValue = originalValues[field] ?? (merchant as any)[field];
-      const newValue = requestedFields[field];
+for (const field of validFields) {
+  if (requestedFields[field] !== undefined) {
+    const originalValue = originalValues[field] ?? (merchant as any)[field];
+    const newValue = requestedFields[field];
+    
+    // Normalize values for comparison (handle null/undefined/empty string)
+    const normalizedOriginal = originalValue || null;
+    const normalizedNew = newValue || null;
+    
+    // Log for debugging
+    console.log(`[PROFILE_EDIT_REQUEST] Field: ${field}`);
+    console.log(`  Original: ${normalizedOriginal}`);
+    console.log(`  New: ${normalizedNew}`);
+    console.log(`  Equal: ${normalizedOriginal === normalizedNew}`);
+    
+    // Only store if actually changed
+    if (normalizedOriginal !== normalizedNew) {
+      updateData[field] = newValue;
       
-      // Only store if actually changed
-      if (originalValue !== newValue) {
-        updateData[field] = newValue;
-        
-        // ✅ Store simplified change (limited data)
-        simplifiedChanges[field] = {
-          from: originalValue ? 'changed' : 'null',
-          to: newValue ? 'changed' : 'null',
-          // Store field type for context
-          fieldType: typeof newValue,
-        };
-      }
+      simplifiedChanges[field] = {
+        from: originalValue ? 'changed' : 'null',
+        to: newValue ? 'changed' : 'null',
+        fieldType: typeof newValue,
+      };
     }
   }
+}
 
   if (Object.keys(updateData).length === 0) {
     console.warn(`[PROFILE_EDIT_REQUEST] ⚠️ No fields to update`);
