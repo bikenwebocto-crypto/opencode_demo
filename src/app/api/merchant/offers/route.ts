@@ -8,11 +8,13 @@ import {
 } from "@/lib/offer-replacement";
 import { logReplacementAudit, notifyReplacement } from "@/lib/offer-replacement-notifications";
 import { createAuditLog } from '@/services/audit-log.service';
+import { generateUniqueOfferCode } from '@/lib/offer-code';
 const MIN_TITLE_LENGTH = 5;
 const MAX_TITLE_LENGTH = 255;
 const MAX_DESCRIPTION_LENGTH = 2000;
 const MAX_SHORT_DESCRIPTION_LENGTH = 500;
 const ALLOWED_IMAGE_FORMATS = ["jpg", "jpeg", "png", "webp"];
+const VALID_REDEMPTION_TYPES = ['ONLINE_CODE', 'BOOKING_LINK', 'IN_STORE_QR'] as const;
 
 function unauthorized() {
   return NextResponse.json(
@@ -99,6 +101,15 @@ function runQualityChecks(body: any): {
           break;
         }
       }
+    }
+  }
+  if (body.daysOfWeek !== undefined && body.daysOfWeek !== null) {
+    if (!Array.isArray(body.daysOfWeek)) {
+      errors.daysOfWeek = "daysOfWeek must be an array of integers 0-6"
+    } else if (body.daysOfWeek.length === 0) {
+      errors.daysOfWeek = "Select at least one valid day"
+    } else if (body.daysOfWeek.some((d: unknown) => typeof d !== 'number' || d < 0 || d > 6 || !Number.isInteger(d))) {
+      errors.daysOfWeek = "Each day must be an integer between 0 and 6"
     }
   }
 
@@ -256,6 +267,9 @@ export async function POST(request: NextRequest) {
       replacesOfferId,
       replacementReason,
       saveAsDraft,
+      redemptionType,
+      bookingUrl,
+      qrCodeUrl,
     } = body;
 
     if (
@@ -268,6 +282,21 @@ export async function POST(request: NextRequest) {
       return badRequest(
         "Missing required fields: title, offerType, discountValue, startDate, endDate",
       );
+    }
+
+    // Validate redemptionType if provided
+    if (redemptionType && !VALID_REDEMPTION_TYPES.includes(redemptionType)) {
+      return badRequest(
+        `Invalid redemptionType. Must be one of: ${VALID_REDEMPTION_TYPES.join(', ')}`,
+      );
+    }
+
+    // Validate redemptionType-specific fields
+    if (redemptionType === 'ONLINE_CODE' && !bookingUrl && !saveAsDraft) {
+      return badRequest("Booking URL is required for ONLINE_CODE offers");
+    }
+    if (redemptionType === 'BOOKING_LINK' && !bookingUrl && !saveAsDraft) {
+      return badRequest("Booking URL is required for BOOKING_LINK offers");
     }
 
     // Validate category
@@ -350,6 +379,26 @@ export async function POST(request: NextRequest) {
         ? "AWAITING_APPROVAL"
         : "VALIDATION_FAILED";
 
+    // Auto-generate offer code for ONLINE_CODE type
+    let offerCodeValue: string | null = null;
+    if (redemptionType === 'ONLINE_CODE') {
+      offerCodeValue = await generateUniqueOfferCode();
+      console.log('** Generated offer code:', offerCodeValue);
+      
+      // Audit log for offer code generation
+      await createAuditLog({
+        actorType: 'merchant',
+        actorId: merchant.id,
+        action: "OFFER_CODE_GENERATED",
+        entityType: "MERCHANT_OFFER",
+        entityId: merchant.id, // Will be updated with offer.id after creation
+        metadata: {
+          offerCode: offerCodeValue,
+          redemptionType,
+        },
+      });
+    }
+
     const offer = await prisma.merchantOffer.create({
       data: {
         merchantId: merchant.id,
@@ -379,6 +428,10 @@ export async function POST(request: NextRequest) {
           : (qcResult.errors as any),
         status: targetStatus,
         submittedAt: saveAsDraft ? null : new Date(),
+        redemptionType: redemptionType ?? null,
+        offerCode: offerCodeValue,
+        bookingUrl: bookingUrl ?? null,
+        qrCodeUrl: qrCodeUrl ?? null,
       },
     });
     console.log('** Created offer with ID:', offer.id, 'Status:', offer.status);
@@ -469,6 +522,8 @@ export async function POST(request: NextRequest) {
         metadata: {
           title,
           replacesOfferId: replacesOfferId ?? null,
+          redemptionType: redemptionType ?? null,
+          offerCode: offerCodeValue ?? null,
         },
       });
     }

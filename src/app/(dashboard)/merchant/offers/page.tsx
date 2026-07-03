@@ -5,7 +5,7 @@ import { useMerchantOffers, useBulkDeleteMerchantOffers } from '@/hooks/queries/
 import { DataTable } from '@/components/shared/data-table'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { showToast } from '@/hooks/use-toast'
 import { Plus, Pencil, ExternalLink, Gift, RefreshCw, Clock, History, Trash2, BadgeCheck, AlertCircle } from 'lucide-react'
@@ -109,7 +109,7 @@ export default function MerchantOffersPage() {
       header: '',
       render: (o: any) => (
         <div className="flex items-center gap-2">
-          {['DRAFT', 'VALIDATION_FAILED','ARCHIVED'].includes(o.status) && (
+          {['DRAFT', 'VALIDATION_FAILED','ARCHIVED','AWAITING_APPROVAL'].includes(o.status) && (
             <Link
               href={`/merchant/offers/${o.id}/edit`}
               onClick={(e) => e.stopPropagation()}
@@ -225,6 +225,11 @@ export default function MerchantOffersPage() {
               </div>
             </div>
           </CardContent>
+          <CardFooter>
+            <Link href="/merchant/offers/create">
+              <Button size="sm" className="mt-3"><Plus className="mr-1 h-3.5 w-3.5" id="create-offer" /> Create Offer</Button>
+            </Link>
+          </CardFooter>
         </Card>
       ) : (
         <Card>

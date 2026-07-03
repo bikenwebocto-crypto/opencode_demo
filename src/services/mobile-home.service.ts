@@ -70,6 +70,10 @@ export interface MobileHomeOffer {
   isFeatured: boolean
   isExclusive: boolean
   distance: number | null
+  redemptionType: string | null
+  offerCode: string | null
+  bookingUrl: string | null
+  qrCodeUrl: string | null
 }
 
 export interface MobileHomeMerchant {
@@ -153,6 +157,10 @@ const offerSelect = {
   isFeatured: true,
   isExclusive: true,
   createdAt: true,
+  redemptionType: true,
+  offerCode: true,
+  bookingUrl: true,
+  qrCodeUrl: true,
   merchant: {
     select: {
       id: true,
@@ -218,6 +226,10 @@ function mapOffer(
     endDate: Date
     isFeatured: boolean
     isExclusive: boolean
+    redemptionType?: string | null
+    offerCode?: string | null
+    bookingUrl?: string | null
+    qrCodeUrl?: string | null
     merchant: {
       id: string
       businessName: string
@@ -252,6 +264,10 @@ function mapOffer(
     isFeatured: o.isFeatured,
     isExclusive: o.isExclusive,
     distance,
+    redemptionType: o.redemptionType ?? null,
+    offerCode: o.offerCode ?? null,
+    bookingUrl: o.bookingUrl ?? null,
+    qrCodeUrl: o.qrCodeUrl ?? null,
   }
 }
 

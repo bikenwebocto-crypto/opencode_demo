@@ -93,6 +93,7 @@ export async function POST(request: NextRequest) {
     const offer = await prisma.merchantOffer.findUnique({ where: { id: offerId } })
     if (!offer) return notFound('Offer not found')
 
+    // Branch validation (required for IN_STORE_QR, optional for others)
     let validBranchId: string | null = null
     if (branchId) {
       const branch = await prisma.merchantBranch.findFirst({
@@ -102,10 +103,50 @@ export async function POST(request: NextRequest) {
       validBranchId = branch.id
     }
 
-    const redemptionCode = generateRedemptionCode()
+    // Branch handling based on redemption type
+    const redemptionType = offer.redemptionType || 'IN_STORE_QR' // Default to legacy behavior
+    if (redemptionType === 'IN_STORE_QR' && !validBranchId) {
+      return badRequest('Branch is required for in-store QR redemptions')
+    }
+
     const discountAmount = Number(offer.discountValue ?? 0)
     const spent = spentAmount ? Number(spentAmount) : 0
     const savings = method === 'IN_STORE' ? discountAmount : Math.max(0, discountAmount - spent)
+
+    // Redemption code handling based on type
+    let redemptionCode: string
+    let status: string
+    let message: string
+
+    switch (redemptionType) {
+      case 'ONLINE_CODE':
+        // Use the existing offer code, no new code generation
+        if (!offer.offerCode) {
+          return badRequest('This offer does not have a valid offer code')
+        }
+        redemptionCode = offer.offerCode
+        status = 'CONFIRMED'
+        message = `Use code ${offer.offerCode} at checkout. ${offer.bookingUrl ? `Visit: ${offer.bookingUrl}` : ''}`
+        break
+
+      case 'BOOKING_LINK':
+        // No code, redirect to booking URL
+        if (!offer.bookingUrl) {
+          return badRequest('This offer does not have a booking link')
+        }
+        redemptionCode = `BOOKING-${Date.now().toString(36).toUpperCase()}`
+        status = 'CONFIRMED'
+        message = `Complete your booking at: ${offer.bookingUrl}`
+        break
+
+      case 'IN_STORE_QR':
+      default:
+        // Generate unique redemption code for this employee
+        redemptionCode = generateRedemptionCode()
+        status = 'PENDING'
+        message = 'Redemption submitted. Show this code to the merchant.'
+        break
+    }
 
     const redemption = await prisma.redemption.create({
       data: {
@@ -120,7 +161,8 @@ export async function POST(request: NextRequest) {
         branchId: validBranchId,
         merchantNotes: encodeMethod(method),
         employeeNotes: notes ?? null,
-        isVerified: false,
+        isVerified: redemptionType !== 'IN_STORE_QR', // Auto-verify for non-QR types
+        verifiedAt: redemptionType !== 'IN_STORE_QR' ? new Date() : null,
         redeemedAt: new Date(),
       },
     })
@@ -136,10 +178,17 @@ export async function POST(request: NextRequest) {
     await createAuditLog({
       actorType: 'employee',
       actorId: employee.id,
-      action: 'REDEMPTION_CREATED',
+      action: `REDEMPTION_CREATED_${redemptionType}`,
       entityType: 'redemption',
       entityId: redemption.id,
-      metadata: { offerId, merchantId: offer.merchantId, method, branchId: validBranchId },
+      metadata: {
+        offerId,
+        merchantId: offer.merchantId,
+        method,
+        branchId: validBranchId,
+        redemptionType,
+        offerCode: redemptionType === 'ONLINE_CODE' ? offer.offerCode : null,
+      },
     })
 
     return NextResponse.json(
@@ -149,8 +198,10 @@ export async function POST(request: NextRequest) {
           id: redemption.id,
           redemptionCode: redemption.redemptionCode,
           method,
-          status: 'PENDING',
-          message: 'Redemption submitted. Show this code to the merchant.',
+          status,
+          message,
+          offerCode: redemptionType === 'ONLINE_CODE' ? offer.offerCode : undefined,
+          bookingUrl: redemptionType === 'BOOKING_LINK' ? offer.bookingUrl : undefined,
         },
       },
       { status: 201 }

@@ -14,7 +14,7 @@ import { showToast } from '@/hooks/use-toast'
 import { ArrowLeft, Pencil, RefreshCw, Trash2 } from 'lucide-react'
 
 const DELETABLE_STATUSES = ['DRAFT', 'VALIDATION_FAILED', 'REJECTED', 'EXPIRED', 'REPLACED', 'AWAITING_APPROVAL', 'CHANGES_REQUESTED']
-const EDITABLE_STATUSES = ['DRAFT', 'VALIDATION_FAILED', 'CHANGES_REQUESTED']
+const EDITABLE_STATUSES = ['DRAFT', 'VALIDATION_FAILED', 'CHANGES_REQUESTED', 'AWAITING_APPROVAL']
 
 const statusLabels: Record<string, string> = {
   LIVE: 'Live',

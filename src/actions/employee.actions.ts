@@ -132,7 +132,6 @@ export async function getLiveOffersAction(companyId: string, page = 1, pageSize 
         merchant: {
           status: 'ACTIVE',
           deletedAt: null,
-          category: { companyId },
         },
       },
       orderBy: [{ isFeatured: 'desc' }, { sortOrder: 'asc' }, { createdAt: 'desc' }],
@@ -159,7 +158,7 @@ export async function getLiveOffersAction(companyId: string, page = 1, pageSize 
         status: 'LIVE',
         startDate: { lte: now },
         endDate: { gte: now },
-        merchant: { status: 'ACTIVE', deletedAt: null, category: { companyId } },
+        merchant: { status: 'ACTIVE', deletedAt: null },
       },
     }),
   ]);

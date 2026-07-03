@@ -217,21 +217,17 @@ async function main() {
   
   }
 
-  // ── Categories per Company ──────────────────────────
-  const catData: { companyId: string; name: string; slug: string; description?: string; icon?: string; displayOrder: number }[] = [];
-  const companies = [techCorp, globalSolutions, innovateX, northStar];
+  // ── Categories (global master data) ──────────────────
   const catNames = ['Food & Dining', 'Retail', 'Technology', 'Health & Fitness', 'Entertainment', 'Travel'];
-  for (const company of companies) {
-    catNames.forEach((name, i) => {
-      catData.push({
-        companyId: company.id,
-        name,
-        slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-        icon: ['utensils', 'shopping-bag', 'laptop', 'heart', 'film', 'plane'][i],
-        displayOrder: i,
-      });
+  const catData: { name: string; slug: string; description?: string; icon?: string; displayOrder: number }[] = [];
+  catNames.forEach((name, i) => {
+    catData.push({
+      name,
+      slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      icon: ['utensils', 'shopping-bag', 'laptop', 'heart', 'film', 'plane'][i],
+      displayOrder: i,
     });
-  }
+  });
   await prisma.category.createMany({ data: catData });
 
   const allCategories = await prisma.category.findMany();
@@ -298,7 +294,7 @@ async function main() {
   const merchantEmails = new Map<string, string>();
 
   for (const m of merchantInputs) {
-    const cat = allCategories.find((c) => c.name === m.category && c.companyId === techCorp.id);
+    const cat = allCategories.find((c) => c.name === m.category);
     const acct = await prisma.account.create({
       data: {
         email: m.email,
@@ -497,7 +493,7 @@ async function main() {
   for (let i = 0; i < 20; i++) {
     const entry = auditActions[Math.floor(Math.random() * auditActions.length)]!;
     const refMerchant = createdMerchants[i % createdMerchants.length]!;
-    const refCompany = companies[i % companies.length]!;
+    const refCompany = [techCorp, globalSolutions, innovateX, northStar][i % 4]!;
     await prisma.auditLog.create({
       data: {
         actorType: 'admin',

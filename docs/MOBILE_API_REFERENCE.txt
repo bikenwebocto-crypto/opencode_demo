@@ -33,6 +33,48 @@ Error codes used across the mobile API:
   INTERNAL              500  Unhandled exception (never exposes Prisma)
 
 ================================================================================
+OFFER REDEMPTION TYPES
+================================================================================
+
+Every MerchantOffer now carries a `redemptionType` field that determines
+how the employee redeems the offer. There are three types:
+
+1. IN_STORE_QR (default)
+   - Employee scans QR code at merchant location
+   - System generates unique redemption code per employee
+   - Code is one-time use, tied to employee and redemption
+   - Requires branch selection at redemption time
+
+2. ONLINE_CODE
+   - Merchant creates offer with a booking URL
+   - System auto-generates 6-character alphanumeric offer code
+   - Employee receives code and visits merchant website
+   - Employee manually enters code at checkout
+   - No redemption code generated at runtime
+
+3. BOOKING_LINK
+   - Merchant provides booking URL
+   - No offer code generated
+   - Employee is redirected to merchant booking page
+   - Booking completed on merchant platform
+   - No redemption code generated at runtime
+
+Offer Code (ONLINE_CODE only):
+  - Exactly 6 characters
+  - Uppercase alphanumeric
+  - Auto-generated on offer creation
+  - Editable before submission
+  - Regenerable by merchant
+  - Globally unique
+  - Example: AB42KX, M8XQ1P, KP62LM
+
+Fields added to MerchantOffer:
+  - redemptionType: String?   (ONLINE_CODE | BOOKING_LINK | IN_STORE_QR)
+  - offerCode:       String?  (6-char alphanumeric, auto-generated)
+  - bookingUrl:      String?  (merchant booking/checkout URL)
+  - qrCodeUrl:       String?  (generated QR code URL)
+
+================================================================================
 MOBILE AUTHENTICATION ARCHITECTURE
 ================================================================================
 
@@ -615,7 +657,10 @@ Audit:   OFFER_UNSAVED
 9. POST /api/mobile/offers/[id]/redeem
 ================================================================================
 
-Purpose:  Issue a redemption code. Creates a Redemption row.
+Purpose:  Redeem an offer. Behavior varies by redemption type:
+          - IN_STORE_QR: generates unique redemption code for merchant verification
+          - ONLINE_CODE: returns existing offer code for merchant website checkout
+          - BOOKING_LINK: returns booking URL for merchant booking system
 
 Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
 
@@ -625,12 +670,12 @@ Request:
 
   {
     "method":      "IN_STORE",       // IN_STORE | ONLINE | QR_CODE | MANUAL_CODE
-    "branchId":    "b1a2...uuid",    // optional, must belong to offer's merchant
+    "branchId":    "b1a2...uuid",    // required for IN_STORE_QR, optional for others
     "notes":       "Window seat, around 7pm",  // optional
     "spentAmount": 25.50             // optional, used for ONLINE method
   }
 
-Response 201:
+Response 201 (IN_STORE_QR):
   {
     "success": true,
     "data": {
@@ -639,6 +684,33 @@ Response 201:
       "method":         "IN_STORE",
       "status":         "PENDING",
       "message":        "Redemption submitted. Show this code to the merchant."
+    }
+  }
+
+Response 201 (ONLINE_CODE):
+  {
+    "success": true,
+    "data": {
+      "id":             "r1a2...uuid",
+      "redemptionCode": "AB42KX",
+      "method":         "ONLINE",
+      "status":         "CONFIRMED",
+      "message":        "Use code AB42KX at checkout. Visit: https://merchant.com/offer",
+      "offerCode":      "AB42KX",
+      "bookingUrl":     "https://merchant.com/offer"
+    }
+  }
+
+Response 201 (BOOKING_LINK):
+  {
+    "success": true,
+    "data": {
+      "id":             "r1a2...uuid",
+      "redemptionCode": "BOOKING-M8XQ1P",
+      "method":         "ONLINE",
+      "status":         "CONFIRMED",
+      "message":        "Complete your booking at: https://merchant.com/book",
+      "bookingUrl":     "https://merchant.com/book"
     }
   }
 
@@ -651,10 +723,21 @@ Response 400 (ineligible):
 Response 400 (bad branch):
   { "success": false, "error": { "code": "VALIDATION", "message": "Invalid branchId for this offer" } }
 
+Response 400 (missing branch for QR):
+  { "success": false, "error": { "code": "VALIDATION", "message": "Branch is required for in-store QR redemptions" } }
+
+Response 400 (missing offer code):
+  { "success": false, "error": { "code": "VALIDATION", "message": "This offer does not have a valid offer code" } }
+
+Response 400 (missing booking URL):
+  { "success": false, "error": { "code": "VALIDATION", "message": "This offer does not have a booking link" } }
+
 Side effects:
-  - Redemption row created (isVerified=false)
+  - Redemption row created
   - MerchantOffer.currentRedemptions += 1
-Audit:   REDEMPTION_CREATED
+  - IN_STORE_QR: isVerified=false (pending merchant verification)
+  - ONLINE_CODE/BOOKING_LINK: isVerified=true (auto-verified)
+Audit:   REDEMPTION_CREATED_{redemptionType}
 
 ================================================================================
 10. GET /api/mobile/brands

@@ -79,7 +79,7 @@ model Company {
   approvedById         String?                @db.Uuid
   deletedById          String?                @db.Uuid
   audits               AuditLog[]             @relation("CompanyAuditLogs")
-  categories           Category[]
+  // categories removed — categories are now global master data
   companyAdmins        CompanyAdmin[]
   billing              CompanyBilling?
   statusHistory        CompanyStatusHistory[]
@@ -284,20 +284,16 @@ model MerchantBranch {
 
 model Category {
   id           String     @id @default(uuid()) @db.Uuid
-  companyId    String     @db.Uuid
   name         String     @db.VarChar(100)
-  slug         String     @db.VarChar(100)
+  slug         String     @unique @db.VarChar(100)
   description  String?    @db.VarChar(500)
   icon         String?    @db.VarChar(50)
   displayOrder Int        @default(0)
   isActive     Boolean    @default(true)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
-  company      Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   merchants    Merchant[]
 
-  @@unique([companyId, slug])
-  @@index([companyId])
   @@map("categories")
 }
 
@@ -323,6 +319,10 @@ model MerchantOffer {
   isExclusive            Boolean                   @default(false)
   redemptionCode         String?                   @db.VarChar(100)
   redemptionInstructions String?
+  redemptionType         String?                   @db.VarChar(50)
+  offerCode              String?                   @db.VarChar(6)
+  bookingUrl             String?                   @db.VarChar(500)
+  qrCodeUrl              String?                   @db.VarChar(500)
   status                 OfferStatus               @default(DRAFT)
   rejectionReason        String?
   reviewedBy             String?                   @db.Uuid
@@ -357,6 +357,8 @@ model MerchantOffer {
   @@index([merchantId, status])
   @@index([status, startDate, endDate])
   @@index([replacesOfferId])
+  @@index([offerCode])
+  @@index([merchantId, offerCode])
   @@map("merchant_offers")
 }
 

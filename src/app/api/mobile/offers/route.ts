@@ -60,6 +60,10 @@ export async function GET(request: NextRequest) {
           isFeatured: true,
           isExclusive: true,
           createdAt: true,
+          redemptionType: true,
+          offerCode: true,
+          bookingUrl: true,
+          qrCodeUrl: true,
           merchant: {
             select: {
               id: true,

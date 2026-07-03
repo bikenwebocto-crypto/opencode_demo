@@ -42,6 +42,9 @@ interface FormData {
   categoryId: string;
   submissionNotes: string;
   replacementReason: string;
+  redemptionType: string;
+  bookingUrl: string;
+  qrCodeUrl: string;
 }
 
 interface FormErrors {
@@ -63,6 +66,16 @@ const ACCEPTED_TYPES = [
   "image/gif",
 ];
 const MAX_SIZE = 5 * 1024 * 1024;
+
+const DAYS_OF_WEEK = [
+  { value: 0, short: 'Sun', full: 'Sunday' },
+  { value: 1, short: 'Mon', full: 'Monday' },
+  { value: 2, short: 'Tue', full: 'Tuesday' },
+  { value: 3, short: 'Wed', full: 'Wednesday' },
+  { value: 4, short: 'Thu', full: 'Thursday' },
+  { value: 5, short: 'Fri', full: 'Friday' },
+  { value: 6, short: 'Sat', full: 'Saturday' },
+] as const
 
 function parseInitialImageUrls(input: string | string[] | undefined): string[] {
   if (!input) return [];
@@ -99,6 +112,7 @@ export function OfferForm({
   const [showStrength, setShowStrength] = useState(false);
   const [uploadingCount, setUploadingCount] = useState(0);
   const { data: categories } = useCategories();
+  const [lastEditedField, setLastEditedField] = useState<'minimumSpend' | 'discountMax' | 'discountPercent' | null>(null);
 
   useEffect(()=>{
     if(categories && initialData?.categoryId){
@@ -139,6 +153,9 @@ export function OfferForm({
     categoryId: initialData?.categoryId ?? "",
     submissionNotes: initialData?.submissionNotes ?? "",
     replacementReason: initialData?.replacementReason ?? "",
+    redemptionType: initialData?.redemptionType ?? "IN_STORE_QR",
+    bookingUrl: initialData?.bookingUrl ?? "",
+    qrCodeUrl: initialData?.qrCodeUrl ?? "",
   });
 
   const set =
@@ -158,6 +175,78 @@ export function OfferForm({
       if (field === "discountValue" || field === "offerType")
         setShowStrength(true);
     };
+
+  // Linked field recalculation — tracks last edited field to avoid circular loops
+  const handleLinkedFieldChange = (
+    field: 'minimumSpend' | 'discountMax' | 'discountPercent',
+    value: string,
+  ) => {
+    setLastEditedField(field);
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+      const ms = Number(next.minimumSpend);
+      const dm = Number(next.discountMax);
+      const dp = Number(next.discountPercent);
+      const hasMs = !isNaN(ms) && ms > 0;
+      const hasDm = !isNaN(dm) && dm > 0;
+      const hasDp = !isNaN(dp) && dp > 0;
+
+      if (field === 'minimumSpend') {
+        // Minimum Spend changed → recalculate whichever dependent is set
+        if (hasMs && hasDp) {
+          // Percentage is source of truth → recalc Max
+          const calcMax = (ms * dp) / 100;
+          next.discountMax = String(Math.min(Math.round(calcMax * 100) / 100, ms));
+        } else if (hasMs && hasDm) {
+          // Max is source of truth → recalc Percentage
+          const pct = (dm / ms) * 100;
+          next.discountPercent = Math.min(Math.round(pct * 100) / 100, 90).toString();
+        }
+      } else if (field === 'discountPercent') {
+        // Percentage changed → recalculate Max Discount
+        if (hasMs && hasDp) {
+          const calcMax = (ms * dp) / 100;
+          next.discountMax = String(Math.min(Math.round(calcMax * 100) / 100, ms));
+        }
+      } else if (field === 'discountMax') {
+        // Max Discount changed → recalculate Percentage
+        if (hasMs && hasDm) {
+          const pct = (dm / ms) * 100;
+          next.discountPercent = Math.min(Math.round(pct * 100) / 100, 90).toString();
+        }
+      }
+      return next;
+    });
+
+    // Clear errors on change
+    setErrors((prev) => {
+      const n = { ...prev };
+      delete n[field];
+      delete n.discountMax;
+      delete n.discountPercent;
+      delete n.minimumSpend;
+      return n;
+    });
+    setShowStrength(true);
+  };
+
+  const toggleDay = (day: number) => {
+    setForm((prev) => {
+      const current = prev.daysOfWeek.split(',').filter(Boolean)
+      const str = String(day)
+      const next = current.includes(str)
+        ? current.filter((d) => d !== str)
+        : [...current, str].sort()
+      return { ...prev, daysOfWeek: next.join(',') }
+    })
+    if (errors.daysOfWeek) {
+      setErrors((prev) => {
+        const n = { ...prev }
+        delete n.daysOfWeek
+        return n
+      })
+    }
+  }
 
   const validate = (): boolean => {
     const errs: FormErrors = {};
@@ -182,6 +271,34 @@ export function OfferForm({
     if (isReplacement && !form.termsAndConditions.trim())
       errs.termsAndConditions =
         "Terms and conditions are required for replacement offers";
+
+    // Days of week validation
+    const selectedDays = form.daysOfWeek.split(',').filter(Boolean)
+    if (selectedDays.length === 0) {
+      errs.daysOfWeek = "Select at least one valid day"
+    } else {
+      const invalid = selectedDays.filter((d) => !DAYS_OF_WEEK.map((day) => String(day.value)).includes(d))
+      if (invalid.length > 0) {
+        errs.daysOfWeek = "Select at least one valid day"
+      }
+    }
+
+    // Linked field validation
+    if (form.minimumSpend.trim()) {
+      const ms = Number(form.minimumSpend);
+      if (isNaN(ms) || ms <= 0) errs.minimumSpend = "Must be greater than 0";
+    }
+    if (form.discountMax.trim()) {
+      const dm = Number(form.discountMax);
+      if (isNaN(dm) || dm <= 0) errs.discountMax = "Must be greater than 0";
+      if (form.minimumSpend.trim() && dm > Number(form.minimumSpend))
+        errs.discountMax = "Maximum discount cannot exceed minimum spend";
+    }
+    if (form.discountPercent.trim()) {
+      const dp = Number(form.discountPercent);
+      if (isNaN(dp) || dp < 1 || dp > 90) errs.discountPercent = "Must be between 1% and 90%";
+    }
+
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -212,6 +329,9 @@ export function OfferForm({
     submissionNotes: form.submissionNotes || null,
     replacementReason: isReplacement ? form.replacementReason || null : null,
     saveAsDraft,
+    redemptionType: form.redemptionType || null,
+    bookingUrl: form.bookingUrl || null,
+    qrCodeUrl: form.qrCodeUrl || null,
     ...(isReplacement && currentLiveOffer
       ? { replacesOfferId: currentLiveOffer.id }
       : {}),
@@ -541,6 +661,7 @@ export function OfferForm({
                   <div>
                     <label className={labelClass}>Category</label>
                     <select
+                      name="category"
                       className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                       value={form.categoryId}
                       onChange={set("categoryId")}
@@ -557,6 +678,7 @@ export function OfferForm({
                   <div>
                     <label className={labelClass}>Offer Type *</label>
                     <select
+                      name="offerType"
                       className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                       value={form.offerType}
                       onChange={set("offerType")}
@@ -567,6 +689,99 @@ export function OfferForm({
                     </select>
                   </div>
                 </div>
+
+                {/* Redemption Type Selection */}
+                <div>
+                  <label className={labelClass}>Redemption Type</label>
+                  <select
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    value={form.redemptionType}
+                    onChange={set("redemptionType")}
+                    name="redemptionType"
+                  >
+                    <option value="IN_STORE_QR">In-Store QR Code</option>
+                    <option value="ONLINE_CODE">Online Code</option>
+                    <option value="BOOKING_LINK">Booking Link</option>
+                  </select>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {form.redemptionType === 'ONLINE_CODE' && 'Employee gets a code to enter on merchant website'}
+                    {form.redemptionType === 'BOOKING_LINK' && 'Employee is redirected to merchant booking page'}
+                    {form.redemptionType === 'IN_STORE_QR' && 'Employee shows QR code at merchant location'}
+                  </p>
+                </div>
+
+                {/* Redemption Type Specific Fields */}
+                {form.redemptionType === 'ONLINE_CODE' && (
+                  <Card className="bg-muted/30">
+                    <CardHeader>
+                      <CardTitle className="text-sm">Online Code Configuration</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div>
+                        <label className={labelClass}>Booking URL *</label>
+                        <Input
+                          className={inputClass}
+                          value={form.bookingUrl}
+                          onChange={set("bookingUrl")}
+                          placeholder="https://merchant-website.com/offer"
+                          type="url"
+                        />
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Where employees will be directed to use their code
+                        </p>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Offer Code</label>
+                        <Input
+                          className={inputClass}
+                          value={form.redemptionCode}
+                          onChange={set("redemptionCode")}
+                          placeholder="Auto-generated if empty"
+                          maxLength={6}
+                        />
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          6-character alphanumeric code. Leave empty to auto-generate.
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {form.redemptionType === 'BOOKING_LINK' && (
+                  <Card className="bg-muted/30">
+                    <CardHeader>
+                      <CardTitle className="text-sm">Booking Link Configuration</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div>
+                        <label className={labelClass}>Booking URL *</label>
+                        <Input
+                          className={inputClass}
+                          value={form.bookingUrl}
+                          onChange={set("bookingUrl")}
+                          placeholder="https://booking-system.com/offers/..."
+                          type="url"
+                        />
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Direct link to merchant booking system
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {form.redemptionType === 'IN_STORE_QR' && (
+                  <Card className="bg-muted/30">
+                    <CardHeader>
+                      <CardTitle className="text-sm">In-Store QR Configuration</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground">
+                        A unique QR code will be generated for this offer. Employees will scan it at the merchant location to receive their redemption code.
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
@@ -592,9 +807,14 @@ export function OfferForm({
                       type="number"
                       step="0.01"
                       value={form.discountMax}
-                      onChange={set("discountMax")}
+                      onChange={(e) => handleLinkedFieldChange("discountMax", e.target.value)}
                       placeholder="Maximum discount amount"
                     />
+                    {errors.discountMax && (
+                      <p className="mt-1 text-xs text-destructive">
+                        {errors.discountMax}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -605,6 +825,8 @@ export function OfferForm({
                       discountValue={Number(form.discountValue)}
                       offerType={form.offerType}
                       categoryId={form.categoryId || null}
+                      minimumSpend={form.minimumSpend ? Number(form.minimumSpend) : undefined}
+                      discountMax={form.discountMax ? Number(form.discountMax) : undefined}
                     />
                   )}
 
@@ -615,9 +837,14 @@ export function OfferForm({
                       className={inputClass}
                       type="number"
                       value={form.discountPercent}
-                      onChange={set("discountPercent")}
+                      onChange={(e) => handleLinkedFieldChange("discountPercent", e.target.value)}
                       placeholder="e.g. 20"
                     />
+                    {errors.discountPercent && (
+                      <p className="mt-1 text-xs text-destructive">
+                        {errors.discountPercent}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className={labelClass}>Minimum Spend</label>
@@ -626,9 +853,14 @@ export function OfferForm({
                       type="number"
                       step="0.01"
                       value={form.minimumSpend}
-                      onChange={set("minimumSpend")}
+                      onChange={(e) => handleLinkedFieldChange("minimumSpend", e.target.value)}
                       placeholder="Minimum order amount"
                     />
+                    {errors.minimumSpend && (
+                      <p className="mt-1 text-xs text-destructive">
+                        {errors.minimumSpend}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className={labelClass}>Max Redemptions</label>
@@ -641,6 +873,21 @@ export function OfferForm({
                     />
                   </div>
                 </div>
+
+                {/* Campaign Liability Summary */}
+                {form.minimumSpend && form.discountMax && form.maxRedemptions && (
+                  <div className="rounded-lg border bg-muted/50 p-3 space-y-1">
+                    <h4 className="text-xs font-semibold text-muted-foreground">Campaign Liability Estimate</h4>
+                    <p className="text-sm font-medium">
+                      Total potential payout: ${(
+                        Number(form.discountMax) * Number(form.maxRedemptions)
+                      ).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Based on max {form.maxRedemptions} redemptions × ${Number(form.discountMax).toFixed(2)} max discount
+                    </p>
+                  </div>
+                )}
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
@@ -671,6 +918,47 @@ export function OfferForm({
                       </p>
                     )}
                   </div>
+                </div>
+
+                {/* Days of Week */}
+                <div>
+                  <label className={labelClass}>Available Days</label>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {DAYS_OF_WEEK.map((day) => {
+                      const selected = form.daysOfWeek
+                        .split(',')
+                        .map((s) => s.trim())
+                        .includes(String(day.value))
+                      return (
+                        <button
+                          key={day.value}
+                          type="button"
+                          onClick={() => toggleDay(day.value)}
+                          className={`
+                            rounded-full px-3 py-1.5 text-xs font-medium transition-colors
+                            ${selected
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                            }
+                          `}
+                        >
+                          {day.short}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {(() => {
+                      const sel = form.daysOfWeek.split(',').filter(Boolean)
+                      if (sel.length === 7) return 'Every day'
+                      return sel.map((s) => DAYS_OF_WEEK.find((d) => d.value === Number(s))?.short).join(' • ')
+                    })()}
+                  </p>
+                  {errors.daysOfWeek && (
+                    <p className="mt-1 text-xs text-destructive">
+                      {errors.daysOfWeek}
+                    </p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -789,6 +1077,7 @@ export function OfferForm({
                       updateOffer.isPending ||
                       submitOffer.isPending
                     }
+              
                   >
                     {updateOffer.isPending ? (
                       <Loader2 className="mr-1 h-4 w-4 animate-spin" />

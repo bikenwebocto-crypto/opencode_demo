@@ -5,21 +5,16 @@ import { getAuthenticatedMobileEmployee } from '@/lib/mobile-auth'
 
 // GET /api/mobile/categories
 //
-// Active categories scoped to the employee's company. Mirrors the web
-// `/api/categories` query but enforces Bearer-token auth via the shared
-// `getAuthenticatedMobileEmployee` helper. Categories are company-scoped
-// in the Prisma schema, so the employee only ever sees the categories
-// their company has defined.
+// Active global categories available to all employees. Returns the
+// platform-wide category list so employees can filter/browse merchants
+// across the full taxonomy regardless of which company they belong to.
 export async function GET(request: NextRequest) {
   try {
     const auth = await getAuthenticatedMobileEmployee(request)
     if (!auth.ok) return auth.response
 
     const categories = await prisma.category.findMany({
-      where: {
-        companyId: auth.employee.companyId,
-        isActive: true,
-      },
+      where: { isActive: true },
       orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
       select: {
         id: true,
