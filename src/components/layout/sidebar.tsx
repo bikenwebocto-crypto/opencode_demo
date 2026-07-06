@@ -26,6 +26,7 @@ import {
   Search,
   RefreshCw,
   Bookmark,
+  Palette,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 
@@ -60,6 +61,7 @@ const navConfig: Record<string, NavItem[]> = {
     { label: 'Audit Logs', href: '/admin/audit-logs', icon: Search },
     { label: 'Billing', href: '/admin/billing', icon: CreditCard },
     { label: 'Settings', href: '/admin/settings', icon: Settings },
+    { label: 'Login Branding', href: '/admin/settings/login-branding', icon: Palette },
   ],
   merchant: [
     { label: 'Overview', href: '/merchant', icon: LayoutDashboard },

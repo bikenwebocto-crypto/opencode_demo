@@ -903,13 +903,16 @@ enum ActionQueueStatus {
   FAILED
   SKIPPED
 }
-
 enum ActionQueueType {
-  MERCHANT_APPROVAL
-  OFFER_APPROVAL
+  NEW_MERCHANT_APPLICATION
+  FIRST_OFFER_APPROVAL
+
   OFFER_REPLACEMENT
+
   PROFILE_EDIT_REQUEST
-  COMPANY_APPROVAL
+
+  COMPANY_ACTIVATION
+
   ISSUE_REVIEW
   CSV_IMPORT
   BRANCH_EDIT_REQUEST
@@ -960,4 +963,40 @@ enum BranchStatus {
   ACTIVE
   INACTIVE
   CLOSED
+}
+
+model LoginBranding {
+  id                 String   @id @default(uuid()) @db.Uuid
+
+  appName            String?
+  tagline            String?
+
+  heading            String?
+  description        String?
+
+  logoUrl            String?
+  bannerUrl          String?
+  backgroundImageUrl String?
+
+  primaryColor       String?
+  secondaryColor     String?
+  accentColor        String?
+  textColor          String?
+  cardBackground     String?
+
+  // Future: migrate to LoginLayout enum (SPLIT_CARD, CENTER_CARD, FULLSCREEN_HERO)
+  layout             String   @default("SPLIT_CARD")
+
+  showLogo           Boolean  @default(true)
+  showHeading        Boolean  @default(true)
+  showDescription    Boolean  @default(true)
+  showBanner         Boolean  @default(true)
+  showFooter         Boolean  @default(true)
+
+  footerTitle        String?
+  footerDescription  String?
+  copyright          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

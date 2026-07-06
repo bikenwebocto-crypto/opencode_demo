@@ -21,6 +21,7 @@ const pageTitles: Record<string, string> = {
   '/admin/audit-logs': 'Audit Logs',
   '/admin/billing': 'Billing',
   '/admin/settings': 'Settings',
+  '/admin/settings/login-branding': 'Login Branding',
   '/merchant': 'Merchant Overview',
   '/merchant/offers': 'My Offers',
   '/merchant/analytics': 'Analytics',

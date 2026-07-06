@@ -140,9 +140,9 @@ export async function POST(
 
           await prisma.actionQueueItem.create({
             data: {
-              type: 'OFFER_REPLACEMENT',
-              title: `Offer Replacement: ${offer.title}`,
-              description: `Merchant ${merchant.businessName} submitted a replacement offer`,
+              type: 'FIRST_OFFER_APPROVAL',
+              title: `Offer Approval: ${offer.title}`,
+              description: `Merchant ${merchant.businessName} submitted an offer for approval`,
               referenceId: merchant.id,
               referenceType: 'MERCHANT',
               status: 'PENDING',
@@ -157,7 +157,7 @@ export async function POST(
       } else {
         // Prevent duplicate queue items
         const existingItems = await prisma.actionQueueItem.findMany({
-          where: { referenceId: merchant.id, type: 'OFFER_APPROVAL', status: 'PENDING' },
+          where: { referenceId: merchant.id, type: 'FIRST_OFFER_APPROVAL', status: 'PENDING' },
         });
         const hasExisting = existingItems.some((i) => {
           const meta = i.metadata as Record<string, unknown> | null;
@@ -166,7 +166,7 @@ export async function POST(
         if (!hasExisting) {
           await prisma.actionQueueItem.create({
             data: {
-              type: 'OFFER_APPROVAL',
+              type: 'FIRST_OFFER_APPROVAL',
               title: `Offer Approval: ${offer.title}`,
               description: `Merchant ${merchant.businessName} submitted an offer for approval`,
               referenceId: merchant.id,

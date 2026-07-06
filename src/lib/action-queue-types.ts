@@ -1,6 +1,6 @@
-export type QueueTabKey = 'ALL' | 'MERCHANT_APPROVAL' | 'OFFER_APPROVALS' | 'COMPANY_ACTIVATION' | 'ISSUES' | 'ALERTS'
+export type QueueTabKey = 'ALL' | 'MERCHANT_APPROVAL' | 'OFFER_APPROVAL' | 'COMPANY_ACTIVATION' | 'ISSUES' | 'ALERTS'
 
-export type EntityKind = 'MERCHANT' | 'MERCHANT_OFFER' | 'COMPANY' | 'ISSUE' | 'RENEWAL_ALERT' | 'UNKNOWN'
+export type EntityKind = 'MERCHANT' | 'MERCHANT_OFFER' | 'COMPANY' | 'ISSUE' | 'CSV' | 'ASSET' | 'RENEWAL_ALERT' | 'UNKNOWN'
 
 export interface QueueTypeMapping {
   displayType: string
@@ -18,71 +18,79 @@ export const QUEUE_TYPE_MAP: Record<string, QueueTypeMapping> = {
     entityKind: 'MERCHANT',
     reviewComponent: 'MerchantApplicationReview',
   },
-  FIRST_PERK_APPROVAL: {
-    displayType: 'First Perk Approval',
-    tabCategory: 'OFFER_APPROVALS',
+
+  FIRST_OFFER_APPROVAL: {
+    displayType: 'First Offer Approval',
+    tabCategory: 'OFFER_APPROVAL',
     priority: 'HIGH',
     entityKind: 'MERCHANT_OFFER',
     reviewComponent: 'OfferReview',
   },
-  OFFER_REPLACEMENT_APPROVAL: {
+
+  OFFER_REPLACEMENT: {
     displayType: 'Offer Replacement',
-    tabCategory: 'OFFER_APPROVALS',
+    tabCategory: 'OFFER_APPROVAL',
     priority: 'MEDIUM',
     entityKind: 'MERCHANT_OFFER',
     reviewComponent: 'OfferReplacementReview',
   },
-  PROFILE_CHANGE_APPROVAL: {
+
+  PROFILE_EDIT_REQUEST: {
     displayType: 'Profile Change',
-    tabCategory: 'OFFER_APPROVALS',
+    tabCategory: 'MERCHANT_APPROVAL',
     priority: 'MEDIUM',
     entityKind: 'MERCHANT',
     reviewComponent: 'ProfileReview',
   },
-  COMPANY_PENDING_ACTIVATION: {
+
+  COMPANY_ACTIVATION: {
     displayType: 'Company Activation',
     tabCategory: 'COMPANY_ACTIVATION',
     priority: 'STANDARD',
     entityKind: 'COMPANY',
     reviewComponent: 'CompanyActivationReview',
   },
-  SETUP_LINK_EXPIRED: {
-    displayType: 'Setup Link Expired',
-    tabCategory: 'COMPANY_ACTIVATION',
-    priority: 'STANDARD',
-    entityKind: 'COMPANY',
-    reviewComponent: 'SetupLinkReview',
-  },
-  OPEN_ISSUE: {
-    displayType: 'Open Issue',
+
+  ISSUE_REVIEW: {
+    displayType: 'Issue Review',
     tabCategory: 'ISSUES',
     priority: 'MEDIUM',
     entityKind: 'ISSUE',
     reviewComponent: 'IssueReview',
   },
-  RENEWAL_GAMING_ALERT: {
-    displayType: 'Renewal Gaming Alert',
-    tabCategory: 'ALERTS',
-    priority: 'MEDIUM',
-    entityKind: 'RENEWAL_ALERT',
-    reviewComponent: 'RenewalAlertReview',
+
+  CSV_IMPORT: {
+    displayType: 'CSV Import',
+    tabCategory: 'ISSUES',
+    priority: 'LOW',
+    entityKind: 'CSV',
+    reviewComponent: 'CsvImportReview',
   },
-  MERCHANT_MISSING_PERK: {
-    displayType: 'Missing Perk',
+
+  BRANCH_EDIT_REQUEST: {
+    displayType: 'Branch Edit Request',
+    tabCategory: 'MERCHANT_APPROVAL',
+    priority: 'MEDIUM',
+    entityKind: 'MERCHANT',
+    reviewComponent: 'BranchReview',
+  },
+
+  ASSET_REVIEW: {
+    displayType: 'Asset Review',
     tabCategory: 'ALERTS',
     priority: 'LOW',
-    entityKind: 'MERCHANT',
-    reviewComponent: 'MissingPerkReview',
+    entityKind: 'ASSET',
+    reviewComponent: 'AssetReview',
   },
-}
+};
 
 export const TAB_KEYS: { key: QueueTabKey; label: string; queueTypes: string[] }[] = [
   { key: 'ALL', label: 'All', queueTypes: [] },
-  { key: 'MERCHANT_APPROVAL', label: 'Merchant Applications', queueTypes: ['NEW_MERCHANT_APPLICATION'] },
-  { key: 'OFFER_APPROVALS', label: 'Offer Approvals', queueTypes: ['FIRST_PERK_APPROVAL', 'OFFER_REPLACEMENT_APPROVAL', 'PROFILE_CHANGE_APPROVAL'] },
-  { key: 'COMPANY_ACTIVATION', label: 'Company Activation', queueTypes: ['COMPANY_PENDING_ACTIVATION', 'SETUP_LINK_EXPIRED'] },
-  { key: 'ISSUES', label: 'Issues', queueTypes: ['OPEN_ISSUE'] },
-  { key: 'ALERTS', label: 'Alerts', queueTypes: ['RENEWAL_GAMING_ALERT', 'MERCHANT_MISSING_PERK'] },
+  { key: 'MERCHANT_APPROVAL', label: 'Merchant Applications', queueTypes: ['NEW_MERCHANT_APPLICATION', 'PROFILE_EDIT_REQUEST', 'BRANCH_EDIT_REQUEST'] },
+  { key: 'OFFER_APPROVAL', label: 'Offer Approvals', queueTypes: ['FIRST_OFFER_APPROVAL', 'OFFER_REPLACEMENT'] },
+  { key: 'COMPANY_ACTIVATION', label: 'Company Activation', queueTypes: ['COMPANY_ACTIVATION'] },
+  { key: 'ISSUES', label: 'Issues', queueTypes: ['ISSUE_REVIEW', 'CSV_IMPORT'] },
+  { key: 'ALERTS', label: 'Alerts', queueTypes: ['ASSET_REVIEW'] },
 ]
 
 export const PRIORITY_STYLES: Record<string, string> = {

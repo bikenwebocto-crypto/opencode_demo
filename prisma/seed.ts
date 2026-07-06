@@ -447,7 +447,7 @@ async function main() {
     const email = merchantEmails.get(pm.id) ?? '';
     await prisma.actionQueueItem.create({
       data: {
-        type: 'MERCHANT_APPROVAL',
+        type: 'NEW_MERCHANT_APPLICATION',
         title: `Approve merchant: ${pm.businessName}`,
         description: `New merchant registration from ${email} — review and approve their application.`,
         referenceId: pm.id,
@@ -467,7 +467,7 @@ async function main() {
     if (!merchant) continue;
     await prisma.actionQueueItem.create({
       data: {
-        type: 'OFFER_APPROVAL',
+        type: 'OFFER_REPLACEMENT',
         title: `Approve offer: ${po.title}`,
         description: `New offer submitted by ${merchant.businessName} — review and approve.`,
         referenceId: merchant.id,

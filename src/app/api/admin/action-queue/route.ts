@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { createAuditLog, fromCurrentUser } from '@/services/audit-log.service';
+import { createAuditLog, fromCurrentUser } from "@/services/audit-log.service";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { QUEUE_TYPE_MAP, getPriorityLabel } from "@/lib/action-queue-types";
 
@@ -25,12 +25,16 @@ function internalError(error: unknown) {
   );
 }
 
-function resolveTypeFilter(queueTypeParam: string | null, typeParam: string | null): string[] | undefined {
+function resolveTypeFilter(
+  queueTypeParam: string | null,
+  typeParam: string | null,
+): string[] | undefined {
   if (queueTypeParam) {
     const mapping = QUEUE_TYPE_MAP[queueTypeParam];
-    if (mapping) return [mapping.reviewComponent ? queueTypeParam : queueTypeParam].length
-      ? [queueTypeParam]
-      : undefined;
+    if (mapping)
+      return [mapping.reviewComponent ? queueTypeParam : queueTypeParam].length
+        ? [queueTypeParam]
+        : undefined;
     return undefined;
   }
   if (typeParam && typeParam !== "ALL") {
@@ -39,14 +43,19 @@ function resolveTypeFilter(queueTypeParam: string | null, typeParam: string | nu
   return undefined;
 }
 
-function buildTypeWhere(queueTypes: string[] | undefined) {
-  if (!queueTypes || queueTypes.length === 0) return undefined;
+function buildTypeWhere(queueTypes?: string[]) {
+  if (!queueTypes?.length) return undefined;
+
   if (queueTypes.length === 1) {
-    const qt = queueTypes[0]!;
-    return { metadata: { path: ["queueType"], equals: qt } };
+    return {
+      type: queueTypes[0],
+    };
   }
+
   return {
-    OR: queueTypes.map((qt) => ({ metadata: { path: ["queueType"], equals: qt } })),
+    type: {
+      in: queueTypes,
+    },
   };
 }
 
@@ -79,18 +88,22 @@ export async function GET(request: NextRequest) {
     } else {
       where.status = { in: ["PENDING", "IN_PROGRESS", "COMPLETED", "FAILED"] };
     }
-
     const queueTypes = resolveTypeFilter(queueType, type);
     if (tab && tab !== "ALL") {
+
       const tabQueueTypes = Object.entries(QUEUE_TYPE_MAP)
         .filter(([, m]) => m.tabCategory === tab)
         .map(([k]) => k);
       const typeWhere = buildTypeWhere(tabQueueTypes);
+      console.log("tabQueueTypes:", tabQueueTypes, "typeWhere:", typeWhere);
+
       if (typeWhere) where.AND = [typeWhere];
     } else {
       const typeWhere = buildTypeWhere(queueTypes);
       if (typeWhere) where.AND = [typeWhere];
     }
+
+    console.log(" queueTypes:", queueTypes, "tab:", tab, "where:", where);  
 
     if (priority && priority !== "ALL") {
       const priorityMap: Record<string, [number, number]> = {
@@ -118,72 +131,97 @@ export async function GET(request: NextRequest) {
         where.AND = [qFilter];
       }
     }
+    const actionQueueItem = prisma.actionQueueItem.findMany({
+          where: where as any,
+          orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          include: {
+            merchant: { select: { id: true, businessName: true } },
+          },
+        })
+    const [items, total, statusCounts, priorityCounts, typeCounts] =
+      await Promise.all([
+        prisma.actionQueueItem.findMany({
+          where: where as any,
+          orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          include: {
+            merchant: { select: { id: true, businessName: true } },
+          },
+        }),
+        prisma.actionQueueItem.count({ where: where as any }),
+        prisma.actionQueueItem.groupBy({
+          by: ["status"],
+          _count: { _all: true },
+          where: {
+            status: {
+              in: ["PENDING", "IN_PROGRESS", "COMPLETED", "FAILED", "SKIPPED"],
+            },
+          },
+        }),
+        prisma.actionQueueItem.groupBy({
+          by: ["priority"],
+          _count: { _all: true },
+          where: { status: { in: ["PENDING", "IN_PROGRESS"] } },
+        }),
+        prisma.actionQueueItem.count({
+          where: {
+            status: { in: ["PENDING", "IN_PROGRESS"] },
+          },
+        }),
+      ]);
 
-    const [items, total, statusCounts, priorityCounts, typeCounts] = await Promise.all([
-      prisma.actionQueueItem.findMany({
-        where: where as any,
-        orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: {
-          merchant: { select: { id: true, businessName: true } },
-        },
-      }),
-      prisma.actionQueueItem.count({ where: where as any }),
-      prisma.actionQueueItem.groupBy({
-        by: ["status"],
-        _count: { _all: true },
-        where: { status: { in: ["PENDING", "IN_PROGRESS", "COMPLETED", "FAILED", "SKIPPED"] } },
-      }),
-      prisma.actionQueueItem.groupBy({
-        by: ["priority"],
-        _count: { _all: true },
-        where: { status: { in: ["PENDING", "IN_PROGRESS"] } },
-      }),
-      prisma.actionQueueItem.count({
-        where: {
-          status: { in: ["PENDING", "IN_PROGRESS"] },
-        },
-      }),
-    ]);
 
-    const counts = {
-      PENDING: 0,
-      IN_PROGRESS: 0,
-      COMPLETED: 0,
-      FAILED: 0,
-      SKIPPED: 0,
-    };
-    statusCounts.forEach((item: any) => {
-      counts[item.status as keyof typeof counts] = item._count._all;
+    const activeQueueTypes = await prisma.actionQueueItem.findMany({
+      where: {
+        status: {
+          in: ["PENDING", "IN_PROGRESS"],
+        },
+      },
+      select: {
+        type: true,
+      },
     });
 
     const priorityBuckets: Record<string, number> = {
-      HIGH: 0, MEDIUM: 0, STANDARD: 0, LOW: 0,
+      HIGH: 0,
+      MEDIUM: 0,
+      STANDARD: 0,
+      LOW: 0,
     };
     priorityCounts.forEach((p: any) => {
       const label = getPriorityLabel(p.priority);
       priorityBuckets[label] = (priorityBuckets[label] ?? 0) + p._count._all;
     });
 
-    const tabCounts: Record<string, number> = { ALL: typeCounts };
-    for (const tabKey of ["MERCHANT_APPROVAL", "OFFER_APPROVALS", "COMPANY_ACTIVATION", "ISSUES", "ALERTS"]) {
-      const tabQueueTypes = Object.entries(QUEUE_TYPE_MAP)
-        .filter(([, m]) => m.tabCategory === tabKey)
-        .map(([k]) => k);
-      const tabWhere = buildTypeWhere(tabQueueTypes);
-      const tabCountWhere: any = {
-        status: { in: ["PENDING", "IN_PROGRESS"] },
-        ...(tabWhere ? { AND: [tabWhere] } : {}),
-      };
-      tabCounts[tabKey] = await prisma.actionQueueItem.count({ where: tabCountWhere });
+    const tabCounts: Record<string, number> = {
+      ALL: activeQueueTypes.length,
+      MERCHANT_APPROVAL: 0,
+      OFFER_APPROVAL: 0,
+      COMPANY_ACTIVATION: 0,
+      ISSUES: 0,
+      ALERTS: 0,
+    };
+
+    const typeToTab = new Map<string, string>();
+
+    for (const [queueType, config] of Object.entries(QUEUE_TYPE_MAP)) {
+      typeToTab.set(queueType, config.tabCategory);
     }
 
+    for (const item of activeQueueTypes) {
+      const tab = typeToTab.get(item.type);
+      if (tab) {
+        tabCounts[tab] = (tabCounts[tab] ?? 0) + 1;
+      }
+    }
     return NextResponse.json({
       success: true,
       data: items,
       meta: {
-        counts,
+        activeQueueTypes,
         priorityBuckets,
         tabCounts,
         count: total,
@@ -220,10 +258,18 @@ export async function POST(request: NextRequest) {
     } = body;
 
     if (id && status) {
-      const existing = await prisma.actionQueueItem.findUnique({ where: { id } });
+      const existing = await prisma.actionQueueItem.findUnique({
+        where: { id },
+      });
       if (!existing) {
         return NextResponse.json(
-          { success: false, error: { code: "NOT_FOUND", message: "Action queue item not found" } },
+          {
+            success: false,
+            error: {
+              code: "NOT_FOUND",
+              message: "Action queue item not found",
+            },
+          },
           { status: 404 },
         );
       }
@@ -245,9 +291,11 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      await createAuditLog(fromCurrentUser(user, `ACTION_QUEUE_${status}`, "action_queue", id, {
-        changes: { from: existing.status, to: status } as any,
-      }));
+      await createAuditLog(
+        fromCurrentUser(user, `ACTION_QUEUE_${status}`, "action_queue", id, {
+          changes: { from: existing.status, to: status } as any,
+        }),
+      );
 
       return NextResponse.json({
         success: true,
@@ -262,7 +310,8 @@ export async function POST(request: NextRequest) {
           success: false,
           error: {
             code: "VALIDATION",
-            message: "Missing required fields: title, type, referenceId, referenceType",
+            message:
+              "Missing required fields: title, type, referenceId, referenceType",
           },
         },
         { status: 400 },
@@ -294,7 +343,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: { code: "VALIDATION", message: "Invalid reference ID — related record not found" },
+          error: {
+            code: "VALIDATION",
+            message: "Invalid reference ID — related record not found",
+          },
         },
         { status: 400 },
       );
@@ -313,7 +365,10 @@ export async function PATCH(request: NextRequest) {
 
     if (!id) {
       return NextResponse.json(
-        { success: false, error: { code: "VALIDATION", message: "Item ID is required" } },
+        {
+          success: false,
+          error: { code: "VALIDATION", message: "Item ID is required" },
+        },
         { status: 400 },
       );
     }
@@ -321,7 +376,10 @@ export async function PATCH(request: NextRequest) {
     const existing = await prisma.actionQueueItem.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json(
-        { success: false, error: { code: "NOT_FOUND", message: "Action queue item not found" } },
+        {
+          success: false,
+          error: { code: "NOT_FOUND", message: "Action queue item not found" },
+        },
         { status: 404 },
       );
     }
@@ -343,9 +401,11 @@ export async function PATCH(request: NextRequest) {
     });
 
     if (status) {
-      await createAuditLog(fromCurrentUser(user, `ACTION_QUEUE_${status}`, "action_queue", id, {
-        changes: { from: existing.status, to: status } as any,
-      }));
+      await createAuditLog(
+        fromCurrentUser(user, `ACTION_QUEUE_${status}`, "action_queue", id, {
+          changes: { from: existing.status, to: status } as any,
+        }),
+      );
     }
 
     return NextResponse.json({
@@ -370,7 +430,10 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: { code: "VALIDATION", message: 'Query parameter "id" is required' },
+          error: {
+            code: "VALIDATION",
+            message: 'Query parameter "id" is required',
+          },
         },
         { status: 400 },
       );
@@ -379,7 +442,10 @@ export async function DELETE(request: NextRequest) {
     const existing = await prisma.actionQueueItem.findUnique({ where: { id } });
     if (!existing) {
       return NextResponse.json(
-        { success: false, error: { code: "NOT_FOUND", message: "Action queue item not found" } },
+        {
+          success: false,
+          error: { code: "NOT_FOUND", message: "Action queue item not found" },
+        },
         { status: 404 },
       );
     }
@@ -389,9 +455,11 @@ export async function DELETE(request: NextRequest) {
       data: { status: "SKIPPED" },
     });
 
-      await createAuditLog(fromCurrentUser(user, "ACTION_QUEUE_SKIPPED", "action_queue", id, {
+    await createAuditLog(
+      fromCurrentUser(user, "ACTION_QUEUE_SKIPPED", "action_queue", id, {
         changes: { from: existing.status, to: "SKIPPED" } as any,
-      }));
+      }),
+    );
 
     return NextResponse.json({
       success: true,
