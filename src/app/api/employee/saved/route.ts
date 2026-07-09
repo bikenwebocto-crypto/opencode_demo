@@ -22,7 +22,7 @@ export async function GET(_request: NextRequest) {
 
     const offers = offerIds.length
       ? await prisma.merchantOffer.findMany({
-          where: { id: { in: offerIds } },
+          where: { id: { in: offerIds }, deletedAt: null },
           include: {
             merchant: {
               select: {
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     const offerId: string | undefined = body?.offerId
     if (!offerId) return badRequest('offerId is required')
 
-    const offer = await prisma.merchantOffer.findUnique({ where: { id: offerId } })
+    const offer = await prisma.merchantOffer.findFirst({ where: { id: offerId, deletedAt: null } })
     if (!offer) return notFound('Offer not found')
 
     const existing = await prisma.notificationEvent.findFirst({

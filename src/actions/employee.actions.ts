@@ -16,8 +16,8 @@ export async function createRedemptionAction(formData: FormData) {
   const branchId = formData.get('branchId') as string | undefined;
 
   // Validate offer is live
-  const offer = await prisma.merchantOffer.findUnique({
-    where: { id: offerId, status: 'LIVE' },
+  const offer = await prisma.merchantOffer.findFirst({
+    where: { id: offerId, deletedAt: null, status: 'LIVE' },
   });
 
   if (!offer) throw new Error('Offer not found or no longer active');
@@ -126,6 +126,7 @@ export async function getLiveOffersAction(companyId: string, page = 1, pageSize 
   const [offers, total] = await Promise.all([
     prisma.merchantOffer.findMany({
       where: {
+        deletedAt: null,
         status: 'LIVE',
         startDate: { lte: now },
         endDate: { gte: now },
@@ -155,6 +156,7 @@ export async function getLiveOffersAction(companyId: string, page = 1, pageSize 
     }),
     prisma.merchantOffer.count({
       where: {
+        deletedAt: null,
         status: 'LIVE',
         startDate: { lte: now },
         endDate: { gte: now },

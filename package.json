@@ -23,7 +23,7 @@
     "analytics:aggregate": "tsx scripts/aggregate-analytics.ts",
     "vercel-build": "prisma generate && next build"
   },
-  "prisma" : {
+  "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
@@ -67,6 +67,7 @@
     "nodemailer": "^9.0.1",
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",
+    "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.53.2",
@@ -88,6 +89,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.9.0",
     "@types/nodemailer": "^8.0.1",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.0-rc-f1e5d9f9-20241017",
     "@types/react-dom": "^19.0.0-rc-f1e5d9f9-20241017",
     "@types/uuid": "^10.0.0",
@@ -108,5 +110,4 @@
     "typescript": "^5.6.3",
     "vitest": "^4.1.7"
   }
-
 }

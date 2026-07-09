@@ -1,14 +1,14 @@
 'use client'
 import { useState } from 'react'
 import Link from 'next/link'
-import { useMerchantOffers, useBulkDeleteMerchantOffers } from '@/hooks/queries/use-merchant-offers'
+import { useMerchantOffers, useBulkDeleteMerchantOffers, useRevokeMerchantOffer } from '@/hooks/queries/use-merchant-offers'
 import { DataTable } from '@/components/shared/data-table'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { showToast } from '@/hooks/use-toast'
-import { Plus, Pencil, ExternalLink, Gift, RefreshCw, Clock, History, Trash2, BadgeCheck, AlertCircle } from 'lucide-react'
+import { Plus, Pencil, ExternalLink, Gift, RefreshCw, Clock, History, Trash2, BadgeCheck, AlertCircle, Ban } from 'lucide-react'
 import { Alert } from '@/components/ui/alert'
 import type { ColumnDef } from '@/types'
 
@@ -35,8 +35,12 @@ export default function MerchantOffersPage() {
   const [search, setSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [revokeOpen, setRevokeOpen] = useState(false)
+  const [revokeTarget, setRevokeTarget] = useState<any>(null)
+  const [revokeReason, setRevokeReason] = useState('')
   const scope = tab === 'drafts' ? 'drafts' : tab === 'history' ? 'history' : undefined
   const bulkDelete = useBulkDeleteMerchantOffers()
+  const revokeOffer = useRevokeMerchantOffer()
 
   const { data, isLoading } = useMerchantOffers({
     page,
@@ -120,24 +124,42 @@ export default function MerchantOffersPage() {
             </Link>
           )}
           {o.status === 'LIVE' && !pendingReplacement && (
-            <Link
-              href={`/merchant/offers/${o.id}/replace`}
-              onClick={(e) => e.stopPropagation()}
-              className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-              title="Replace offer"
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Replace
-            </Link>
+            <>
+              <Link
+                href={`/merchant/offers/${o.id}/replace`}
+                onClick={(e) => e.stopPropagation()}
+                className="text-sm text-primary hover:underline inline-flex items-center gap-1"
+                title="Replace offer"
+              >
+                <RefreshCw className="h-3.5 w-3.5" /> Replace
+              </Link>
+              <button
+                onClick={(e) => { e.stopPropagation(); setSelectedIds(new Set([o.id])); setRevokeTarget(o); setRevokeOpen(true) }}
+                className="text-sm text-red-600 hover:text-red-700 inline-flex items-center gap-1"
+                title="Revoke offer"
+              >
+                <Ban className="h-3.5 w-3.5" /> Revoke
+              </button>
+            </>
           )}
           {o.status === 'LIVE' && pendingReplacement && (
-            <span
-              className="inline-flex cursor-not-allowed items-center gap-1 text-sm text-muted-foreground"
-              title="You already have a replacement under review."
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Replace
-            </span>
+            <>
+              <span
+                className="inline-flex cursor-not-allowed items-center gap-1 text-sm text-muted-foreground"
+                title="You already have a replacement under review."
+              >
+                <RefreshCw className="h-3.5 w-3.5" /> Replace
+              </span>
+              <button
+                onClick={(e) => { e.stopPropagation(); setSelectedIds(new Set([o.id])); setRevokeTarget(o); setRevokeOpen(true) }}
+                className="text-sm text-red-600 hover:text-red-700 inline-flex items-center gap-1"
+                title="Revoke offer"
+              >
+                <Ban className="h-3.5 w-3.5" /> Revoke
+              </button>
+            </>
           )}
-          {['DRAFT', 'VALIDATION_FAILED', 'REJECTED', 'EXPIRED', 'REPLACED', 'AWAITING_APPROVAL'].includes(o.status) && (
+          {['DRAFT', 'VALIDATION_FAILED', 'REJECTED', 'EXPIRED', 'REPLACED', 'AWAITING_APPROVAL', 'ARCHIVED'].includes(o.status) && (
             <button
               onClick={(e) => { e.stopPropagation(); setSelectedIds(new Set([o.id])); setDeleteOpen(true) }}
               className="text-sm text-destructive hover:text-destructive/80"
@@ -366,7 +388,7 @@ export default function MerchantOffersPage() {
       <ConfirmDialog
         open={deleteOpen}
         title="Delete Offers"
-        message={`Are you sure you want to delete ${selectedIds.size} offer(s)? This will archive them and they will no longer be visible to employees.`}
+        message={`Are you sure you want to delete ${selectedIds.size} offer(s)? This will permanently remove them.`}
         confirmLabel={`Delete ${selectedIds.size} Offer(s)`}
         loading={bulkDelete.isPending}
         onConfirm={async () => {
@@ -382,6 +404,41 @@ export default function MerchantOffersPage() {
         }}
         onCancel={() => setDeleteOpen(false)}
       />
+
+      <ConfirmDialog
+        open={revokeOpen}
+        title="Revoke Offer"
+        message={`Are you sure you want to revoke "${revokeTarget?.title}"? This will deactivate the offer and it will no longer be visible to employees.`}
+        confirmLabel="Revoke"
+        loading={revokeOffer.isPending}
+        onConfirm={async () => {
+          if (!revokeReason.trim() || !revokeTarget) {
+            showToast({ type: 'error', title: 'Required', description: 'Please provide a reason for revocation' })
+            return
+          }
+          try {
+            await revokeOffer.mutateAsync({ id: revokeTarget.id, reason: revokeReason.trim() })
+            showToast({ type: 'success', title: 'Offer revoked' })
+            setRevokeOpen(false)
+            setRevokeTarget(null)
+            setRevokeReason('')
+            setSelectedIds(new Set())
+          } catch (err: any) {
+            showToast({ type: 'error', title: 'Failed', description: err.message })
+          }
+        }}
+        onCancel={() => { setRevokeOpen(false); setRevokeTarget(null); setRevokeReason('') }}
+      >
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Reason for revocation</label>
+          <textarea
+            className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            placeholder="Explain why you are revoking this offer..."
+            value={revokeReason}
+            onChange={(e) => setRevokeReason(e.target.value)}
+          />
+        </div>
+      </ConfirmDialog>
     </div>
   )
 }

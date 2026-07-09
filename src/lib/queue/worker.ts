@@ -70,7 +70,7 @@ class QueueWorker {
       });
 
       switch (item.type) {
-        case 'MERCHANT_APPROVAL':
+        case 'NEW_MERCHANT_APPLICATION':
           // Handled by admin action; worker just ensures expiry
           break;
 

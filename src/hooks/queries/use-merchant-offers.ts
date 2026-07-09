@@ -127,6 +127,28 @@ export function useDeleteMerchantOffer() {
   })
 }
 
+export function useRevokeMerchantOffer() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      const res = await fetch(`/api/merchant/offers/${id}/revoke`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to revoke offer')
+      return json
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: offerKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: offerKeys.currentLive() })
+      queryClient.invalidateQueries({ queryKey: offerKeys.details() })
+    },
+  })
+}
+
 export function useSubmitMerchantOffer() {
   const queryClient = useQueryClient()
 

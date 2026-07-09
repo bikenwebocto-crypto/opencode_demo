@@ -27,6 +27,7 @@ import {
   RefreshCw,
   Bookmark,
   Palette,
+  Trash2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
 
@@ -51,6 +52,7 @@ const navConfig: Record<string, NavItem[]> = {
       { label: 'Overview', href: '/admin', icon: LayoutDashboard },
     { label: 'Action Queue', href: '/admin/action-queue', icon: Zap },
     { label: 'Replacement Reviews', href: '/admin/offers/replacements', icon: RefreshCw },
+    { label: 'Recycle Bin', href: '/admin/offers/deleted', icon: Trash2 },
     { label: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
     { label: 'Merchants', href: '/admin/merchants', icon: Store },
     { label: 'Companies', href: '/admin/companies', icon: Building2 },

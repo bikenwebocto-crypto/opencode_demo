@@ -87,6 +87,7 @@ export async function POST(
       where: {
         id,
         merchantId: merchant.id,
+        deletedAt: null,
       },
     });
 
@@ -94,22 +95,34 @@ export async function POST(
       return notFound();
     }
 
+    console.log('[SUBMIT OFFER] Start - offer:', {
+      id: offer.id,
+      title: offer.title,
+      status: offer.status,
+      redemptionType: offer.redemptionType,
+      hasQrCodeUrl: !!offer.qrCodeUrl,
+    });
+
     if (!['DRAFT', 'VALIDATION_FAILED', 'CHANGES_REQUESTED', 'ARCHIVED', 'AWAITING_APPROVAL'].includes(offer.status)) {
+      console.log('[SUBMIT OFFER] ❌ Cannot submit, current status:', offer.status);
       return forbidden(
         'Only draft, validation-failed, or changes-requested offers can be submitted',
       );
     }
 
     const body = await request.json();
+    console.log('[SUBMIT OFFER] Body received:', Object.keys(body));
 
     const qcResult = runQualityChecks({
       ...offer,
       ...body,
     });
+    console.log('[SUBMIT OFFER] qcResult.passed:', qcResult.passed);
 
     const targetStatus = qcResult.passed
       ? 'AWAITING_APPROVAL'
       : 'VALIDATION_FAILED';
+    console.log('[SUBMIT OFFER] targetStatus:', targetStatus);
 
     let finalOffer = await prisma.merchantOffer.update({
       where: { id },

@@ -17,7 +17,7 @@ export async function GET(
     }
 
     const offers = await prisma.merchantOffer.findMany({
-      where: { merchantId: id },
+      where: { merchantId: id, deletedAt: null },
       orderBy: { createdAt: 'desc' },
       include: {
         _count: { select: { redemptions: true } },

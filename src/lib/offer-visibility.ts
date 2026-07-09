@@ -21,8 +21,8 @@ export interface OfferVisibilityResult {
 export async function isOfferVisibleToEmployees(
   offerId: string
 ): Promise<OfferVisibilityResult> {
-  const offer = await prisma.merchantOffer.findUnique({
-    where: { id: offerId },
+  const offer = await prisma.merchantOffer.findFirst({
+    where: { id: offerId, deletedAt: null },
     include: {
       merchant: {
         include: {
@@ -64,7 +64,7 @@ export async function checkRedemptionEligibility(
   const visibility = await isOfferVisibleToEmployees(offerId)
   if (!visibility.visible) return { eligible: false, reason: visibility.reason }
 
-  const offer = await prisma.merchantOffer.findUnique({ where: { id: offerId } })
+  const offer = await prisma.merchantOffer.findFirst({ where: { id: offerId, deletedAt: null } })
   if (!offer) return { eligible: false, reason: 'Offer not found' }
 
   if (offer.maxRedemptions != null && offer.currentRedemptions >= offer.maxRedemptions) {

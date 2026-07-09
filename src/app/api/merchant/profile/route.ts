@@ -172,7 +172,7 @@ export async function PATCH(request: NextRequest) {
             status: 'PENDING',
             priority: 2,
             metadata: {
-              queueType: 'PROFILE_CHANGE_APPROVAL',
+              queueType: 'PROFILE_EDIT_REQUEST',
               requestedFields: afterSnapshot,
               originalValues: beforeSnapshot,
               reason: changeReason,

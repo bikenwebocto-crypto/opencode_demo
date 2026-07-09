@@ -38,6 +38,7 @@ export async function createOfferAction(merchantId: string, formData: FormData) 
     const existingLive = await prisma.merchantOffer.findFirst({
       where: {
         merchantId,
+        deletedAt: null,
         status: 'LIVE',
         endDate: { gte: new Date() },
       },
@@ -118,7 +119,7 @@ export async function submitReplacementOfferAction(
   });
 
   // Auto-create action queue item for admin
-  const currentOffer = await prisma.merchantOffer.findUnique({ where: { id: currentOfferId } });
+  const currentOffer = await prisma.merchantOffer.findFirst({ where: { id: currentOfferId, deletedAt: null } });
   await prisma.actionQueueItem.create({
     data: {
       type: 'OFFER_REPLACEMENT',

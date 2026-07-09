@@ -82,6 +82,7 @@ export class OfferRepository extends BaseRepository<MerchantOffer, OfferCreateIn
     return prisma.merchantOffer.findFirst({
       where: {
         merchantId,
+        deletedAt: null,
         status: 'LIVE' as any,
         startDate: { lte: now },
         endDate: { gte: now },
@@ -96,6 +97,7 @@ export class OfferRepository extends BaseRepository<MerchantOffer, OfferCreateIn
 
     return prisma.merchantOffer.findMany({
       where: {
+        deletedAt: null,
         status: 'LIVE' as any,
         endDate: { lte: threshold, gte: new Date() },
       },

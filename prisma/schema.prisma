@@ -344,6 +344,9 @@ model MerchantOffer {
   isReplacement          Boolean                   @default(false)
   replacementReason      String?
   reviewNotes            String?
+  deletedAt              DateTime?
+  deletedById            String?                   @db.Uuid
+  deletedByRole          String?                   @db.VarChar(50)
   merchant               Merchant                  @relation(fields: [merchantId], references: [id])
   replacesOffer          MerchantOffer?            @relation("OfferReplacement", fields: [replacesOfferId], references: [id])
   replacedBy             MerchantOffer[]           @relation("OfferReplacement")
@@ -359,6 +362,7 @@ model MerchantOffer {
   @@index([replacesOfferId])
   @@index([offerCode])
   @@index([merchantId, offerCode])
+  @@index([deletedAt])
   @@map("merchant_offers")
 }
 

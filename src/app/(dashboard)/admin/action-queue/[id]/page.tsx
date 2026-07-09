@@ -41,9 +41,9 @@ function resolveReviewComponentKey(queueItem: any): ReviewComponentKey {
 
   if (queueItem?.type === 'OFFER_REPLACEMENT') return 'OfferReplacementReview'
   if (queueItem?.type === 'PROFILE_EDIT_REQUEST') return 'ProfileReview'
-  if (queueItem?.type === 'OFFER_APPROVAL') return 'OfferReview'
-  if (queueItem?.type === 'MERCHANT_APPROVAL') return 'MerchantApplicationReview'
-  if (queueItem?.type === 'COMPANY_APPROVAL') return 'CompanyActivationReview'
+  if (queueItem?.type === 'FIRST_OFFER_APPROVAL') return 'OfferReview'
+  if (queueItem?.type === 'NEW_MERCHANT_APPLICATION') return 'MerchantApplicationReview'
+  if (queueItem?.type === 'COMPANY_ACTIVATION') return 'CompanyActivationReview'
   if (queueItem?.type === 'ISSUE_REVIEW') return 'IssueReview'
 
   return 'MerchantApplicationReview'

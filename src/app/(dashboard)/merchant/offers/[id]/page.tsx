@@ -2,7 +2,7 @@
 import { use, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useMerchantOfferById, useDeleteMerchantOffer } from '@/hooks/queries/use-merchant-offers'
+import { useMerchantOfferById, useDeleteMerchantOffer, useRevokeMerchantOffer } from '@/hooks/queries/use-merchant-offers'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { OfferStatusTimeline } from '@/components/shared/offer-status-timeline'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,9 +11,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import { showToast } from '@/hooks/use-toast'
-import { ArrowLeft, Pencil, RefreshCw, Trash2 } from 'lucide-react'
+import { ArrowLeft, Pencil, RefreshCw, Trash2, Download, Printer, QrCode, Ban } from 'lucide-react'
 
-const DELETABLE_STATUSES = ['DRAFT', 'VALIDATION_FAILED', 'REJECTED', 'EXPIRED', 'REPLACED', 'AWAITING_APPROVAL', 'CHANGES_REQUESTED']
+const DELETABLE_STATUSES = ['DRAFT', 'VALIDATION_FAILED', 'REJECTED', 'EXPIRED', 'REPLACED', 'AWAITING_APPROVAL', 'CHANGES_REQUESTED', 'ARCHIVED']
 const EDITABLE_STATUSES = ['DRAFT', 'VALIDATION_FAILED', 'CHANGES_REQUESTED', 'AWAITING_APPROVAL']
 
 const statusLabels: Record<string, string> = {
@@ -56,8 +56,11 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
   const { id } = use(params)
   const { data, isLoading, error } = useMerchantOfferById(id)
   const deleteOffer = useDeleteMerchantOffer()
+  const revokeOffer = useRevokeMerchantOffer()
   const router = useRouter()
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [revokeOpen, setRevokeOpen] = useState(false)
+  const [revokeReason, setRevokeReason] = useState('')
 
   if (isLoading) {
     return (
@@ -87,7 +90,14 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
         <div className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight">{offer.title}</h1>
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
-            <StatusBadge status={offer.status} label={statusLabels[offer.status]} />
+            <StatusBadge
+              status={offer.status}
+              label={
+                offer.status === 'ARCHIVED' && offer.reviewNotes
+                  ? 'Revoked'
+                  : statusLabels[offer.status]
+              }
+            />
             <span>Created {formatDateTime(offer.createdAt)}</span>
             <span>Updated {formatDateTime(offer.updatedAt)}</span>
           </div>
@@ -99,9 +109,14 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
             </Link>
           )}
           {offer.status === 'LIVE' && (
-            <Link href={`/merchant/offers/${offer.id}/replace`}>
-              <Button size="sm"><RefreshCw className="mr-1 h-4 w-4" /> Replace</Button>
-            </Link>
+            <>
+              <Link href={`/merchant/offers/${offer.id}/replace`}>
+                <Button size="sm"><RefreshCw className="mr-1 h-4 w-4" /> Replace</Button>
+              </Link>
+              <Button size="sm" variant="outline" className="border-red-300 text-red-600 hover:bg-red-50" onClick={() => setRevokeOpen(true)}>
+                <Ban className="mr-1 h-4 w-4" /> Revoke
+              </Button>
+            </>
           )}
           {DELETABLE_STATUSES.includes(offer.status) && (
             <Button size="sm" variant="destructive" onClick={() => setDeleteOpen(true)}>
@@ -153,6 +168,12 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
               <div>
                 <span className="text-muted-foreground">Admin Note</span>
                 <p className="mt-0.5">{offer.adminNote}</p>
+              </div>
+            )}
+            {offer.status === 'ARCHIVED' && offer.reviewNotes && (
+              <div>
+                <span className="text-muted-foreground">Revocation Reason</span>
+                <p className="mt-0.5 text-destructive">{offer.reviewNotes}</p>
               </div>
             )}
           </CardContent>
@@ -293,6 +314,74 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
         </Card>
       )}
 
+      {/* 7b. In-Store QR Code */}
+      {offer.redemptionType === 'IN_STORE_QR' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <QrCode className="h-4 w-4" /> In-Store QR Code
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {offer.qrCodeUrl ? (
+              <div className="space-y-4">
+                <div className="flex justify-center">
+                  <img
+                    src={offer.qrCodeUrl}
+                    alt="Offer QR Code"
+                    className="h-48 w-48 rounded-md border object-contain"
+                  />
+                </div>
+                <div className="flex justify-center gap-3">
+                  <a
+                    href={offer.qrCodeUrl}
+                    download={`qr-${offer.title?.replace(/\s+/g, '-').toLowerCase()}.png`}
+                  >
+                    <Button size="sm" variant="outline">
+                      <Download className="mr-1 h-4 w-4" /> Download PNG
+                    </Button>
+                  </a>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const w = window.open('', '_blank')
+                      if (!w) return
+                      w.document.write(`
+                        <html>
+                          <head><title>Print QR - ${offer.title}</title></head>
+                          <body style="text-align:center;padding:40px;font-family:sans-serif;">
+                            <h2>${offer.title}</h2>
+                            <img src="${offer.qrCodeUrl}" style="width:300px;height:300px;object-contain;" />
+                            <p style="margin-top:24px;color:#666;">Scan this QR code to redeem your offer.</p>
+                            <script>
+                              window.onload = function() { window.print(); window.close(); }
+                            <\/script>
+                          </body>
+                        </html>
+                      `)
+                      w.document.close()
+                    }}
+                  >
+                    <Printer className="mr-1 h-4 w-4" /> Print QR
+                  </Button>
+                </div>
+                <p className="text-center text-xs text-muted-foreground">
+                  Employees scan this QR to access the offer and redeem it in-store.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-3 py-4">
+                <QrCode className="h-10 w-10 text-muted-foreground/50" />
+                <p className="text-sm text-muted-foreground">
+                  QR code will be generated once the offer is submitted or approved.
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* 8. Images */}
       {Array.isArray(offer.imageUrls) && offer.imageUrls.length > 0 && (
         <Card>
@@ -340,7 +429,7 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
       <ConfirmDialog
         open={deleteOpen}
         title="Delete Offer"
-        message={`Are you sure you want to delete "${offer.title}"? This will archive the offer and it will no longer be visible to employees.`}
+        message={`Are you sure you want to delete "${offer.title}"? This will permanently remove the offer.`}
         confirmLabel="Delete"
         loading={deleteOffer.isPending}
         onConfirm={async () => {
@@ -356,6 +445,39 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
         }}
         onCancel={() => setDeleteOpen(false)}
       />
+
+      <ConfirmDialog
+        open={revokeOpen}
+        title="Revoke Offer"
+        message={`Are you sure you want to revoke "${offer.title}"? This will deactivate the offer and it will no longer be visible to employees. You can delete it afterwards.`}
+        confirmLabel="Revoke"
+        loading={revokeOffer.isPending}
+        onConfirm={async () => {
+          if (!revokeReason.trim()) {
+            showToast({ type: 'error', title: 'Required', description: 'Please provide a reason for revocation' })
+            return
+          }
+          try {
+            await revokeOffer.mutateAsync({ id: offer.id, reason: revokeReason.trim() })
+            showToast({ type: 'success', title: 'Offer revoked' })
+            setRevokeOpen(false)
+            setRevokeReason('')
+          } catch (err: any) {
+            showToast({ type: 'error', title: 'Failed', description: err.message })
+          }
+        }}
+        onCancel={() => { setRevokeOpen(false); setRevokeReason('') }}
+      >
+        <div className="space-y-2">
+          <label className="text-sm font-medium">Reason for revocation</label>
+          <textarea
+            className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            placeholder="Explain why you are revoking this offer..."
+            value={revokeReason}
+            onChange={(e) => setRevokeReason(e.target.value)}
+          />
+        </div>
+      </ConfirmDialog>
     </div>
   )
 }

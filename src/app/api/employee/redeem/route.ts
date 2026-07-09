@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
       return badRequest(eligibility.reason ?? 'Not eligible to redeem this offer')
     }
 
-    const offer = await prisma.merchantOffer.findUnique({ where: { id: offerId } })
+    const offer = await prisma.merchantOffer.findFirst({ where: { id: offerId, deletedAt: null } })
     if (!offer) return notFound('Offer not found')
 
     // Branch validation (required for IN_STORE_QR, optional for others)

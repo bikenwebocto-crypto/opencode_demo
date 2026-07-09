@@ -76,8 +76,8 @@ export async function validateReplacement(
     targetOfferId: string
   },
 ): Promise<{ target: TargetOfferLite }> {
-  const target = await prisma.merchantOffer.findUnique({
-    where: { id: args.targetOfferId },
+  const target = await prisma.merchantOffer.findFirst({
+    where: { id: args.targetOfferId, deletedAt: null },
     select: {
       id: true,
       status: true,

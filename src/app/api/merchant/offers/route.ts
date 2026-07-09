@@ -125,6 +125,7 @@ async function checkDuplicateOffer(
     where: {
       merchantId,
       title: { equals: title, mode: "insensitive" },
+      deletedAt: null,
       status: {
         in: [
           OfferStatus.LIVE,
@@ -154,7 +155,7 @@ export async function GET(request: NextRequest) {
     const q = searchParams.get("q");
     const scope = searchParams.get("scope"); // 'live', 'history', 'drafts'
 
-    const where: any = { merchantId: merchant.id };
+    const where: any = { merchantId: merchant.id, deletedAt: null };
     if (status) where.status = status;
     if (q)
       where.OR = [
@@ -185,7 +186,7 @@ export async function GET(request: NextRequest) {
 
     // Get current live offer separately
     const currentLive = await prisma.merchantOffer.findFirst({
-      where: { merchantId: merchant.id, status: "LIVE" },
+      where: { merchantId: merchant.id, status: "LIVE", deletedAt: null },
       include: {
         _count: { select: { redemptions: true } },
         replacementReqAsNew: {
@@ -203,6 +204,7 @@ export async function GET(request: NextRequest) {
           where: {
             merchantId: merchant.id,
             replacesOfferId: currentLive.id,
+            deletedAt: null,
             status: {
               in: [
                 "VALIDATION_IN_PROGRESS",
@@ -245,6 +247,12 @@ export async function POST(request: NextRequest) {
     if (!merchant) return unauthorized();
 
     const body = await request.json();
+    console.log("[MERCHANT OFFERS POST] Incoming body keys:", Object.keys(body));
+    console.log("[MERCHANT OFFERS POST] redemptionType:", body.redemptionType);
+    console.log("[MERCHANT OFFERS POST] saveAsDraft:", body.saveAsDraft);
+    console.log("[MERCHANT OFFERS POST] replacesOfferId:", body.replacesOfferId);
+    console.log("[MERCHANT OFFERS POST] redemptionCode present:", !!body.redemptionCode);
+
     const {
       title,
       description,
@@ -269,7 +277,6 @@ export async function POST(request: NextRequest) {
       saveAsDraft,
       redemptionType,
       bookingUrl,
-      qrCodeUrl,
     } = body;
 
     if (
@@ -354,6 +361,7 @@ export async function POST(request: NextRequest) {
       const existingDraft = await prisma.merchantOffer.findFirst({
         where: {
           merchantId: merchant.id,
+          deletedAt: null,
           status: { in: ['DRAFT', 'VALIDATION_FAILED', 'CHANGES_REQUESTED'] },
           id: { not: body.excludeId ?? '' },
         },
@@ -370,14 +378,19 @@ export async function POST(request: NextRequest) {
       qcResult = runQualityChecks(body);
     }
 
+    console.log('[MERCHANT OFFERS POST] saveAsDraft:', saveAsDraft);
+    console.log('[MERCHANT OFFERS POST] qcResult.passed:', qcResult.passed);
+    console.log('[MERCHANT OFFERS POST] qcResult.errors:', qcResult.errors);
+
     // After validation, offers go to AWAITING_APPROVAL or VALIDATION_FAILED
     // VALIDATION_IN_PROGRESS is only for transient background processing
-    console.log('** Quality check result:', qcResult);
     const targetStatus = saveAsDraft
       ? "DRAFT"
       : qcResult.passed
         ? "AWAITING_APPROVAL"
         : "VALIDATION_FAILED";
+
+    console.log('[MERCHANT OFFERS POST] targetStatus:', targetStatus);
 
     // Auto-generate offer code for ONLINE_CODE type
     let offerCodeValue: string | null = null;
@@ -431,10 +444,10 @@ export async function POST(request: NextRequest) {
         redemptionType: redemptionType ?? null,
         offerCode: offerCodeValue,
         bookingUrl: bookingUrl ?? null,
-        qrCodeUrl: qrCodeUrl ?? null,
       },
     });
     console.log('** Created offer with ID:', offer.id, 'Status:', offer.status);
+
     // Post-creation actions for passing offers
     if (!saveAsDraft && qcResult.passed) {
       if (replacesOfferId) {
@@ -488,7 +501,7 @@ export async function POST(request: NextRequest) {
       } else {
         // Prevent duplicate queue items
         const existingItems = await prisma.actionQueueItem.findMany({
-          where: { referenceId: merchant.id, type: 'OFFER_APPROVAL', status: 'PENDING' },
+          where: { referenceId: merchant.id, type: 'FIRST_OFFER_APPROVAL', status: 'PENDING' },
         });
         const hasExisting = existingItems.some((i) => {
           const meta = i.metadata as Record<string, unknown> | null;
@@ -497,7 +510,7 @@ export async function POST(request: NextRequest) {
         if (!hasExisting) {
           await prisma.actionQueueItem.create({
             data: {
-              type: "OFFER_APPROVAL",
+              type: "FIRST_OFFER_APPROVAL",
               title: `Offer Approval: ${title}`,
               description: `Merchant ${merchant.businessName} submitted an offer for approval`,
               referenceId: merchant.id,
@@ -564,7 +577,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const deletableStatuses = ['DRAFT', 'VALIDATION_FAILED', 'REJECTED', 'EXPIRED', 'REPLACED', 'AWAITING_APPROVAL','ARCHIVED'];
+    const deletableStatuses = ['DRAFT', 'VALIDATION_FAILED', 'REJECTED', 'EXPIRED', 'REPLACED', 'AWAITING_APPROVAL', 'ARCHIVED'];
 
     const offers = await prisma.merchantOffer.findMany({
       where: { id: { in: idList }, merchantId: merchant.id },
@@ -584,16 +597,16 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // If any of the offers are LIVE, archive those live offers first
-    if (offers.some((o) => o.status === 'LIVE')) {
-      await prisma.merchantOffer.updateMany({
-        where: { id: { in: idList }, merchantId: merchant.id, status: 'LIVE' },
-        data: { status: 'ARCHIVED' },
-      });
-    }
+    const offerIds = offers.map(o => o.id);
 
-    await prisma.merchantOffer.deleteMany({
-      where: { id: { in: idList }, merchantId: merchant.id },
+    // Soft delete all offers — set deletedAt, keep all data and storage assets intact
+    await prisma.merchantOffer.updateMany({
+      where: { id: { in: offerIds }, merchantId: merchant.id },
+      data: {
+        deletedAt: new Date(),
+        deletedById: merchant.id,
+        deletedByRole: 'merchant',
+      },
     });
 
     for (const offer of offers) {

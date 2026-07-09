@@ -13,8 +13,8 @@ export async function GET(
     if ('inactive' in employee) return companyInactive(employee.companyStatus)
     const { id } = await params
 
-    const offer = await prisma.merchantOffer.findUnique({
-      where: { id },
+    const offer = await prisma.merchantOffer.findFirst({
+      where: { id, deletedAt: null },
       include: {
         merchant: {
           include: {

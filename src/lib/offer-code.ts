@@ -11,7 +11,7 @@ export async function generateUniqueOfferCode(
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const code = generateOfferCode()
     const existing = await prisma.merchantOffer.findFirst({
-      where: { offerCode: code },
+      where: { offerCode: code, deletedAt: null },
       select: { id: true },
     })
     if (!existing) return code

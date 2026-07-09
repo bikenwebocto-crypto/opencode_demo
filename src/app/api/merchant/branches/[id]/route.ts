@@ -256,7 +256,7 @@ export async function PATCH(
           status: 'PENDING',
           priority: 2,
           metadata: {
-            queueType: 'PROFILE_CHANGE_APPROVAL',
+            queueType: 'PROFILE_EDIT_REQUEST',
             branchId: id,
             branchName: existing.name,
             changedFields: locationCheck.fields,

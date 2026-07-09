@@ -105,7 +105,7 @@ export function LoginClient({ branding }: LoginClientProps) {
         <Auth
           supabaseClient={supabase}
           appearance={{ theme: ThemeSupa }}
-          providers={["google", "github"]}
+          providers={[]}
         />
       </div>
     </LoginLayoutRenderer>

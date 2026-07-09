@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/services/audit-log.service";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { getEntityKindFromReferenceType } from "@/lib/action-queue-types";
+import { ensureOfferQRCode } from "@/lib/offer-qr";
 
 function unauthorized() {
   return NextResponse.json(
@@ -72,8 +73,8 @@ async function loadEntity(queueItem: {
       (meta.offerId as string | undefined) ??
       (meta.newOfferId as string | undefined) ??
       queueItem.referenceId;
-    const offer = await prisma.merchantOffer.findUnique({
-      where: { id: offerId },
+    const offer = await prisma.merchantOffer.findFirst({
+      where: { id: offerId, deletedAt: null },
       include: {
         merchant: {
           select: {
@@ -98,8 +99,8 @@ async function loadEntity(queueItem: {
     });
 
     if (isReplacement && meta.currentOfferId) {
-      const currentOffer = await prisma.merchantOffer.findUnique({
-        where: { id: meta.currentOfferId as string },
+      const currentOffer = await prisma.merchantOffer.findFirst({
+        where: { id: meta.currentOfferId as string, deletedAt: null },
         include: {
           merchant: {
             select: {
@@ -197,12 +198,29 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    console.log("=========================================");
+    console.log("[ACTION-QUEUE POST] Request received");
+    console.log("=========================================");
+
     const user = await getCurrentUser();
+    console.log("[ACTION-QUEUE POST] Authenticated user:", {
+      userId: user?.id,
+      userType: user?.userType,
+      profileId: user?.profileId,
+    });
     if (!user || user.userType !== "admin") return unauthorized();
 
     const { id } = await params;
     const body = await request.json();
     const { action, rejectionReason, remark, edits } = body;
+
+    console.log("[ACTION-QUEUE POST] Request payload:", {
+      queueItemId: id,
+      action,
+      hasRejectionReason: !!rejectionReason?.trim(),
+      hasRemark: !!remark?.trim(),
+      hasEdits: !!edits,
+    });
 
     if (!action) return badRequest("Action is required");
 
@@ -211,7 +229,20 @@ export async function POST(
     });
     if (!queueItem) return notFound();
 
+    console.log("[ACTION-QUEUE POST] Queue item found:", {
+      id: queueItem.id,
+      type: queueItem.type,
+      status: queueItem.status,
+      referenceType: queueItem.referenceType,
+      referenceId: queueItem.referenceId,
+      metadata: queueItem.metadata,
+    });
+
     if (queueItem.status === "COMPLETED" || queueItem.status === "FAILED") {
+      console.error(
+        "[ACTION-QUEUE POST] ❌ Queue item already finalized. Status:",
+        queueItem.status,
+      );
       return badRequest("This item has already been finalized");
     }
 
@@ -220,6 +251,7 @@ export async function POST(
     const now = new Date();
 
     if (action === "APPROVE") {
+      console.log("[ACTION-QUEUE POST] Action: APPROVE");
       await performApprove(queueItem, adminId, now);
       return NextResponse.json({ success: true, message: "Item approved" });
     }
@@ -278,10 +310,10 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
       /**
        * Merchant application approval
        */
-      case "MERCHANT_APPLICATION": {
-        console.log("[MERCHANT_APPLICATION] Starting merchant approval...");
+      case "NEW_MERCHANT_APPLICATION": {
+        console.log("[NEW_MERCHANT_APPLICATION] Starting merchant approval...");
         console.log(
-          `[MERCHANT_APPLICATION] Reference ID: ${queueItem.referenceId}`,
+          `[NEW_MERCHANT_APPLICATION] Reference ID: ${queueItem.referenceId}`,
         );
 
         const merchant = await prisma.merchant.findUnique({
@@ -290,12 +322,12 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
 
         if (!merchant) {
           console.error(
-            `[MERCHANT_APPLICATION] ❌ Merchant not found: ${queueItem.referenceId}`,
+            `[NEW_MERCHANT_APPLICATION] ❌ Merchant not found: ${queueItem.referenceId}`,
           );
           throw new Error(`Merchant not found: ${queueItem.referenceId}`);
         }
 
-        console.log(`[MERCHANT_APPLICATION] ✅ Merchant found:`, {
+        console.log(`[NEW_MERCHANT_APPLICATION] ✅ Merchant found:`, {
           id: merchant.id,
           businessName: merchant.businessName,
           status: merchant.status,
@@ -310,7 +342,7 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
             approvedById: adminId,
           },
         });
-        console.log(`[MERCHANT_APPLICATION] ✅ Merchant status updated`);
+        console.log(`[NEW_MERCHANT_APPLICATION] ✅ Merchant status updated`);
 
         await prisma.merchantStatusHistory.create({
           data: {
@@ -322,7 +354,7 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
             reason: "Approved via action queue",
           },
         });
-        console.log(`[MERCHANT_APPLICATION] ✅ Status history created`);
+        console.log(`[NEW_MERCHANT_APPLICATION] ✅ Status history created`);
 
         break;
       }
@@ -330,22 +362,22 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
       /**
        * First offer approval
        */
-      case "OFFER_APPROVAL": {
+      case "FIRST_OFFER_APPROVAL": {
         const offerId = meta.offerId ?? queueItem.referenceId;
 
-        console.log(`[OFFER_APPROVAL] Starting offer approval...`);
-        console.log(`[OFFER_APPROVAL] Offer ID: ${offerId}`);
+        console.log(`[FIRST_OFFER_APPROVAL] Starting offer approval...`);
+        console.log(`[FIRST_OFFER_APPROVAL] Offer ID: ${offerId}`);
 
-        const offer = await prisma.merchantOffer.findUnique({
-          where: { id: offerId },
+        const offer = await prisma.merchantOffer.findFirst({
+          where: { id: offerId, deletedAt: null },
         });
 
         if (!offer) {
-          console.error(`[OFFER_APPROVAL] ❌ Offer not found: ${offerId}`);
-          throw new Error(`Offer not found: ${offerId}`);
+          console.error(`[FIRST_OFFER_APPROVAL] ❌ Offer not found or was deleted: ${offerId}`);
+          throw new Error(`Offer not found or was deleted: ${offerId}`);
         }
 
-        console.log(`[OFFER_APPROVAL] ✅ Offer found:`, {
+        console.log(`[FIRST_OFFER_APPROVAL] ✅ Offer found:`, {
           id: offer.id,
           title: offer.title,
           status: offer.status,
@@ -361,7 +393,18 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
             reviewedBy: adminId,
           },
         });
-        console.log(`[OFFER_APPROVAL] ✅ Offer updated to LIVE`);
+        console.log(`[FIRST_OFFER_APPROVAL] ✅ Offer updated to LIVE`);
+
+        // Generate QR for IN_STORE_QR offers upon approval
+        console.log('[FIRST_OFFER_APPROVAL] offer.redemptionType:', offer.redemptionType);
+        if (offer.redemptionType === 'IN_STORE_QR') {
+          console.log('[FIRST_OFFER_APPROVAL] ✅ IN_STORE_QR detected, triggering QR generation for offer:', offer.id);
+          ensureOfferQRCode(offer.id).catch((err) =>
+            console.error('[FIRST_OFFER_APPROVAL] QR generation failed:', err),
+          )
+        } else {
+          console.log('[FIRST_OFFER_APPROVAL] ⏭️ Skipping QR (redemptionType !== IN_STORE_QR):', offer.redemptionType);
+        }
 
         await prisma.merchant.update({
           where: { id: offer.merchantId },
@@ -371,7 +414,7 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
             approvedById: adminId,
           },
         });
-        console.log(`[OFFER_APPROVAL] ✅ Merchant updated to ACTIVE`);
+        console.log(`[FIRST_OFFER_APPROVAL] ✅ Merchant updated to ACTIVE`);
 
         break;
       }
@@ -388,15 +431,15 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
         );
         console.log(`[OFFER_REPLACEMENT] New Offer ID: ${newOfferId}`);
 
-        const newOffer = await prisma.merchantOffer.findUnique({
-          where: { id: newOfferId },
+        const newOffer = await prisma.merchantOffer.findFirst({
+          where: { id: newOfferId, deletedAt: null },
         });
 
         if (!newOffer) {
           console.error(
-            `[OFFER_REPLACEMENT] ❌ Replacement offer not found: ${newOfferId}`,
+            `[OFFER_REPLACEMENT] ❌ Replacement offer not found or was deleted: ${newOfferId}`,
           );
-          throw new Error(`Replacement offer not found: ${newOfferId}`);
+          throw new Error(`Replacement offer not found or was deleted: ${newOfferId}`);
         }
 
         console.log(`[OFFER_REPLACEMENT] ✅ New offer found:`, {
@@ -435,6 +478,17 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
         console.log(
           `[OFFER_REPLACEMENT] ✅ Replacement offer activated: ${newOffer.id}`,
         );
+
+        // Generate QR for IN_STORE_QR replacement offers
+        console.log('[OFFER_REPLACEMENT] newOffer.redemptionType:', newOffer.redemptionType);
+        if (newOffer.redemptionType === 'IN_STORE_QR') {
+          console.log('[OFFER_REPLACEMENT] ✅ IN_STORE_QR detected, triggering QR generation for new offer:', newOffer.id);
+          ensureOfferQRCode(newOffer.id).catch((err) =>
+            console.error('[OFFER_REPLACEMENT] QR generation failed:', err),
+          )
+        } else {
+          console.log('[OFFER_REPLACEMENT] ⏭️ Skipping QR (redemptionType !== IN_STORE_QR):', newOffer.redemptionType);
+        }
 
         break;
       }
@@ -494,7 +548,7 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
  * Profile edit request approval (Merchant Profile Changes)
  */
 case "PROFILE_EDIT_REQUEST":
-case "PROFILE_CHANGE_APPROVAL": {
+case "PROFILE_EDIT_REQUEST": {
   console.log(`[PROFILE_EDIT_REQUEST] Starting profile edit approval...`);
   console.log(`[PROFILE_EDIT_REQUEST] Reference ID: ${queueItem.referenceId}`);
   console.log(`[PROFILE_EDIT_REQUEST] Meta:`, meta);
@@ -761,8 +815,8 @@ async function performReject(
       (meta.offerId as string | undefined) ??
       (meta.newOfferId as string | undefined) ??
       queueItem.referenceId;
-    const offer = await prisma.merchantOffer.findUnique({
-      where: { id: offerId },
+    const offer = await prisma.merchantOffer.findFirst({
+      where: { id: offerId, deletedAt: null },
     });
     if (offer) {
       await prisma.merchantOffer.update({
