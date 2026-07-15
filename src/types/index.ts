@@ -294,7 +294,7 @@ export interface OfferWithMerchant {
 
 export interface RedemptionWithDetails {
   id: string;
-  redemptionCode: string;
+  redemptionCode: string | null;
   discountAmount: number;
   spentAmount: number | null;
   savingsAmount: number;

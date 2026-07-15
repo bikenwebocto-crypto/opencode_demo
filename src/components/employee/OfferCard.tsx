@@ -19,6 +19,7 @@ export interface OfferCardData {
   isFeatured?: boolean;
   isExclusive?: boolean;
   endDate: string | Date;
+  redemptionType: string | null;
   merchant: {
     id: string;
     businessName: string;
@@ -137,6 +138,18 @@ export function OfferCard({ offer, onRedeem }: Props) {
         <div className="absolute right-3 top-3">
           <SaveButton offerId={offer.id} initialSaved={offer.isSaved} size="sm" />
         </div>
+
+        {/* Redemption Type Badge */}
+        {offer.redemptionType && (
+          <div className="absolute right-3 top-12">
+            <Badge variant="secondary" className="text-[10px] shadow-md bg-white/90 text-foreground">
+              {offer.redemptionType === 'IN_STORE_QR' ? 'In-Store' :
+               offer.redemptionType === 'ONLINE_CODE' ? 'Online' :
+               offer.redemptionType === 'BOOKING_LINK' ? 'Booking' :
+               offer.redemptionType}
+            </Badge>
+          </div>
+        )}
 
         {/* Discount Badge - Bottom right */}
         {discountLabel() && (

@@ -12,6 +12,7 @@ export type PublicBranding = {
   accentColor: string | null
   textColor: string | null
   cardBackground: string | null
+  backgroundImageUrl: string | null
   layout: string
   showLogo: boolean
   showHeading: boolean
@@ -38,6 +39,7 @@ function mapBrandingToPublic(row: {
   description: string | null
   logoUrl: string | null
   bannerUrl: string | null
+  backgroundImageUrl: string | null
   primaryColor: string | null
   secondaryColor: string | null
   accentColor: string | null
@@ -58,6 +60,7 @@ function mapBrandingToPublic(row: {
     tagline: row.tagline,
     heading: row.heading,
     description: row.description,
+    backgroundImageUrl: row.backgroundImageUrl,
     logoUrl: row.logoUrl,
     bannerUrl: row.bannerUrl,
     primaryColor: row.primaryColor,
@@ -107,6 +110,7 @@ export async function getPublicBranding(): Promise<PublicBranding> {
         footerTitle: null,
         footerDescription: null,
         copyright: null,
+        backgroundImageUrl: null,
       }
 
   cachedBranding = result

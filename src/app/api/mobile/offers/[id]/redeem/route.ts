@@ -1,28 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import {
-  internalError,
-  notFound,
-  badRequest,
-} from '@/lib/employee-helpers'
+import { internalError, notFound, badRequest } from '@/lib/employee-helpers'
 import { getAuthenticatedMobileEmployee } from '@/lib/mobile-auth'
-import {
-  checkRedemptionEligibility,
-  generateRedemptionCode,
-} from '@/lib/offer-visibility'
-import {
-  encodeMethod,
-  REDEMPTION_METHODS,
-  type RedemptionMethod,
-} from '@/lib/redemption-status'
+import { checkRedemptionEligibility } from '@/lib/offer-visibility'
+import { encodeMethod } from '@/lib/redemption-status'
 import { createAuditLog } from '@/services/audit-log.service'
 
-// POST /api/mobile/offers/[id]/redeem
-//
-// Mirrors the web `/api/employee/redeem` POST handler 1:1 so the mobile
-// app gets identical redemption semantics (eligibility check via
-// `checkRedemptionEligibility`, branch validation, code generation, audit
-// log, view count increment).
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -34,70 +17,52 @@ export async function POST(
     if (!offerId) return badRequest('Offer id is required')
 
     const body = await request.json()
-    const { method, branchId, notes, spentAmount } = body ?? {}
-
-    if (!method || !REDEMPTION_METHODS.includes(method as RedemptionMethod)) {
-      return badRequest(`method must be one of: ${REDEMPTION_METHODS.join(', ')}`)
-    }
+    const { branchId, notes, spentAmount } = body ?? {}
 
     const eligibility = await checkRedemptionEligibility(offerId, auth.employee.id)
     if (!eligibility.eligible) {
       return badRequest(eligibility.reason ?? 'Not eligible to redeem this offer')
     }
 
-    const offer = await prisma.merchantOffer.findUnique({ where: { id: offerId } })
+    const offer = await prisma.merchantOffer.findFirst({
+      where: { id: offerId, deletedAt: null },
+      include: { merchant: { select: { id: true, businessName: true, website: true } } },
+    })
     if (!offer) return notFound('Offer not found')
 
-    // Branch validation based on redemption type
-    let validBranchId: string | null = null
+    const redemptionType = offer.redemptionType
+    if (!redemptionType) {
+      return badRequest('This offer does not have a redemption type configured')
+    }
+
+    let validBranch: any = null
     if (branchId) {
       const branch = await prisma.merchantBranch.findFirst({
         where: { id: branchId, merchantId: offer.merchantId, deletedAt: null },
       })
       if (!branch) return badRequest('Invalid branchId for this offer')
-      validBranchId = branch.id
+      validBranch = branch
+    }
+    if (redemptionType === 'IN_STORE_QR' && !validBranch) {
+      return badRequest('Branch is required for in-store QR redemptions')
     }
 
-    const redemptionType = offer.redemptionType || 'IN_STORE_QR'
-    if (redemptionType === 'IN_STORE_QR' && !validBranchId) {
-      return badRequest('Branch is required for in-store QR redemptions')
+    if (redemptionType === 'ONLINE_CODE' && !offer.offerCode) {
+      return badRequest('This offer does not have a valid offer code')
+    }
+    if (redemptionType === 'BOOKING_LINK' && !offer.bookingUrl) {
+      return badRequest('This offer does not have a booking link')
     }
 
     const discountAmount = Number(offer.discountValue ?? 0)
     const spent = spentAmount ? Number(spentAmount) : 0
-    const savings = method === 'IN_STORE' ? discountAmount : Math.max(0, discountAmount - spent)
+    const savings = redemptionType === 'IN_STORE_QR' ? discountAmount : Math.max(0, discountAmount - spent)
 
-    // Redemption code handling based on type
-    let redemptionCode: string
-    let status: string
-    let message: string
+    const status = redemptionType === 'IN_STORE_QR' ? 'PENDING' : 'CONFIRMED'
 
-    switch (redemptionType) {
-      case 'ONLINE_CODE':
-        if (!offer.offerCode) {
-          return badRequest('This offer does not have a valid offer code')
-        }
-        redemptionCode = offer.offerCode
-        status = 'CONFIRMED'
-        message = `Use code ${offer.offerCode} at checkout. ${offer.bookingUrl ? `Visit: ${offer.bookingUrl}` : ''}`
-        break
-
-      case 'BOOKING_LINK':
-        if (!offer.bookingUrl) {
-          return badRequest('This offer does not have a booking link')
-        }
-        redemptionCode = `BOOKING-${Date.now().toString(36).toUpperCase()}`
-        status = 'CONFIRMED'
-        message = `Complete your booking at: ${offer.bookingUrl}`
-        break
-
-      case 'IN_STORE_QR':
-      default:
-        redemptionCode = generateRedemptionCode()
-        status = 'PENDING'
-        message = 'Redemption submitted. Show this code to the merchant.'
-        break
-    }
+    const method = redemptionType === 'ONLINE_CODE' ? 'ONLINE' as const
+      : redemptionType === 'BOOKING_LINK' ? 'ONLINE' as const
+      : 'IN_STORE' as const
 
     const redemption = await prisma.redemption.create({
       data: {
@@ -105,25 +70,21 @@ export async function POST(
         offerId: offer.id,
         employeeId: auth.employee.id,
         companyId: auth.employee.companyId,
-        redemptionCode,
         discountAmount,
         spentAmount: spent || null,
         savingsAmount: savings,
-        branchId: validBranchId,
-        merchantNotes: encodeMethod(method as RedemptionMethod),
+        branchId: validBranch?.id ?? null,
+        merchantNotes: encodeMethod(method),
         employeeNotes: notes ?? null,
-        isVerified: redemptionType !== 'IN_STORE_QR',
-        verifiedAt: redemptionType !== 'IN_STORE_QR' ? new Date() : null,
+        isVerified: status === 'CONFIRMED',
+        verifiedAt: status === 'CONFIRMED' ? new Date() : null,
         redeemedAt: new Date(),
       },
     })
 
     await prisma.merchantOffer.update({
       where: { id: offerId },
-      data: {
-        currentRedemptions: { increment: 1 },
-        viewCount: { increment: 0 },
-      },
+      data: { currentRedemptions: { increment: 1 } },
     })
 
     void createAuditLog({
@@ -136,28 +97,47 @@ export async function POST(
         offerId,
         merchantId: offer.merchantId,
         method,
-        branchId: validBranchId,
+        branchId: validBranch?.id ?? null,
         redemptionType,
         offerCode: redemptionType === 'ONLINE_CODE' ? offer.offerCode : null,
         loginSource: 'mobile',
       },
     })
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: {
-          id: redemption.id,
-          redemptionCode: redemption.redemptionCode,
-          method,
-          status,
-          message,
-          offerCode: redemptionType === 'ONLINE_CODE' ? offer.offerCode : undefined,
-          bookingUrl: redemptionType === 'BOOKING_LINK' ? offer.bookingUrl : undefined,
-        },
-      },
-      { status: 201 },
-    )
+    const data: Record<string, unknown> = { id: redemption.id, type: redemptionType, status }
+
+    if (redemptionType === 'IN_STORE_QR' && validBranch) {
+      const lat = validBranch.latitude ? Number(validBranch.latitude) : null
+      const lng = validBranch.longitude ? Number(validBranch.longitude) : null
+      data.merchant = { businessName: offer.merchant.businessName, website: offer.merchant.website }
+      data.branch = {
+        name: validBranch.name,
+        addressLine1: validBranch.addressLine1,
+        addressLine2: validBranch.addressLine2,
+        city: validBranch.city,
+        state: validBranch.state,
+        postalCode: validBranch.postalCode,
+        phone: validBranch.phone,
+        latitude: lat,
+        longitude: lng,
+        openingHours: validBranch.openingHours,
+        googleMapsUrl: lat && lng ? `https://www.google.com/maps?q=${lat},${lng}` : null,
+      }
+      data.instructions = offer.redemptionInstructions
+    }
+
+    if (redemptionType === 'ONLINE_CODE') {
+      data.offerCode = offer.offerCode
+      data.merchantWebsite = offer.bookingUrl
+      data.instructions = offer.redemptionInstructions
+    }
+
+    if (redemptionType === 'BOOKING_LINK') {
+      data.bookingUrl = offer.bookingUrl
+      data.instructions = offer.redemptionInstructions
+    }
+
+    return NextResponse.json({ success: true, data }, { status: 201 })
   } catch (error) {
     return internalError(error)
   }

@@ -80,7 +80,7 @@ export async function ensureOfferQRCode(
     console.log('---------------------------------')
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
-    const qrPayload = `${baseUrl}/employee/offers/${offer.id}`
+    const qrPayload = `${baseUrl}/api/mobile/offers/${offer.id}/scan?token=${qrToken}`
 
     console.log('Generating PNG...')
     console.log('QR Payload URL:', qrPayload)

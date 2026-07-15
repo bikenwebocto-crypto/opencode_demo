@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import {
   LayoutDashboard,
   Store,
@@ -22,7 +21,6 @@ import {
   Upload,
   LogOut,
   Zap,
-  Sparkles,
   Search,
   RefreshCw,
   Bookmark,
@@ -30,6 +28,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase/client'
+import type { PublicBranding } from '@/features/admin/settings/login-branding/services/login-branding.service'
 
 interface NavItem {
   label: string
@@ -44,12 +43,13 @@ interface SidebarProps {
   userEmail?: string
   userRole?: string | null
   companyName?: string | null
+  branding?: PublicBranding | null
   onLogout?: () => void
 }
 
 const navConfig: Record<string, NavItem[]> = {
   admin: [
-      { label: 'Overview', href: '/admin', icon: LayoutDashboard },
+    { label: 'Overview', href: '/admin', icon: LayoutDashboard },
     { label: 'Action Queue', href: '/admin/action-queue', icon: Zap },
     { label: 'Replacement Reviews', href: '/admin/offers/replacements', icon: RefreshCw },
     { label: 'Recycle Bin', href: '/admin/offers/deleted', icon: Trash2 },
@@ -58,10 +58,8 @@ const navConfig: Record<string, NavItem[]> = {
     { label: 'Companies', href: '/admin/companies', icon: Building2 },
     { label: 'Employees', href: '/admin/employees', icon: Users },
     { label: 'CSV Uploads', href: '/admin/csv-uploads', icon: Upload },
-    // { label: 'Content', href: '/admin/content', icon: Sparkles },
-    // { label: 'Reports', href: '/admin/reports', icon: BarChart3 },
     { label: 'Audit Logs', href: '/admin/audit-logs', icon: Search },
-    { label: 'Billing', href: '/admin/billing', icon: CreditCard },
+    // { label: 'Billing', href: '/admin/billing', icon: CreditCard },
     { label: 'Settings', href: '/admin/settings', icon: Settings },
     { label: 'Login Branding', href: '/admin/settings/login-branding', icon: Palette },
   ],
@@ -78,7 +76,6 @@ const navConfig: Record<string, NavItem[]> = {
   company_admin: [
     { label: 'Overview', href: '/company', icon: LayoutDashboard },
     { label: 'Employees', href: '/company/employees', icon: Users },
-    // { label: 'Analytics', href: '/company/analytics', icon: BarChart3 },
     { label: 'Billing', href: '/company/billing', icon: CreditCard },
     { label: 'Settings', href: '/company/settings', icon: Settings },
   ],
@@ -93,24 +90,18 @@ const navConfig: Record<string, NavItem[]> = {
   ],
 }
 
-export function Sidebar({ userType, userName, userEmail, userRole, companyName }: SidebarProps) {
+export function Sidebar({ userType, userName, userEmail, userRole, companyName, branding }: SidebarProps) {
   const pathname = usePathname()
   const navItems = navConfig[userType] ?? []
   const router = useRouter()
-  const displayName = userType === 'company_admin' ? userName : userName
-  const userCompany = companyName
+  const displayName = userName
   const initials = displayName?.charAt(0)?.toUpperCase() ?? 'U'
 
-  const logout = async() => {
+  const logout = async () => {
     try {
-      // await fetch('/api/auth/logout', {
-      //   method: 'POST',
-      // })
-     const res = await supabase.auth.signOut()
-    //  console.log('Logout response:', res) 
-     router.push('/login')
-    } 
-    catch (error) {
+      await supabase.auth.signOut()
+      router.push('/login')
+    } catch (error) {
       console.error('Logout failed:', error)
     }
   }
@@ -118,9 +109,12 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName }
   return (
     <aside className="sticky fixed left-0 top-0 z-40 flex h-dvh w-64 flex-col border-r bg-card">
       {/* Logo */}
-      <div className="flex h-14 items-center gap-2 border-b px-6">
-        <Gift className="h-6 w-6 text-primary" />
-        <span className="text-lg font-bold">Perks Platform</span>
+      <div className="relative flex h-14 items-center gap-2 border-b px-6">
+        <img
+          src={branding?.logoUrl ?? '/logo.png'}
+          alt=""
+          className="p-2 pointer-events-none absolute inset-0 h-full select-none object-content"
+        />
       </div>
 
       {/* User info */}
@@ -131,11 +125,11 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName }
         <div className="flex-1 overflow-hidden">
           <p className="truncate text-sm font-medium">{displayName ?? 'NA'}</p>
           <p className="truncate text-xs text-muted-foreground">{userEmail ?? 'NA'}</p>
-          {userCompany && (
-            <p className="truncate text-xs text-muted-foreground">{userCompany}</p>
+          {companyName && (
+            <p className="truncate text-xs text-muted-foreground">{companyName}</p>
           )}
           {userRole && (
-            <span className="inline-block mt-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+            <span className="mt-0.5 inline-block rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
               {userRole.replace(/_/g, ' ')}
             </span>
           )}
@@ -143,19 +137,18 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName }
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-3">
+      <nav className="flex-1 overflow-y-auto p-3">
         <ul className="space-y-1">
-            {navItems.map((item) => {
-                const isActive = pathname === item.href
-
-              return (
+          {navItems.map((item) => {
+            const isActive = pathname === item.href
+            return (
               <li key={item.href}>
                 <Link
                   href={item.href}
                   className={cn(
                     'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                     isActive
-                      ? 'bg-primary/10 text-primary demo'
+                      ? 'bg-primary/10 text-primary'
                       : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                   )}
                 >
@@ -175,11 +168,9 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName }
 
       {/* Logout */}
       <div className="border-t p-3">
-        <Button variant="ghost" onClick={logout} className="w-full justify-start gap-3 text-muted-foreground" asChild>
-          <Link href="/login">
-            <LogOut className="h-4 w-4" />
-            Sign Out
-          </Link>
+        <Button variant="ghost" onClick={logout} className="w-full justify-start gap-3 text-muted-foreground">
+          <LogOut className="h-4 w-4" />
+          Sign Out
         </Button>
       </div>
     </aside>

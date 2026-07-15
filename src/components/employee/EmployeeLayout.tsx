@@ -24,27 +24,6 @@ export function EmployeeLayout({ children }: Props) {
 
   return (
     <div className="space-y-6">
-      <nav className="flex flex-wrap items-center gap-1 rounded-lg border bg-card p-1 text-sm">
-        {NAV_ITEMS.map((item) => {
-          const active = pathname === item.href || (item.href !== '/employee' && pathname.startsWith(item.href))
-          const Icon = item.icon
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 transition-colors',
-                active
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {item.label}
-            </Link>
-          )
-        })}
-      </nav>
       {children}
     </div>
   )

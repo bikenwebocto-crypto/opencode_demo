@@ -3,21 +3,19 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, QrCode, Store, Globe, Hash, Tag, CheckCircle2 } from 'lucide-react'
+import { X, Tag, CheckCircle2, Copy, ExternalLink, MapPin, Phone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { showToast } from '@/hooks/use-toast'
-import {
-  REDEMPTION_METHODS,
-  METHOD_LABELS,
-  type RedemptionMethod,
-} from '@/lib/redemption-status'
 
 export interface RedeemModalOffer {
   id: string
   title: string
   discountValue: number | string
+  redemptionType: string | null
+  offerCode?: string | null
+  bookingUrl?: string | null
   merchant: { id: string; businessName: string; logoUrl: string | null }
-  branches?: { id: string; name: string; branchType: string }[]
+  branches?: { id: string; name: string; branchType: string; addressLine1: string; city: string; state: string | null; phone?: string | null }[]
 }
 
 interface Props {
@@ -26,22 +24,16 @@ interface Props {
   offer: RedeemModalOffer | null
 }
 
-const METHOD_ICONS: Record<RedemptionMethod, React.ElementType> = {
-  IN_STORE: Store,
-  ONLINE: Globe,
-  QR_CODE: QrCode,
-  MANUAL_CODE: Hash,
-}
-
 export function RedeemModal({ open, onClose, offer }: Props) {
   const router = useRouter()
   const queryClient = useQueryClient()
-  
-  // ✅ ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURN
-  const [method, setMethod] = useState<RedemptionMethod>('IN_STORE')
+
   const [branchId, setBranchId] = useState<string>('')
   const [notes, setNotes] = useState('')
-  const [result, setResult] = useState<{ redemptionCode: string; status: string } | null>(null)
+  const [result, setResult] = useState<any>(null)
+  const [copied, setCopied] = useState(false)
+
+  const redemptionType = offer?.redemptionType
 
   const redeemMutation = useMutation({
     mutationFn: async () => {
@@ -49,8 +41,7 @@ export function RedeemModal({ open, onClose, offer }: Props) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          offerId: offer?.id,  // ✅ Use optional chaining
-          method,
+          offerId: offer?.id,
           branchId: branchId || null,
           notes: notes.trim() || null,
         }),
@@ -60,28 +51,27 @@ export function RedeemModal({ open, onClose, offer }: Props) {
       return json
     },
     onSuccess: (json) => {
-      setResult({ redemptionCode: json.data.redemptionCode, status: json.data.status })
+      setResult(json.data)
       queryClient.invalidateQueries({ queryKey: ['employee-redemptions'] })
       queryClient.invalidateQueries({ queryKey: ['employee-dashboard-stats'] })
       showToast({
         type: 'success',
         title: 'Redemption submitted',
-        description: 'Show this code to the merchant.',
+        description: 'Offer redeemed successfully.',
       })
     },
     onError: (e: any) =>
       showToast({ type: 'error', title: 'Redemption failed', description: e?.message }),
   })
 
-  // ✅ NOW conditional returns are safe (after all hooks)
   if (!open || !offer) return null
 
   function handleClose() {
     onClose()
     setResult(null)
-    setMethod('IN_STORE')
     setBranchId('')
     setNotes('')
+    setCopied(false)
   }
 
   function handleViewRedemptions() {
@@ -89,6 +79,13 @@ export function RedeemModal({ open, onClose, offer }: Props) {
     router.push('/employee/redemptions')
   }
 
+  function handleCopy(text: string) {
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  // ── Result state ──────────────────────────────────
   if (result) {
     return (
       <div
@@ -105,14 +102,97 @@ export function RedeemModal({ open, onClose, offer }: Props) {
               <X className="h-4 w-4" />
             </button>
           </div>
-          <h2 className="mt-3 text-lg font-semibold">Redemption submitted</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Show this code to the merchant to confirm your offer.
-          </p>
-          <div className="mt-4 rounded-md border bg-muted/30 p-3 text-center">
-            <p className="text-xs text-muted-foreground">Redemption code</p>
-            <p className="mt-1 font-mono text-lg font-bold tracking-wider">{result.redemptionCode}</p>
-          </div>
+          <h2 className="mt-3 text-lg font-semibold">
+            {result.type === 'IN_STORE_QR' ? 'Redemption submitted' :
+             result.type === 'ONLINE_CODE' ? 'Your promo code is ready' :
+             result.type === 'BOOKING_LINK' ? 'Booking link ready' :
+             'Redemption completed'}
+          </h2>
+
+          {result.type === 'ONLINE_CODE' && result.offerCode ? (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Use this code at checkout on the merchant website.
+              </p>
+              <div className="rounded-md border bg-muted/30 p-4 text-center">
+                <p className="text-xs text-muted-foreground">Promo Code</p>
+                <p className="mt-1 font-mono text-2xl font-bold tracking-widest">{result.offerCode}</p>
+              </div>
+              <Button className="w-full" variant="outline" onClick={() => handleCopy(result.offerCode)}>
+                <Copy className="mr-1 h-4 w-4" />
+                {copied ? 'Copied!' : 'Copy Code'}
+              </Button>
+              {result.merchantWebsite && (
+                <a
+                  href={result.merchantWebsite}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  <ExternalLink className="h-4 w-4" /> Visit Website
+                </a>
+              )}
+              {result.instructions && (
+                <p className="text-xs text-muted-foreground">{result.instructions}</p>
+              )}
+            </div>
+          ) : result.type === 'BOOKING_LINK' && result.bookingUrl ? (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Complete your booking on the merchant's platform.
+              </p>
+              <a
+                href={result.bookingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              >
+                <ExternalLink className="h-4 w-4" /> Open Booking Website
+              </a>
+              {result.instructions && (
+                <p className="text-xs text-muted-foreground">{result.instructions}</p>
+              )}
+            </div>
+          ) : result.type === 'IN_STORE_QR' && result.branch ? (
+            <div className="mt-4 space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Visit the store below to redeem your offer in person.
+              </p>
+              <div className="rounded-md border bg-muted/30 p-4 space-y-2">
+                <p className="font-semibold">{result.branch.name}</p>
+                <p className="text-sm text-muted-foreground">
+                  {result.branch.addressLine1}
+                  {result.branch.addressLine2 ? `, ${result.branch.addressLine2}` : ''}
+                  {result.branch.city ? `, ${result.branch.city}` : ''}
+                  {result.branch.state ? `, ${result.branch.state}` : ''}
+                  {result.branch.postalCode ? ` ${result.branch.postalCode}` : ''}
+                </p>
+                {result.branch.phone && (
+                  <p className="flex items-center gap-1 text-sm text-muted-foreground">
+                    <Phone className="h-4 w-4" /> {result.branch.phone}
+                  </p>
+                )}
+                {result.branch.googleMapsUrl && (
+                  <a
+                    href={result.branch.googleMapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                  >
+                    <MapPin className="h-4 w-4" /> Open in Google Maps
+                  </a>
+                )}
+              </div>
+              {result.instructions && (
+                <p className="text-sm text-muted-foreground">{result.instructions}</p>
+              )}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Your redemption has been recorded.
+            </p>
+          )}
+
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="outline" onClick={handleClose}>
               Close
@@ -124,6 +204,7 @@ export function RedeemModal({ open, onClose, offer }: Props) {
     )
   }
 
+  // ── Form state ────────────────────────────────────
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
@@ -145,53 +226,67 @@ export function RedeemModal({ open, onClose, offer }: Props) {
         </div>
 
         <div className="mt-4 space-y-3">
-          <div>
-            <label className="mb-2 block text-xs font-medium text-muted-foreground">
-              Redemption method *
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {REDEMPTION_METHODS.map((m) => {
-                const Icon = METHOD_ICONS[m]
-                const active = method === m
-                return (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setMethod(m)}
-                    className={`flex items-center gap-2 rounded-md border p-2 text-left text-sm transition-colors ${
-                      active
-                        ? 'border-primary bg-primary/5 text-primary'
-                        : 'hover:border-muted-foreground/30'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {METHOD_LABELS[m]}
-                  </button>
-                )
-              })}
+          {/* Type badge */}
+          {redemptionType && (
+            <div className="rounded-md bg-muted/30 p-3">
+              <p className="text-xs font-medium text-muted-foreground">Redemption type</p>
+              <p className="mt-0.5 text-sm font-semibold">
+                {redemptionType === 'IN_STORE_QR' ? 'In-Store (QR Code)' :
+                 redemptionType === 'ONLINE_CODE' ? 'Online Code' :
+                 redemptionType === 'BOOKING_LINK' ? 'Booking Link' :
+                 redemptionType}
+              </p>
             </div>
-          </div>
+          )}
 
-          {offer.branches && offer.branches.length > 0 && (
+          {/* Unknown / unconfigured redemption type */}
+          {!redemptionType && (
+            <div className="rounded-md border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-200">
+              <p className="font-medium">Redemption type not configured</p>
+              <p className="mt-1 text-xs">
+                This offer cannot be redeemed because the merchant has not specified a redemption method.
+              </p>
+            </div>
+          )}
+
+          {/* IN_STORE_QR: branch selector */}
+          {redemptionType === 'IN_STORE_QR' && offer.branches && offer.branches.length > 0 && (
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Branch (optional)
+                Select a store branch *
               </label>
               <select
                 className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 value={branchId}
                 onChange={(e) => setBranchId(e.target.value)}
               >
-                <option value="">— Not specific —</option>
+                <option value="">— Select a branch —</option>
                 {offer.branches.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.name} ({b.branchType})
+                    {b.name} — {b.addressLine1}, {b.city}
                   </option>
                 ))}
               </select>
             </div>
           )}
 
+          {/* ONLINE_CODE: info text */}
+          {redemptionType === 'ONLINE_CODE' && (
+            <div className="rounded-md border p-3 text-sm text-muted-foreground">
+              <MapPin className="mb-1 h-4 w-4" />
+              <p>This offer provides a promo code for use on the merchant's website. You will receive the code after confirming.</p>
+            </div>
+          )}
+
+          {/* BOOKING_LINK: info text */}
+          {redemptionType === 'BOOKING_LINK' && offer.bookingUrl && (
+            <div className="rounded-md border p-3 text-sm text-muted-foreground">
+              <ExternalLink className="mb-1 h-4 w-4" />
+              <p>You will be redirected to the merchant's booking page after confirming.</p>
+            </div>
+          )}
+
+          {/* Notes (optional) */}
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
               Notes (optional)
@@ -210,13 +305,26 @@ export function RedeemModal({ open, onClose, offer }: Props) {
           <Button type="button" variant="outline" onClick={handleClose}>
             Cancel
           </Button>
-          <Button 
-            type="button" 
-            onClick={() => redeemMutation.mutate()} 
-            disabled={redeemMutation.isPending || !offer}  // ✅ Also disable if no offer
+          <Button
+            type="button"
+            onClick={() => redeemMutation.mutate()}
+            disabled={
+              redeemMutation.isPending ||
+              !offer ||
+              !redemptionType ||
+              (redemptionType === 'IN_STORE_QR' && !branchId)
+            }
           >
             <Tag className="mr-1 h-4 w-4" />
-            {redeemMutation.isPending ? 'Submitting…' : 'Confirm redemption'}
+            {redeemMutation.isPending
+              ? 'Submitting…'
+              : !redemptionType
+                ? 'Cannot Redeem'
+                : redemptionType === 'IN_STORE_QR'
+                  ? 'Confirm In-Store Redemption'
+                  : redemptionType === 'ONLINE_CODE'
+                    ? 'Get Promo Code'
+                    : 'Get Booking Link'}
           </Button>
         </div>
       </div>

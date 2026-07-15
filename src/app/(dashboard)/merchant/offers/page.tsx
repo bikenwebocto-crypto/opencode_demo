@@ -259,7 +259,7 @@ export default function MerchantOffersPage() {
             <Gift className="mx-auto h-8 w-8 text-muted-foreground/50 mb-2" />
             <p className="text-sm text-muted-foreground">No live offer currently</p>
             <Link href="/merchant/offers/create">
-              <Button size="sm" className="mt-3"><Plus className="mr-1 h-3.5 w-3.5" /> Create Offer</Button>
+              <Button size="sm" className="mt-3"><Plus className="mr-1 h-3.5 w-3.5" id="create-offer" /> Create Offer</Button>
             </Link>
           </CardContent>
         </Card>

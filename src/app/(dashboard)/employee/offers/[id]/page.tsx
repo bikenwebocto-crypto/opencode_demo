@@ -134,6 +134,9 @@ export default function EmployeeOfferDetailPage() {
     id: o.id,
     title: o.title,
     discountValue: o.discountValue,
+    redemptionType: o.redemptionType,
+    offerCode: o.offerCode,
+    bookingUrl: o.bookingUrl,
     merchant: o.merchant,
     branches: o.merchant.branches,
   }
@@ -285,6 +288,86 @@ export default function EmployeeOfferDetailPage() {
           </CardContent>
         </Card>
 
+        {/* Redemption Type Specific Cards — shown at top after merchant info */}
+        {o.redemptionType === 'ONLINE_CODE' && o.offerCode && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Your Offer Code</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between rounded-md border p-4">
+                <div>
+                  <p className="text-2xl font-bold tracking-wider">{o.offerCode}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Use this code at checkout on the merchant website
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigator.clipboard.writeText(o.offerCode!)}
+                >
+                  Copy Code
+                </Button>
+              </div>
+              {o.bookingUrl && (
+                <div className="mt-4">
+                  <a
+                    href={o.bookingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex animate-pulse items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                  >
+                    Visit merchant website →
+                  </a>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {o.redemptionType === 'BOOKING_LINK' && o.bookingUrl && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Book This Offer</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-3 text-sm text-muted-foreground">
+                Click below to complete your booking on the merchant's platform.
+              </p>
+              <a
+                href={o.bookingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex animate-pulse items-center gap-2 rounded-md bg-primary px-6 py-3 text-base font-bold text-primary-foreground hover:bg-primary/90 shadow-lg"
+              >
+                Book Now
+              </a>
+            </CardContent>
+          </Card>
+        )}
+
+        {o.redemptionType === 'IN_STORE_QR' && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Redeem In-Store</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Show your QR code at the merchant location. The merchant will scan it to generate your redemption code.
+              </p>
+              <Button
+                className="mt-3"
+                variant="outline"
+                disabled={!canRedeem}
+                onClick={() => setRedeemOffer(redeemModalOffer)}
+              >
+                <Tag className="mr-2 h-4 w-4" /> Show QR Code
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {o.description && (
           <Card>
             <CardHeader>
@@ -341,86 +424,6 @@ export default function EmployeeOfferDetailPage() {
             </CardHeader>
             <CardContent>
               <p className="whitespace-pre-wrap text-sm">{o.redemptionInstructions}</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Redemption Type Specific Cards */}
-        {o.redemptionType === 'ONLINE_CODE' && o.offerCode && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Your Offer Code</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between rounded-md border p-4">
-                <div>
-                  <p className="text-2xl font-bold tracking-wider">{o.offerCode}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Use this code at checkout on the merchant website
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigator.clipboard.writeText(o.offerCode!)}
-                >
-                  Copy Code
-                </Button>
-              </div>
-              {o.bookingUrl && (
-                <div className="mt-4">
-                  <a
-                    href={o.bookingUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 text-sm text-primary hover:underline"
-                  >
-                    Visit merchant website →
-                  </a>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {o.redemptionType === 'BOOKING_LINK' && o.bookingUrl && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Book This Offer</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="mb-3 text-sm text-muted-foreground">
-                Click below to complete your booking on the merchant's platform.
-              </p>
-              <a
-                href={o.bookingUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-              >
-                Book Now
-              </a>
-            </CardContent>
-          </Card>
-        )}
-
-        {o.redemptionType === 'IN_STORE_QR' && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Redeem In-Store</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Show your QR code at the merchant location. The merchant will scan it to generate your redemption code.
-              </p>
-              <Button
-                className="mt-3"
-                variant="outline"
-                disabled={!canRedeem}
-                onClick={() => setRedeemOffer(redeemModalOffer)}
-              >
-                <Tag className="mr-2 h-4 w-4" /> Show QR Code
-              </Button>
             </CardContent>
           </Card>
         )}

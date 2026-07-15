@@ -36,7 +36,7 @@ export default function EmployeeOffersPage() {
     queryKey: ['employee-offers', params.toString()],
     queryFn: () => fetchOffers(params),
   })
-
+  console.log('Rendering OfferCard for offer:', data) // Debugging log
   return (
     <EmployeeLayout>
       <div className="space-y-4">

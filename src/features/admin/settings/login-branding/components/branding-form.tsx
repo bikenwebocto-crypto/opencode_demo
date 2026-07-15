@@ -42,6 +42,7 @@ export function BrandingForm() {
   const [showPreview, setShowPreview] = useState(true)
 
   useEffect(() => {
+    console.log('Branding data from useLoginBranding hook:', branding?.backgroundImageUrl, branding?.logoUrl, branding?.bannerUrl)
     if (branding) {
       setFormData({
         appName: branding.appName ?? DEFAULT_DATA.appName,
@@ -147,12 +148,12 @@ export function BrandingForm() {
                 value={formData.logoUrl}
                 onChange={(url) => updateField('logoUrl', url)}
               />
-              <BrandingImageUpload
+              {/* <BrandingImageUpload
                 label="Banner / Hero Image"
                 hint="Recommended: 600x300px"
                 value={formData.bannerUrl}
                 onChange={(url) => updateField('bannerUrl', url)}
-              />
+              /> */}
               <BrandingImageUpload
                 label="Background Image"
                 hint="Full-screen background image"

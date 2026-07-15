@@ -37,7 +37,7 @@ export function useLoginBranding() {
       showToast({ type: 'error', title: error.message })
     },
   })
-
+  console.log('Login Branding Data:', query.data)
   return {
     branding: query.data,
     isLoading: query.isLoading,

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 import { checkEmailConfiguration } from '@/lib/email/email.examples'
+import { getPublicBranding } from '@/features/admin/settings/login-branding/services/login-branding.service'
+import { cookies } from "next/headers";
 
 const dashboardMap: Record<string, string> = {
   SUPER_ADMIN: '/admin',
@@ -11,6 +13,21 @@ const dashboardMap: Record<string, string> = {
 }
 
 export async function POST(request: NextRequest) {
+  const branding = await getPublicBranding();
+  // console.log(' ** Branding in sync-admin route:', branding);
+  const cookieStore = await cookies();
+
+  cookieStore.set(
+    "branding",
+    JSON.stringify(branding),
+    {
+      maxAge: 60 * 60, // 1 hour
+      path: "/",
+    }
+  );
+    // const data = cookieStore.get("branding")?.value;
+    // console.log(' ** Branding in sync-admin route from sessionStorage:', data);
+
   const supabase = await createClient()
   const authHeader = request.headers.get('Authorization')
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
@@ -25,14 +42,14 @@ export async function POST(request: NextRequest) {
       { status: 401 }
     )
   }
-
+  
   const email = user.email!
-  console.log('Email :' , email, user.id);
+  // console.log('Email :' , email, user.id);
   // ── Step 1: Check existing Account ──────────────────────
   const existingAccount = await prisma.account.findUnique({
     where: { authUserId: user.id },
   })
-  console.log('existing account:',existingAccount);
+  // console.log('existing account:',existingAccount);
   if (existingAccount) {
     if (existingAccount.status !== 'ACTIVE') {
       return NextResponse.json(
@@ -137,3 +154,4 @@ export async function POST(request: NextRequest) {
     redirectTo,
   })
 }
+

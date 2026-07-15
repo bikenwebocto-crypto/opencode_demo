@@ -48,27 +48,98 @@ type EntityKind =
   | "RENEWAL_ALERT"
   | "UNKNOWN";
 
+function isOfferQueue(type: string): boolean {
+  return [
+    "FIRST_OFFER_APPROVAL",
+    "OFFER_APPROVAL",
+    "OFFER_REPLACEMENT",
+    "OFFER_EDIT",
+    "OFFER_REVIEW",
+  ].includes(type);
+}
+
 async function loadEntity(queueItem: {
-  id: string;
-  referenceType: string;
-  referenceId: string;
-  type: string;
-  metadata: any;
-}) {
-  const meta = (queueItem.metadata as Record<string, unknown> | null) ?? {};
-  const kind: EntityKind = getEntityKindFromReferenceType(
-    queueItem.referenceType,
-  ) as EntityKind;
-  const isReplacement = queueItem.type === "OFFER_REPLACEMENT";
+                                    id: string;
+                                    referenceType: string;
+                                    referenceId: string;
+                                    type: string;
+                                    metadata: any;
+                                  }) 
+  {
+      const meta = (queueItem.metadata as Record<string, unknown> | null) ?? {};
+      const kind: EntityKind = getEntityKindFromReferenceType(
+        queueItem.referenceType,
+      ) as EntityKind;
+      const isReplacement = queueItem.type === "OFFER_REPLACEMENT";
 
-  if (kind === "MERCHANT") {
-    return prisma.merchant.findUnique({
-      where: { id: queueItem.referenceId },
-      include: { category: true },
-    });
-  }
+      if (isOfferQueue(queueItem.type)) {
+        const offerId =
+          (meta.offerId as string | undefined) ??
+          (meta.newOfferId as string | undefined) ??
+          queueItem.referenceId;
 
-  if (kind === "MERCHANT_OFFER") {
+        const offer = await prisma.merchantOffer.findFirst({
+          where: {
+            id: offerId,
+            deletedAt: null,
+          },
+          include: {
+            merchant: {
+              select: {
+                id: true,
+                businessName: true,
+                status: true,
+                logoUrl: true,
+                city: true,
+                state: true,
+                categoryId: true,
+                contactName: true,
+                contactPhone: true,
+                description: true,
+                website: true,
+                addressLine1: true,
+                addressLine2: true,
+                postalCode: true,
+              },
+            },
+            replacesOffer: true,
+          },
+        });
+
+        if (!offer) {
+          return null;
+        }
+
+        if (isReplacement && meta.currentOfferId) {
+          const currentOffer = await prisma.merchantOffer.findFirst({
+            where: {
+              id: meta.currentOfferId as string,
+              deletedAt: null,
+            },
+            include: {
+              merchant: {
+                select: {
+                  id: true,
+                  businessName: true,
+                  status: true,
+                  logoUrl: true,
+                  city: true,
+                  state: true,
+                },
+              },
+            },
+          });
+
+          return {
+            ...offer,
+            currentOffer,
+          };
+        }
+
+        return offer;
+      }
+
+    if (kind === "MERCHANT_OFFER") {
     const offerId =
       (meta.offerId as string | undefined) ??
       (meta.newOfferId as string | undefined) ??
@@ -118,6 +189,15 @@ async function loadEntity(queueItem: {
     }
     return offer;
   }
+
+  if (kind === "MERCHANT") {
+    return prisma.merchant.findUnique({
+      where: { id: queueItem.referenceId },
+      include: { category: true },
+    });
+  }
+
+
 
   if (kind === "COMPANY") {
     return prisma.company.findUnique({
@@ -172,9 +252,9 @@ export async function GET(
     });
 
     if (!queueItem) return notFound();
-
+    console.log("[ACTION-QUEUE GET] Queue item found:", queueItem)
     const entity = await loadEntity(queueItem);
-
+    console.log('entity loaded:', entity)
     const auditLogs = await prisma.auditLog.findMany({
       where: { entityType: "action_queue", entityId: id },
       orderBy: { createdAt: "desc" },
@@ -774,7 +854,6 @@ for (const field of validFields) {
       } as any,
     });
     console.log(`[AUDIT] ✅ Audit log created`);
-
     console.log("========================================");
     console.log(`✅ APPROVE ACTION QUEUE - SUCCESS`);
     console.log(`Queue ${queueItem.id} completed successfully`);

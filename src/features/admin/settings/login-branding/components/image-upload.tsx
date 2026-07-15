@@ -5,7 +5,7 @@ import type { UploadImageOptions } from '@/lib/upload/image'
 
 const BRANDING_UPLOAD_OPTIONS: UploadImageOptions = {
   bucket: 'offer-images',
-  folder: 'branding',
+  folder: 'Brand_banner',
 }
 
 interface BrandingImageUploadProps {
@@ -23,7 +23,7 @@ export function BrandingImageUpload({ label, hint, value, onChange }: BrandingIm
         uploadMode="immediate"
         uploadOptions={BRANDING_UPLOAD_OPTIONS}
         currentCount={value ? 1 : 0}
-        maxFiles={1}
+        maxFiles={2}
         allowMultiple={false}
         currentImageUrl={value ?? null}
         previewClassName="h-32 w-full rounded-md border object-cover"

@@ -42,7 +42,20 @@ export async function GET(request: NextRequest) {
         orderBy: [{ isFeatured: 'desc' }, { createdAt: 'desc' }],
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: {
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          shortDescription: true,
+          offerType: true,
+          discountValue: true,
+          discountPercent: true,
+          imageUrls: true,
+          isFeatured: true,
+          isExclusive: true,
+          endDate: true,
+          startDate: true,
+          redemptionType: true,
           merchant: {
             select: {
               id: true,

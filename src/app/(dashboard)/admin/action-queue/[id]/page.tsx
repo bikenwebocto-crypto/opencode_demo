@@ -91,6 +91,7 @@ export default function UnifiedReviewPage({ params }: { params: Promise<{ id: st
         setQueueItem(null)
         return
       }
+      console.log('$$$$ Loaded review data:', json.data)
       setQueueItem(json.data.queueItem)
       setEntity(json.data.entity ?? null)
       setAuditLogs(json.data.auditLogs ?? [])

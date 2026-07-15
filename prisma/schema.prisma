@@ -411,7 +411,7 @@ model Redemption {
   offerId        String        @db.Uuid
   employeeId     String        @db.Uuid
   companyId      String        @db.Uuid
-  redemptionCode String        @unique @db.VarChar(100)
+  redemptionCode String?       @db.VarChar(100)
   discountAmount Decimal       @db.Decimal(10, 2)
   spentAmount    Decimal?      @db.Decimal(10, 2)
   savingsAmount  Decimal       @db.Decimal(10, 2)

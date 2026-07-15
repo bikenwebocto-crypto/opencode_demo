@@ -31,9 +31,6 @@ export async function createRedemptionAction(formData: FormData) {
   });
   if (!employee) throw new Error('Employee account is not active');
 
-  // Generate unique redemption code
-  const redemptionCode = `PRK-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-
   const discountAmount = Number(offer.discountValue);
   const savingsAmount = discountAmount;
 
@@ -43,7 +40,6 @@ export async function createRedemptionAction(formData: FormData) {
       offerId,
       employeeId,
       companyId,
-      redemptionCode,
       discountAmount,
       savingsAmount,
       branchId: branchId || null,

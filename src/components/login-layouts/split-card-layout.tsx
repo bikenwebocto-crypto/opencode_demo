@@ -48,14 +48,7 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
 }
 
-function darken(hex: string, amount: number): string {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return hex;
-  const r = Math.max(0, Math.round(rgb.r * (1 - amount)));
-  const g = Math.max(0, Math.round(rgb.g * (1 - amount)));
-  const b = Math.max(0, Math.round(rgb.b * (1 - amount)));
-  return `rgb(${r},${g},${b})`;
-}
+//
 
 export function SplitCardLayout({
   branding,
@@ -79,7 +72,7 @@ export function SplitCardLayout({
         <div
           className="relative overflow-hidden rounded-[28px]"
           style={{
-            backgroundColor: colors.secondary,
+            // backgroundColor: colors.secondary,
             minHeight: compact ? "auto" : "760px",
           }}
         >
@@ -102,7 +95,7 @@ export function SplitCardLayout({
             <img
               src={backgroundImageUrl}
               alt=""
-              className="pointer-events-none absolute inset-0 h-full w-full select-none object-cover opacity-10"
+              className="pointer-events-none absolute inset-0 h-full w-full select-none object-content hidden md:block"
             />
           )}
 
@@ -118,13 +111,13 @@ export function SplitCardLayout({
                   className="h-10 object-contain"
                 />
               )}
-              {appName && (
+              {/* {appName && (
                 <span className="text-lg font-semibold text-white">
                   {appName}
                 </span>
-              )}
+              )} */}
             </div>
-            {!compact && (
+            {/* {!compact && (
               <nav className="flex items-center gap-8 text-sm text-white/70">
                 <a className="cursor-pointer transition-colors hover:text-white">
                   Marketplace
@@ -148,74 +141,77 @@ export function SplitCardLayout({
                   Sign Up
                 </button>
               </nav>
-            )}
+            )} */}
           </header>
 
           {/* Hero grid */}
-          <div
-            className={`relative z-10 ${compact ? "px-6 pb-8" : "grid grid-cols-[65%_35%] px-16"}`}
-          >
-            {/* Left: Banner */}
-            {!compact && (
-              <div className="relative h-[500px]">
-                {branding.showBanner !== false && bannerUrl ? (
-                  <Image
-                    src={bannerUrl}
-                    fill
-                    className="object-contain"
-                    alt="Illustration"
-                  />
-                ) : (
-                  <div className="flex h-full items-center">
-                    <div>
-                      {tagline && (
-                        <span className="block text-sm tracking-[4px] text-white/60">
-                          * {tagline.toUpperCase()} *
-                        </span>
-                      )}
-                      {branding.showHeading !== false && (
-                        <h1 className="mt-2 text-4xl font-bold text-white">
-                          {branding.heading || "Welcome Back"}
-                        </h1>
-                      )}
-                      {branding.showDescription !== false && (
-                        <p className="mt-3 max-w-md text-base text-white/70">
-                          {branding.description ||
-                            "Sign in to continue to your dashboard."}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Right: Login card */}
-            <div className={`flex ${compact ? "w-full" : "justify-center"}`}>
-              <div
-                className={`rounded-[24px] bg-white shadow-xl ${
-                  compact ? "w-full p-6" : "w-[390px] p-5 mt-[120px]"
-                }`}
-              >
-                <span className="text-xs uppercase tracking-[4px] text-slate-400">
-                  {appName
-                    ? `${appName.toUpperCase()} ACCESS`
-                    : "PLATFORM ACCESS"}
+       <div className={`relative z-10 ${compact ? "px-6 pb-8" : "px-4 sm:px-8 md:px-16"}`}>
+  <div className={`${compact ? "" : "grid grid-cols-1 md:grid-cols-[65%_35%] gap-4 md:gap-0"}`}>
+    {/* Left: Banner - Hidden on mobile */}
+    {!compact && (
+      <div className="relative h-[300px] sm:h-[400px] md:h-[500px] hidden md:block">
+        {branding.showBanner !== false && bannerUrl ? (
+          <Image
+            src={bannerUrl}
+            fill
+            className="object-contain"
+            alt="Illustration"
+          />
+        ) : (
+          <div className="flex h-full items-center">
+            <div>
+              {tagline && (
+                <span className="block text-sm tracking-[4px] text-white/60">
+                  * {tagline.toUpperCase()} *
                 </span>
-                <h1
-                  className={`mt-3 font-bold text-gray-900 ${compact ? "text-2xl" : "text-4xl"}`}
-                >
+              )}
+              {branding.showHeading !== false && (
+                <h1 className="mt-2 text-3xl md:text-4xl font-bold text-white">
                   {branding.heading || "Welcome Back"}
                 </h1>
-                <p
-                  className={`mt-2 text-slate-500 ${compact ? "mb-4 text-xs" : "mb-8 text-sm"}`}
-                >
-                  {branding.description || "Sign in to continue"}
+              )}
+              {branding.showDescription !== false && (
+                <p className="mt-3 max-w-md text-sm md:text-base text-white/70">
+                  {branding.description || "Sign in to continue to your dashboard."}
                 </p>
-                {children}
-              </div>
+              )}
             </div>
           </div>
+        )}
+      </div>
+    )}
+
+    {/* Right: Login card - Full width on mobile */}
+    <div className={`flex ${compact ? "w-full" : "justify-center md:justify-center"} ${!compact ? "md:col-start-2" : ""}`}>
+      <div
+        className={`rounded-[24px] bg-white shadow-xl ${
+          compact 
+            ? "w-full p-6" 
+            : "w-full max-w-[390px] p-5 md:mt-[120px] mx-auto md:mx-0"
+        }`}
+      >
+        <span className="text-xs uppercase tracking-[4px] text-slate-400">
+          {appName ? `${appName.toUpperCase()} ACCESS` : "PLATFORM ACCESS"}
+        </span>
+        <h1
+          className={`mt-3 font-bold text-gray-900 ${
+            compact ? "text-2xl" : "text-2xl md:text-4xl"
+          }`}
+        >
+          {branding.heading || "Welcome Back"}
+        </h1>
+        <p
+          className={`mt-2 text-slate-500 ${
+            compact ? "mb-4 text-xs" : "mb-4 md:mb-8 text-sm md:text-base"
+          }`}
+        >
+          {branding.description || "Sign in to continue"}
+        </p>
+        {children}
+      </div>
+    </div>
+  </div>
+</div>
 
           {/* Mobile heading + description */}
           {compact && (
@@ -256,8 +252,8 @@ export function SplitCardLayout({
 
         {/* Floating testimonial */}
         {/* Floating testimonial - WITH SHADOW BACKGROUND */}
-        {!compact  && (
-          <div className="absolute -bottom-4 left-4 w-[calc(100%-2rem)] max-w-[420px] rounded-full bg-white px-4 py-4  shadow-[0_8px_20px_rgba(0,0,0,0.5)] sm:-bottom-6 sm:left-8 sm:px-6 sm:py-5 lg:-bottom-8 lg:left-14 lg:px-8">
+        {!compact && (
+          <div className="absolute -bottom-4 left-4 w-[calc(100%-2rem)] max-w-[420px] rounded-full bg-white px-4 py-4  shadow-[0_8px_20px_rgba(0,0,0,0.5)] lg:-bottom-8 lg:left-14 lg:px-8  md:block hidden">
             <div className="flex items-center gap-3 sm:gap-5">
               {logoUrl ? (
                 <div className="relative h-10 w-10 overflow-hidden sm:h-12 sm:w-fit lg:h-14 lg:w-fit">

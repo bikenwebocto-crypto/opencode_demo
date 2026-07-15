@@ -1,28 +1,37 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { getCurrentUser } from '@/lib/supabase/server';
-import { adminEmployeeActionSchema } from '@/schemas';
-import { createAuditLog, fromCurrentUser } from '@/services/audit-log.service';
-import { validateUserEmail } from '@/services/user-validation.service';
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/supabase/server";
+import { adminEmployeeActionSchema } from "@/schemas";
+import { createAuditLog, fromCurrentUser } from "@/services/audit-log.service";
+import { validateUserEmail } from "@/services/user-validation.service";
 
 function unauthorized() {
   return NextResponse.json(
-    { success: false, error: { code: 'UNAUTHORIZED', message: 'Unauthorized' } },
+    {
+      success: false,
+      error: { code: "UNAUTHORIZED", message: "Unauthorized" },
+    },
     { status: 401 },
   );
 }
 
 function notFound(entity: string) {
   return NextResponse.json(
-    { success: false, error: { code: 'NOT_FOUND', message: `${entity} not found` } },
+    {
+      success: false,
+      error: { code: "NOT_FOUND", message: `${entity} not found` },
+    },
     { status: 404 },
   );
 }
 
 function internalError(error: unknown) {
-  console.error('Employees API error:', error);
+  console.error("Employees API error:", error);
   return NextResponse.json(
-    { success: false, error: { code: 'INTERNAL', message: 'Internal server error' } },
+    {
+      success: false,
+      error: { code: "INTERNAL", message: "Internal server error" },
+    },
     { status: 500 },
   );
 }
@@ -31,29 +40,32 @@ function internalError(error: unknown) {
 export async function GET(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    
+
     if (!user) return unauthorized();
 
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get('status');
-    const companyId = searchParams.get('companyId');
-    const page = Math.max(1, parseInt(searchParams.get('page') ?? '1'));
-    const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get('pageSize') ?? '20')));
-    const q = searchParams.get('q');
+    const status = searchParams.get("status");
+    const companyId = searchParams.get("companyId");
+    const page = Math.max(1, parseInt(searchParams.get("page") ?? "1"));
+    const pageSize = Math.min(
+      100,
+      Math.max(1, parseInt(searchParams.get("pageSize") ?? "20")),
+    );
+    const q = searchParams.get("q");
 
     const where: Record<string, unknown> = { deletedAt: null };
-    if (status && status !== 'ALL') where.status = status;
-    if (companyId && companyId !== 'ALL') where.companyId = companyId;
+    if (status && status !== "ALL") where.status = status;
+    if (companyId && companyId !== "ALL") where.companyId = companyId;
     let matchingAccountIds: string[] = [];
     if (q) {
       const matchingAccounts = await prisma.account.findMany({
-        where: { email: { contains: q, mode: 'insensitive' } },
+        where: { email: { contains: q, mode: "insensitive" } },
         select: { authUserId: true },
       });
       matchingAccountIds = matchingAccounts.map((a) => a.authUserId);
       (where as any).OR = [
-        { firstName: { contains: q, mode: 'insensitive' } },
-        { lastName: { contains: q, mode: 'insensitive' } },
+        { firstName: { contains: q, mode: "insensitive" } },
+        { lastName: { contains: q, mode: "insensitive" } },
       ];
       if (matchingAccountIds.length > 0) {
         (where as any).OR.push({ accountId: { in: matchingAccountIds } });
@@ -63,15 +75,34 @@ export async function GET(request: NextRequest) {
     const [employees, total] = await Promise.all([
       prisma.employee.findMany({
         where: where as any,
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
         include: {
-          company: { select: { id: true, name: true, slug: true } },
-          _count: { select: { redemptions: true } },
+          company: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+            },
+          },
+          account: {
+            select: {
+              authUserId: true,
+              email: true,
+              status: true,
+            },
+          },
+          _count: {
+            select: {
+              redemptions: true,
+            },
+          },
         },
       }),
-      prisma.employee.count({ where: where as any }),
+      prisma.employee.count({
+        where: where as any,
+      }),
     ]);
 
     return NextResponse.json({
@@ -95,22 +126,44 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    if (!user || user.userType !== 'admin') return unauthorized();
+    if (!user || user.userType !== "admin") return unauthorized();
 
     const body = await request.json();
-    const { email, firstName, lastName, companyId, department, jobTitle, employeeId, phone, joinMethod } = body;
+    const {
+      email,
+      firstName,
+      lastName,
+      companyId,
+      department,
+      jobTitle,
+      employeeId,
+      phone,
+      joinMethod,
+    } = body;
 
     if (!email || !firstName || !lastName || !companyId) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION', message: 'Missing required fields: email, firstName, lastName, companyId' } },
+        {
+          success: false,
+          error: {
+            code: "VALIDATION",
+            message:
+              "Missing required fields: email, firstName, lastName, companyId",
+          },
+        },
         { status: 400 },
       );
     }
 
-    const company = await prisma.company.findUnique({ where: { id: companyId } });
+    const company = await prisma.company.findUnique({
+      where: { id: companyId },
+    });
     if (!company || company.deletedAt) {
       return NextResponse.json(
-        { success: false, error: { code: 'NOT_FOUND', message: 'Company not found' } },
+        {
+          success: false,
+          error: { code: "NOT_FOUND", message: "Company not found" },
+        },
         { status: 404 },
       );
     }
@@ -118,7 +171,13 @@ export async function POST(request: NextRequest) {
     const validation = await validateUserEmail(email);
     if (validation.exists) {
       return NextResponse.json(
-        { success: false, error: { code: 'EMAIL_ALREADY_EXISTS', message: 'Email is already assigned to another account' } },
+        {
+          success: false,
+          error: {
+            code: "EMAIL_ALREADY_EXISTS",
+            message: "Email is already assigned to another account",
+          },
+        },
         { status: 409 },
       );
     }
@@ -130,9 +189,9 @@ export async function POST(request: NextRequest) {
         data: {
           authUserId: pkId,
           email,
-          role: 'EMPLOYEE',
-          profileType: 'EMPLOYEE',
-          status: 'PENDING',
+          role: "EMPLOYEE",
+          profileType: "EMPLOYEE",
+          status: "PENDING",
         },
       });
 
@@ -147,8 +206,8 @@ export async function POST(request: NextRequest) {
           department,
           jobTitle,
           phone,
-          joinMethod: joinMethod || 'manual',
-          status: 'INVITED',
+          joinMethod: joinMethod || "manual",
+          status: "INVITED",
           invitedAt: new Date(),
           invitedBy: user.id,
         },
@@ -158,7 +217,7 @@ export async function POST(request: NextRequest) {
       });
 
       await createAuditLog(
-        fromCurrentUser(user, 'EMPLOYEE_CREATED', 'employee', employee.id, {
+        fromCurrentUser(user, "EMPLOYEE_CREATED", "employee", employee.id, {
           changes: { email, companyId, department },
         }),
       );
@@ -167,13 +226,19 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json(
-      { success: true, data: result, message: 'Employee created successfully' },
+      { success: true, data: result, message: "Employee created successfully" },
       { status: 201 },
     );
   } catch (error: any) {
-    if (error?.code === 'P2002') {
+    if (error?.code === "P2002") {
       return NextResponse.json(
-        { success: false, error: { code: 'CONFLICT', message: 'An employee with this email already exists' } },
+        {
+          success: false,
+          error: {
+            code: "CONFLICT",
+            message: "An employee with this email already exists",
+          },
+        },
         { status: 409 },
       );
     }
@@ -185,21 +250,41 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    if (!user || user.userType !== 'admin') return unauthorized();
+    if (!user || user.userType !== "admin") return unauthorized();
 
     const body = await request.json();
     const { employeeIds, status, reason } = body;
 
-    if (!employeeIds || !Array.isArray(employeeIds) || employeeIds.length === 0) {
+    if (
+      !employeeIds ||
+      !Array.isArray(employeeIds) ||
+      employeeIds.length === 0
+    ) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION', message: 'employeeIds must be a non-empty array' } },
+        {
+          success: false,
+          error: {
+            code: "VALIDATION",
+            message: "employeeIds must be a non-empty array",
+          },
+        },
         { status: 400 },
       );
     }
 
-    if (!status || !['ACTIVE', 'INACTIVE', 'SUSPENDED', 'INELIGIBLE'].includes(status)) {
+    if (
+      !status ||
+      !["ACTIVE", "INACTIVE", "SUSPENDED", "INELIGIBLE"].includes(status)
+    ) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION', message: 'Invalid status. Must be one of: ACTIVE, INACTIVE, SUSPENDED, INELIGIBLE' } },
+        {
+          success: false,
+          error: {
+            code: "VALIDATION",
+            message:
+              "Invalid status. Must be one of: ACTIVE, INACTIVE, SUSPENDED, INELIGIBLE",
+          },
+        },
         { status: 400 },
       );
     }
@@ -210,9 +295,15 @@ export async function PATCH(request: NextRequest) {
     });
 
     await createAuditLog(
-      fromCurrentUser(user, `EMPLOYEES_BULK_${status}`, 'employee', `bulk-${Date.now()}`, {
-        changes: { employeeIds, status, reason, count: result.count },
-      }),
+      fromCurrentUser(
+        user,
+        `EMPLOYEES_BULK_${status}`,
+        "employee",
+        `bulk-${Date.now()}`,
+        {
+          changes: { employeeIds, status, reason, count: result.count },
+        },
+      ),
     );
 
     return NextResponse.json({
@@ -229,42 +320,57 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    if (!user || user.userType !== 'admin') return unauthorized();
+    if (!user || user.userType !== "admin") return unauthorized();
 
     const { searchParams } = new URL(request.url);
-    const singleId = searchParams.get('id');
-    const idsParam = searchParams.get('ids');
+    const singleId = searchParams.get("id");
+    const idsParam = searchParams.get("ids");
 
     let employeeIds: string[];
 
     if (singleId) {
       employeeIds = [singleId];
     } else if (idsParam) {
-      employeeIds = idsParam.split(',').filter(Boolean);
+      employeeIds = idsParam.split(",").filter(Boolean);
     } else {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION', message: 'Provide "id" for single delete or "ids" (comma-separated) for bulk delete' } },
+        {
+          success: false,
+          error: {
+            code: "VALIDATION",
+            message:
+              'Provide "id" for single delete or "ids" (comma-separated) for bulk delete',
+          },
+        },
         { status: 400 },
       );
     }
 
     if (employeeIds.length === 0) {
       return NextResponse.json(
-        { success: false, error: { code: 'VALIDATION', message: 'At least one employee ID is required' } },
+        {
+          success: false,
+          error: {
+            code: "VALIDATION",
+            message: "At least one employee ID is required",
+          },
+        },
         { status: 400 },
       );
     }
 
     const result = await prisma.employee.updateMany({
       where: { id: { in: employeeIds }, deletedAt: null },
-      data: { deletedAt: new Date(), deletedById: user.id, status: 'INACTIVE' },
+      data: { deletedAt: new Date(), deletedById: user.id, status: "INACTIVE" },
     });
 
     await createAuditLog(
       fromCurrentUser(
         user,
-        employeeIds.length === 1 ? 'EMPLOYEE_DELETED' : 'EMPLOYEES_BULK_DELETED',
-        'employee',
+        employeeIds.length === 1
+          ? "EMPLOYEE_DELETED"
+          : "EMPLOYEES_BULK_DELETED",
+        "employee",
         employeeIds.length === 1 ? employeeIds[0]! : `bulk-${Date.now()}`,
         { changes: { employeeIds, count: result.count } },
       ),

@@ -8,12 +8,10 @@ import { Input } from '@/components/ui/input'
 import { EmployeeLayout } from '@/components/employee/EmployeeLayout'
 import { RedemptionStatusBadge } from '@/components/employee/RedemptionStatusBadge'
 import { METHOD_LABELS, type RedemptionStatus, type RedemptionMethod } from '@/lib/redemption-status'
-import { Search, ShoppingBag, Copy } from 'lucide-react'
-import { showToast } from '@/hooks/use-toast'
+import { Search, ShoppingBag } from 'lucide-react'
 
 interface Redemption {
   id: string
-  redemptionCode: string
   discountAmount: number | string
   savingsAmount: number | string
   spentAmount: number | string | null
@@ -63,18 +61,10 @@ export default function EmployeeRedemptionsPage() {
     if (!search) return true
     const q = search.toLowerCase()
     return (
-      r.redemptionCode.toLowerCase().includes(q) ||
       r.offer.title.toLowerCase().includes(q) ||
       r.merchant.businessName.toLowerCase().includes(q)
     )
   })
-
-  function copy(code: string) {
-    navigator.clipboard?.writeText(code).then(
-      () => showToast({ type: 'success', title: 'Code copied' }),
-      () => showToast({ type: 'error', title: 'Failed to copy' })
-    )
-  }
 
   return (
     <EmployeeLayout>
@@ -92,7 +82,7 @@ export default function EmployeeRedemptionsPage() {
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search by code, offer, or merchant…"
+              placeholder="Search by offer or merchant…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-8"
@@ -140,13 +130,6 @@ export default function EmployeeRedemptionsPage() {
                       {r.method ? ` · ${METHOD_LABELS[r.method]}` : ''}
                     </p>
                     <div className="mt-2 flex items-center gap-3 text-xs">
-                      <button
-                        onClick={() => copy(r.redemptionCode)}
-                        className="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 font-mono text-[10px] hover:bg-muted/70"
-                        title="Click to copy"
-                      >
-                        <Copy className="h-3 w-3" /> {r.redemptionCode}
-                      </button>
                       <span className="text-muted-foreground">
                         {new Date(r.redeemedAt).toLocaleString()}
                       </span>

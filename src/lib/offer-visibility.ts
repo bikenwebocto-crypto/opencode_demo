@@ -57,6 +57,45 @@ export interface RedemptionEligibility {
   reason?: string
 }
 
+export interface QROwnerResult {
+  valid: boolean
+  reason?: string
+  offerId?: string
+  merchantId?: string
+}
+
+export async function verifyOfferQRToken(
+  offerId: string,
+  token: string
+): Promise<QROwnerResult> {
+  const offer = await prisma.merchantOffer.findFirst({
+    where: { id: offerId, deletedAt: null },
+    select: {
+      id: true,
+      merchantId: true,
+      redemptionType: true,
+      metadata: true,
+    },
+  })
+
+  if (!offer) {
+    return { valid: false, reason: 'Offer not found' }
+  }
+
+  if (offer.redemptionType !== 'IN_STORE_QR') {
+    return { valid: false, reason: 'Offer is not an in-store QR offer' }
+  }
+
+  const meta = offer.metadata as Record<string, unknown> | null
+  const storedToken = meta?.qrToken as string | undefined
+
+  if (!storedToken || storedToken !== token) {
+    return { valid: false, reason: 'Invalid or expired QR token' }
+  }
+
+  return { valid: true, offerId: offer.id, merchantId: offer.merchantId }
+}
+
 export async function checkRedemptionEligibility(
   offerId: string,
   employeeId: string
@@ -79,10 +118,4 @@ export async function checkRedemptionEligibility(
   }
 
   return { eligible: true }
-}
-
-export function generateRedemptionCode(): string {
-  const ts = Date.now().toString(36).toUpperCase()
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase()
-  return `RED-${ts}-${rand}`
 }
