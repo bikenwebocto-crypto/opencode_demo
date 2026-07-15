@@ -14,12 +14,12 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      businessName, email, password, contactName, contactPhone,
+      businessName, email, contactName, contactPhone,
       categoryId, description, website,
       addressLine1, addressLine2, city, state, postalCode, country,
     } = body;
 
-    if (!businessName || !email || !password || !contactName) {
+    if (!businessName || !email ||  !contactName) {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION', message: 'Missing required fields: businessName, email, password, contactName' } },
         { status: 400 },

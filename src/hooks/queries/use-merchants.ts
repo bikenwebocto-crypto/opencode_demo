@@ -233,12 +233,14 @@ export function useCreateMerchant() {
 
   return useMutation({
     mutationFn: async (data: Record<string, unknown>) => {
+      console.log('[useCreateMerchant] POST /api/admin/merchants/create:', data);
       const res = await fetch('/api/admin/merchants/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
       const json = await res.json();
+      console.log('[useCreateMerchant] Response:', json);
       if (!res.ok) throw new Error(json.error?.message ?? 'Failed to create merchant');
       return json;
     },

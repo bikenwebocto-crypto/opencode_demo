@@ -12,7 +12,7 @@ import { showToast } from '@/hooks/use-toast'
 interface FormData {
   name: string
   email: string
-  password: string
+  // password: string
   firstName: string
   lastName: string
   phone: string
@@ -41,7 +41,7 @@ export function CompanyForm() {
   const [form, setForm] = useState<FormData>({
     name: '',
     email: '',
-    password: '',
+    // password: '',
     firstName: '',
     lastName: '',
     phone: '',
@@ -73,8 +73,8 @@ export function CompanyForm() {
     if (!form.name.trim()) errs.name = 'Company name is required'
     if (!form.email.trim()) errs.email = 'Email is required'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.email = 'Invalid email address'
-    if (!form.password) errs.password = 'Password is required'
-    else if (form.password.length < 8) errs.password = 'Password must be at least 8 characters'
+    // if (!form.password) errs.password = 'Password is required'
+    // else if (form.password.length < 8) errs.password = 'Password must be at least 8 characters'
     if (!form.firstName.trim()) errs.firstName = 'First name is required'
     if (!form.lastName.trim()) errs.lastName = 'Last name is required'
     setErrors(errs)
@@ -212,11 +212,11 @@ export function CompanyForm() {
               <Input type="email" className={inputClass('email')} value={form.email} onChange={(e) => setField('email', e.target.value)} placeholder="admin@company.com" />
               {errors.email && <p className="mt-1 text-xs text-destructive">{errors.email}</p>}
             </div>
-            <div>
+            {/* <div>
               <label className="mb-1 block text-sm font-medium">Password <span className="text-destructive">*</span></label>
               <Input type="password" className={inputClass('password')} value={form.password} onChange={(e) => setField('password', e.target.value)} placeholder="Min. 8 characters" />
               {errors.password && <p className="mt-1 text-xs text-destructive">{errors.password}</p>}
-            </div>
+            </div> */}
             <div>
               <label className="mb-1 block text-sm font-medium">Phone</label>
               <Input type="tel" value={form.phone} onChange={(e) => setField('phone', e.target.value)} placeholder="+1 555-123-4567" />
