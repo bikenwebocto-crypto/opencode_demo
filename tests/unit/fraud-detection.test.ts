@@ -302,7 +302,7 @@ describe('Fraud Detection Service', () => {
       const randomCodes = ['XYZ789', 'ABC123', 'DEF456', 'GHI789', 'JKL012', 'MNO345', 'PQR678', 'STU901', 'VWX234', 'YZA567', 'BCD890']
       for (let i = 0; i < 11; i++) {
         trackVerificationAttempt({
-          code: randomCodes[i],
+          code: randomCodes[i] as string,
           userId: 'user-123',
           ipAddress: '192.168.1.1',
           deviceId: 'device-123',

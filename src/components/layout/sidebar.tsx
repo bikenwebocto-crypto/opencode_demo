@@ -1,9 +1,11 @@
 'use client'
 
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/button'
+import { Loader2 } from 'lucide-react'
 import {
   LayoutDashboard,
   Store,
@@ -94,8 +96,19 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName, 
   const pathname = usePathname()
   const navItems = navConfig[userType] ?? []
   const router = useRouter()
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null)
   const displayName = userName
   const initials = displayName?.charAt(0)?.toUpperCase() ?? 'U'
+
+  useEffect(() => {
+    setNavigatingTo(null)
+  }, [pathname])
+
+  const handleNavClick = useCallback((href: string) => {
+    if (pathname !== href) {
+      setNavigatingTo(href)
+    }
+  }, [pathname])
 
   const logout = async () => {
     try {
@@ -140,11 +153,13 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName, 
       <nav className="flex-1 overflow-y-auto p-3">
         <ul className="space-y-1">
           {navItems.map((item) => {
-            const isActive = pathname === item.href
+            const isActive = pathname === item.href || (item.href !== '/merchant' && pathname.startsWith(item.href + '/'))
+            const isLoading = navigatingTo === item.href
             return (
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  onClick={() => handleNavClick(item.href)}
                   className={cn(
                     'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                     isActive
@@ -154,7 +169,10 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName, 
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
                   <span className="flex-1 truncate">{item.label}</span>
-                  {item.badge && (
+                  {isLoading && (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                  )}
+                  {!isLoading && item.badge && (
                     <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-medium text-primary-foreground">
                       {item.badge}
                     </span>

@@ -47,6 +47,8 @@ export async function POST(
             branches: { where: { deletedAt: null, status: 'ACTIVE' } },
           },
         },
+        pricing: { select: { configuration: true } },
+        redemption: { select: { redemptionType: true, configuration: true } },
       },
     })
 
@@ -93,7 +95,7 @@ export async function POST(
       )
     }
 
-    if (offer.redemptionType !== 'IN_STORE_QR') {
+    if (offer.redemption?.redemptionType !== 'IN_STORE_QR') {
       return NextResponse.json(
         {
           success: false,
@@ -160,6 +162,9 @@ export async function POST(
 
     const branch = offer.merchant.branches.find((b) => b.id === validBranchId)!
 
+    const pricingConfig = (offer.pricing?.configuration as Record<string, unknown>) ?? {}
+    const discountValue = Number(pricingConfig.amount ?? pricingConfig.percent ?? 0)
+
     const redemption = await prisma.$transaction(async (tx) => {
       const created = await tx.redemption.create({
         data: {
@@ -168,9 +173,9 @@ export async function POST(
           employeeId: auth.employee.id,
           companyId: auth.employee.companyId,
           branchId: validBranchId,
-          discountAmount: offer.discountValue,
+          discountAmount: discountValue,
           spentAmount: null,
-          savingsAmount: offer.discountValue,
+          savingsAmount: discountValue,
           merchantNotes: 'QR_SCAN',
           employeeNotes: null,
           isVerified: true,
@@ -179,8 +184,8 @@ export async function POST(
         },
       })
 
-      await tx.merchantOffer.update({
-        where: { id: offerId },
+      await tx.offerRedemption.update({
+        where: { offerId },
         data: { currentRedemptions: { increment: 1 } },
       })
 

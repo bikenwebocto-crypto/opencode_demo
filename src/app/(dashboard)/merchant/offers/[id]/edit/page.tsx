@@ -13,28 +13,30 @@ export default function EditOfferPage({ params }: { params: Promise<{ id: string
   if (error || !data?.data) return <p className="py-12 text-center text-muted-foreground">Offer not found</p>
 
   const offer = data.data
+  const pricingConfig = (offer.pricing?.configuration as Record<string, unknown>) ?? {}
+  const redemptionConfig = (offer.redemption?.configuration as Record<string, unknown>) ?? {}
 
   return (
     <OfferForm
       offerId={id}
       initialData={{
         title: offer.title ?? '',
-        description: offer.description ?? '',
-        shortDescription: offer.shortDescription ?? '',
-        termsAndConditions: offer.termsAndConditions ?? '',
-        imageUrls: Array.isArray(offer.imageUrls) ? offer.imageUrls : [],
+        description: offer.content?.description ?? '',
+        shortDescription: offer.content?.shortDescription ?? '',
+        termsAndConditions: offer.content?.termsAndConditions ?? '',
+        imageUrls: Array.isArray(offer.content?.imageUrls) ? offer.content.imageUrls : [],
         categoryId: offer.categoryId ?? '',
-        offerType: offer.offerType ?? 'FLAT',
-        discountValue: String(offer.discountValue ?? ''),
-        discountMax: offer.discountMax ? String(offer.discountMax) : '',
-        discountPercent: offer.discountPercent ? String(offer.discountPercent) : '',
-        minimumSpend: offer.minimumSpend ? String(offer.minimumSpend) : '',
-        maxRedemptions: offer.maxRedemptions ? String(offer.maxRedemptions) : '',
+        offerType: offer.offerType ?? 'flat_rate',
+        discountValue: String(pricingConfig.amount ?? pricingConfig.percent ?? ''),
+        discountMax: pricingConfig.maximumDiscount ? String(pricingConfig.maximumDiscount) : '',
+        discountPercent: pricingConfig.percent ? String(pricingConfig.percent) : '',
+        minimumSpend: pricingConfig.minimumSpend ? String(pricingConfig.minimumSpend) : '',
+        maxRedemptions: offer.redemption?.maxRedemptions ? String(offer.redemption.maxRedemptions) : '',
         startDate: offer.startDate ? new Date(offer.startDate).toISOString().slice(0, 16) : '',
         endDate: offer.endDate ? new Date(offer.endDate).toISOString().slice(0, 16) : '',
-        daysOfWeek: Array.isArray(offer.daysOfWeek) ? offer.daysOfWeek.join(',') : '0,1,2,3,4,5,6',
-        redemptionCode: offer.redemptionCode ?? '',
-        redemptionInstructions: offer.redemptionInstructions ?? '',
+        daysOfWeek: Array.isArray(offer.redemption?.daysOfWeek) ? offer.redemption.daysOfWeek.join(',') : '0,1,2,3,4,5,6',
+        redemptionCode: redemptionConfig.code as string ?? '',
+        redemptionInstructions: redemptionConfig.instructions as string ?? '',
       }}
     />
   )

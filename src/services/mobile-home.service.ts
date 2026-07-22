@@ -147,20 +147,29 @@ const liveOfferWhere = (now: Date) => ({
 const offerSelect = {
   id: true,
   title: true,
-  shortDescription: true,
-  imageUrls: true,
   offerType: true,
-  discountValue: true,
-  discountPercent: true,
   startDate: true,
   endDate: true,
   isFeatured: true,
   isExclusive: true,
   createdAt: true,
-  redemptionType: true,
-  offerCode: true,
-  bookingUrl: true,
-  qrCodeUrl: true,
+  content: {
+    select: {
+      shortDescription: true,
+      imageUrls: true,
+    },
+  },
+  pricing: {
+    select: {
+      configuration: true,
+    },
+  },
+  redemption: {
+    select: {
+      redemptionType: true,
+      configuration: true,
+    },
+  },
   merchant: {
     select: {
       id: true,
@@ -217,19 +226,22 @@ function mapOffer(
   o: {
     id: string
     title: string
-    shortDescription: string | null
-    imageUrls: string[]
     offerType: string
-    discountValue: { toString(): string } | number | null
-    discountPercent: number | null
     startDate: Date
     endDate: Date
     isFeatured: boolean
     isExclusive: boolean
-    redemptionType?: string | null
-    offerCode?: string | null
-    bookingUrl?: string | null
-    qrCodeUrl?: string | null
+    content: {
+      shortDescription: string | null
+      imageUrls: string[]
+    } | null
+    pricing: {
+      configuration: Record<string, unknown> | unknown
+    } | null
+    redemption: {
+      redemptionType: string | null
+      configuration: Record<string, unknown> | unknown
+    } | null
     merchant: {
       id: string
       businessName: string
@@ -239,35 +251,32 @@ function mapOffer(
   },
   distance: number | null,
 ): MobileHomeOffer {
-  const discountRaw = o.discountValue as unknown
-  const discountValue =
-    typeof discountRaw === 'number'
-      ? discountRaw
-      : discountRaw && typeof (discountRaw as { toString(): string }).toString === 'function'
-        ? Number((discountRaw as { toString(): string }).toString())
-        : 0
+  const pricingConfig = (o.pricing?.configuration as Record<string, unknown>) ?? {}
+  const redemptionConfig = (o.redemption?.configuration as Record<string, unknown>) ?? {}
+  const discountRaw = pricingConfig.amount ?? pricingConfig.percent ?? 0
+  const discountValue = typeof discountRaw === 'number' ? discountRaw : 0
 
   return {
     id: o.id,
     title: o.title,
-    shortDescription: o.shortDescription,
-    imageUrl: o.imageUrls?.[0] ?? null,
+    shortDescription: o.content?.shortDescription ?? null,
+    imageUrl: o.content?.imageUrls?.[0] ?? null,
     merchantId: o.merchant.id,
     merchantName: o.merchant.businessName,
     merchantLogo: o.merchant.logoUrl,
     category: o.merchant.category,
     offerType: o.offerType,
     discountValue,
-    discountPercent: o.discountPercent,
+    discountPercent: pricingConfig.percent as number ?? null,
     startDate: toIso(o.startDate),
     endDate: toIso(o.endDate),
     isFeatured: o.isFeatured,
     isExclusive: o.isExclusive,
     distance,
-    redemptionType: o.redemptionType ?? null,
-    offerCode: o.offerCode ?? null,
-    bookingUrl: o.bookingUrl ?? null,
-    qrCodeUrl: o.qrCodeUrl ?? null,
+    redemptionType: o.redemption?.redemptionType ?? null,
+    offerCode: redemptionConfig.code as string ?? null,
+    bookingUrl: redemptionConfig.bookingUrl as string ?? null,
+    qrCodeUrl: redemptionConfig.qrCodeUrl as string ?? null,
   }
 }
 
@@ -506,9 +515,9 @@ async function buildPopular(now: Date): Promise<MobileHomeOffer[]> {
   const rows = await prisma.merchantOffer.findMany({
     where: liveOfferWhere(now),
     orderBy: [
-      { currentRedemptions: 'desc' },
-      { viewCount: 'desc' },
-      { saveCount: 'desc' },
+      { redemption: { currentRedemptions: 'desc' } },
+      { analytics: { viewCount: 'desc' } },
+      { analytics: { saveCount: 'desc' } },
     ],
     take: SECTION_LIMITS.popular,
     select: offerSelect,

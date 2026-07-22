@@ -365,27 +365,51 @@ async function main() {
       const tmpl = offerTemplates[i]!;
       const startDate = new Date('2026-01-01');
       const endDate = new Date('2027-01-01');
+      const pricingConfig: Record<string, unknown> = {};
+      if (tmpl.offerType === 'flat_rate' || tmpl.offerType === 'fixed_amount') {
+        pricingConfig.amount = tmpl.discountValue;
+      } else if (tmpl.offerType === 'percentage') {
+        pricingConfig.percent = tmpl.discountPercent ?? tmpl.discountValue;
+      }
+      if ((tmpl as any).minimumSpend != null) {
+        pricingConfig.minimumSpend = (tmpl as any).minimumSpend;
+      }
       await prisma.merchantOffer.create({
         data: {
           merchantId: merchant.id,
           title: `${tmpl.title} at ${merchant.businessName}`,
-          description: tmpl.description,
-          shortDescription: tmpl.title,
           offerType: tmpl.offerType,
-          discountValue: tmpl.discountValue,
-          discountPercent: tmpl.discountPercent ?? null,
-          minimumSpend: (tmpl as any).minimumSpend ?? null,
-          maxRedemptions: 1000,
-          currentRedemptions: Math.floor(Math.random() * 200),
-          viewCount: Math.floor(Math.random() * 1500),
-          saveCount: Math.floor(Math.random() * 300),
           startDate,
           endDate,
-          daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
           isFeatured: i === 0,
           status: 'LIVE',
           submittedAt: startDate,
           liveAt: startDate,
+          content: {
+            create: {
+              shortDescription: tmpl.title,
+              description: tmpl.description,
+            },
+          },
+          pricing: {
+            create: {
+              pricingType: tmpl.offerType,
+              configuration: pricingConfig as any,
+            },
+          },
+          redemption: {
+            create: {
+              maxRedemptions: 1000,
+              currentRedemptions: Math.floor(Math.random() * 200),
+              daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+            },
+          },
+          analytics: {
+            create: {
+              viewCount: Math.floor(Math.random() * 1500),
+              saveCount: Math.floor(Math.random() * 300),
+            },
+          },
         },
       });
     }
@@ -398,15 +422,28 @@ async function main() {
       data: {
         merchantId: pendingMerchant.id,
         title: 'Free Personal Training Session',
-        description: 'New members get a free personal training session. Sign up today!',
         offerType: 'flat_rate',
-        discountValue: 0,
-        maxRedemptions: 500,
         startDate: new Date('2026-06-01'),
         endDate: new Date('2026-12-31'),
-        daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
         status: 'PENDING_APPROVAL',
         submittedAt: new Date('2026-05-27'),
+        redemption: {
+          create: {
+            maxRedemptions: 500,
+            daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+          },
+        },
+        content: {
+          create: {
+            description: 'New members get a free personal training session. Sign up today!',
+          },
+        },
+        pricing: {
+          create: {
+            pricingType: 'flat_rate',
+            configuration: { amount: 0 } as any,
+          },
+        },
       },
     });
   }
@@ -555,7 +592,7 @@ async function main() {
       { key: 'general_platform_name', value: '"Employee Perks Platform"' },
       { key: 'general_support_email', value: '"support@perks.com"' },
       { key: 'general_max_redemptions_per_month', value: '10' },
-      { key: 'general_currency', value: '"USD"' },
+      { key: 'general_currency', value: '"GBP"' },
       { key: 'redemption_require_verification', value: 'true' },
       { key: 'notifications_admin_email', value: '"admin-alerts@perks.com"' },
       { key: 'csv_max_file_size_mb', value: '10' },

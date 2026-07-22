@@ -1,14 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { EmployeeLayout } from '@/components/employee/EmployeeLayout'
 import { RedemptionStatusBadge } from '@/components/employee/RedemptionStatusBadge'
+import { RedeemModal } from '@/components/employee/RedeemModal'
+import { type EmployeeOffer } from '@/components/employee/offers/employee-offer'
 import { METHOD_LABELS, type RedemptionStatus, type RedemptionMethod } from '@/lib/redemption-status'
-import { Search, ShoppingBag } from 'lucide-react'
+import { Search, ShoppingBag, ExternalLink } from 'lucide-react'
 
 interface Redemption {
   id: string
@@ -18,7 +20,13 @@ interface Redemption {
   redeemedAt: string
   branch: { id: string; name: string; branchType: string } | null
   branchId: string | null
-  offer: { id: string; title: string; offerType: string; discountValue: number | string }
+  offer: {
+    id: string
+    title: string
+    offerType: string
+    pricing?: { configuration?: Record<string, unknown> }
+    redemption?: { redemptionType?: string | null; configuration?: Record<string, unknown> }
+  }
   merchant: { id: string; businessName: string; logoUrl: string | null }
   company: { id: string; name: string }
   status: RedemptionStatus
@@ -38,7 +46,7 @@ async function fetchRedemptions(status?: string): Promise<{ data: Redemption[] }
 }
 
 function formatCurrency(n: number | string) {
-  return `$${Number(n).toFixed(2)}`
+  return `£${Number(n).toFixed(2)}`
 }
 
 const STATUS_FILTERS: { value: RedemptionStatus | ''; label: string }[] = [
@@ -52,6 +60,7 @@ const STATUS_FILTERS: { value: RedemptionStatus | ''; label: string }[] = [
 export default function EmployeeRedemptionsPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<RedemptionStatus | ''>('CONFIRMED')
+  const [selectedOffer, setSelectedOffer] = useState<EmployeeOffer | null>(null)
   const { data, isLoading } = useQuery({
     queryKey: ['employee-redemptions', status],
     queryFn: () => fetchRedemptions(status || undefined),
@@ -65,6 +74,17 @@ export default function EmployeeRedemptionsPage() {
       r.merchant.businessName.toLowerCase().includes(q)
     )
   })
+
+  const handleViewOffer = useCallback(async (offerId: string) => {
+    try {
+      const res = await fetch(`/api/employee/offers/${offerId}`)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to load offer')
+      setSelectedOffer(json.data)
+    } catch {
+      setSelectedOffer(null)
+    }
+  }, [])
 
   return (
     <EmployeeLayout>
@@ -117,11 +137,15 @@ export default function EmployeeRedemptionsPage() {
         ) : (
           <ul className="space-y-2">
             {rows.map((r) => (
-              <li key={r.id} className="rounded-md border bg-card p-3">
+              <li
+                key={r.id}
+                className="group cursor-pointer rounded-md border bg-card p-3 transition-colors hover:bg-accent/50"
+                onClick={() => handleViewOffer(r.offer.id)}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="truncate font-medium">{r.offer.title}</p>
+                      <p className="truncate font-medium group-hover:text-primary">{r.offer.title}</p>
                       <RedemptionStatusBadge status={r.status} />
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
@@ -140,17 +164,26 @@ export default function EmployeeRedemptionsPage() {
                       </p>
                     )}
                   </div>
-                  <div className="text-right text-sm">
+                  <div className="flex flex-col items-end gap-1 text-right text-sm">
                     <p className="font-semibold">{formatCurrency(r.savingsAmount)} saved</p>
                     <p className="text-xs text-muted-foreground">
                       Discount {formatCurrency(r.discountAmount)}
                     </p>
+                    <ExternalLink className="mt-1 h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                   </div>
                 </div>
               </li>
             ))}
           </ul>
         )}
+
+        <RedeemModal
+          offer={selectedOffer}
+          open={!!selectedOffer}
+          onOpenChange={(o) => {
+            if (!o) setSelectedOffer(null)
+          }}
+        />
       </div>
     </EmployeeLayout>
   )

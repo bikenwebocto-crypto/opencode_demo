@@ -72,7 +72,14 @@ async function getMerchantFromUser() {
 async function getOwnOffer(merchantId: string, offerId: string) {
   return prisma.merchantOffer.findFirst({
     where: { id: offerId, merchantId, deletedAt: null },
-    include: { _count: { select: { redemptions: true } } },
+    include: {
+      _count: { select: { redemptions: true } },
+      content: true,
+      pricing: true,
+      redemption: true,
+      review: true,
+      analytics: true,
+    },
   });
 }
 
@@ -87,8 +94,11 @@ export async function GET(
     const offer = await getOwnOffer(merchant.id, id);
     if (!offer) return notFound();
 
+    const redemptionConfig = (offer.redemption?.configuration as Record<string, unknown>) ?? {}
+    const qrCodeUrl = redemptionConfig.qrCodeUrl as string | undefined
+
     // Recovery: if LIVE IN_STORE_QR offer has no QR, generate one silently
-    if (offer.status === 'LIVE' && offer.redemptionType === 'IN_STORE_QR' && !offer.qrCodeUrl) {
+    if (offer.status === 'LIVE' && offer.redemption?.redemptionType === 'IN_STORE_QR' && !qrCodeUrl) {
       console.log('[MERCHANT OFFERS GET] Recovery triggered — LIVE IN_STORE_QR offer missing QR code. Generating...');
       ensureOfferQRCode(offer.id).then((result) => {
         if (result) {
@@ -110,106 +120,196 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    const user = await getCurrentUser();
     const merchant = await getMerchantFromUser();
     if (!merchant) return unauthorized();
     const { id } = await params;
     const existing = await getOwnOffer(merchant.id, id);
     if (!existing) return notFound();
 
-    console.log('[MERCHANT OFFERS PATCH] Start - offer id:', id);
-    console.log('[MERCHANT OFFERS PATCH] Existing offer:', {
-      id: existing.id,
-      status: existing.status,
-      redemptionType: existing.redemptionType,
-      hasQrCodeUrl: !!existing.qrCodeUrl,
-    });
-
     if (!EDITABLE_STATUSES.includes(existing.status)) {
-      console.log('[MERCHANT OFFERS PATCH] ❌ Not editable, status:', existing.status);
       return forbidden("Only draft or validation-failed offers can be edited");
     }
 
     const body = await request.json();
-    console.log('[MERCHANT OFFERS PATCH] Incoming body keys:', Object.keys(body));
-    console.log('[MERCHANT OFFERS PATCH] redemptionType:', body.redemptionType);
 
-    const updatable: any = {};
-    const fields = [
-      "title",
-      "description",
-      "shortDescription",
-      "termsAndConditions",
-      "imageUrls",
-      "offerType",
-      "discountValue",
-      "discountMax",
-      "discountPercent",
-      "minimumSpend",
-      "maxRedemptions",
-      "daysOfWeek",
-      "redemptionCode",
-      "redemptionInstructions",
-      "categoryId",
-      "submissionNotes",
-      "bookingUrl",
-    ];
-    for (const f of fields) {
-      if (body[f] !== undefined) updatable[f] = body[f];
-    }
-    if (body.startDate) updatable.startDate = new Date(body.startDate);
-    if (body.endDate) updatable.endDate = new Date(body.endDate);
+    const merchantOfferUpdatable: Record<string, unknown> = {};
+    if (body.title !== undefined) merchantOfferUpdatable.title = body.title;
+    if (body.offerType !== undefined) merchantOfferUpdatable.offerType = body.offerType;
+    if (body.categoryId !== undefined) merchantOfferUpdatable.categoryId = body.categoryId;
+    if (body.startDate) merchantOfferUpdatable.startDate = new Date(body.startDate);
+    if (body.endDate) merchantOfferUpdatable.endDate = new Date(body.endDate);
 
-    // Validate daysOfWeek if provided
-    if (body.daysOfWeek !== undefined && body.daysOfWeek !== null) {
-      if (!Array.isArray(body.daysOfWeek)) {
-        return badRequest("daysOfWeek must be an array of integers 0-6");
+    const updated = await prisma.$transaction(async (tx) => {
+      if (Object.keys(merchantOfferUpdatable).length > 0) {
+        await tx.merchantOffer.update({
+          where: { id },
+          data: merchantOfferUpdatable,
+        });
       }
-      if (body.daysOfWeek.length === 0) {
-        return badRequest("Select at least one valid day");
-      }
-      if (body.daysOfWeek.some((d: unknown) => typeof d !== 'number' || d < 0 || d > 6 || !Number.isInteger(d))) {
-        return badRequest("Each day must be an integer between 0 and 6");
-      }
-      updatable.daysOfWeek = body.daysOfWeek;
-    }
 
-    // Validate redemptionType if provided
-    if (body.redemptionType && !VALID_REDEMPTION_TYPES.includes(body.redemptionType)) {
-      return badRequest(`Invalid redemption type: ${body.redemptionType}`);
-    }
+      if (
+        body.shortDescription !== undefined ||
+        body.description !== undefined ||
+        body.termsAndConditions !== undefined ||
+        body.imageUrls !== undefined
+      ) {
+        await tx.offerContent.upsert({
+          where: { offerId: id },
+          create: {
+            offerId: id,
+            shortDescription: body.shortDescription ?? null,
+            description: body.description ?? null,
+            termsAndConditions: body.termsAndConditions ?? null,
+            imageUrls: body.imageUrls ?? [],
+          },
+          update: {
+            ...(body.shortDescription !== undefined && { shortDescription: body.shortDescription }),
+            ...(body.description !== undefined && { description: body.description }),
+            ...(body.termsAndConditions !== undefined && { termsAndConditions: body.termsAndConditions }),
+            ...(body.imageUrls !== undefined && { imageUrls: body.imageUrls }),
+          },
+        });
+      }
 
-    // If redemption type was changed to ONLINE_CODE, auto-generate code
-    if (body.redemptionType === 'ONLINE_CODE' && existing.redemptionType !== 'ONLINE_CODE' && !existing.offerCode) {
-      updatable.offerCode = await generateUniqueOfferCode();
-      await createAuditLog({
-        actorType: 'merchant',
-        merchantId: merchant.id,
-        action: "OFFER_CODE_GENERATED",
-        entityType: "MERCHANT_OFFER",
-        entityId: id,
-        metadata: { offerCode: updatable.offerCode, redemptionType: 'ONLINE_CODE' },
+      if (
+        body.offerType !== undefined ||
+        body.discountValue !== undefined ||
+        body.discountMax !== undefined ||
+        body.discountPercent !== undefined ||
+        body.minimumSpend !== undefined ||
+        body.buyQuantity !== undefined ||
+        body.buyItem !== undefined ||
+        body.getQuantity !== undefined ||
+        body.freeItem !== undefined ||
+        body.maxFreeItems !== undefined
+      ) {
+        const pricingConfig: Record<string, unknown> = {};
+        if (body.offerType || body.discountValue !== undefined || body.discountMax !== undefined || body.discountPercent !== undefined || body.minimumSpend !== undefined) {
+          const config = existing.pricing?.configuration as Record<string, unknown> ?? {};
+          pricingConfig.amount = body.discountValue !== undefined ? Number(body.discountValue) : config.amount;
+          pricingConfig.percent = body.discountPercent !== undefined ? Number(body.discountPercent) : config.percent;
+          pricingConfig.maximumDiscount = body.discountMax !== undefined ? Number(body.discountMax) : config.maximumDiscount;
+          pricingConfig.minimumSpend = body.minimumSpend !== undefined ? Number(body.minimumSpend) : config.minimumSpend;
+        }
+        if (body.buyQuantity !== undefined || body.buyItem !== undefined || body.getQuantity !== undefined || body.freeItem !== undefined || body.maxFreeItems !== undefined) {
+          const config = existing.pricing?.configuration as Record<string, unknown> ?? {};
+          pricingConfig.buyQuantity = body.buyQuantity !== undefined ? Number(body.buyQuantity) : config.buyQuantity;
+          pricingConfig.buyItem = body.buyItem !== undefined ? body.buyItem : config.buyItem;
+          pricingConfig.getQuantity = body.getQuantity !== undefined ? Number(body.getQuantity) : config.getQuantity;
+          pricingConfig.freeItem = body.freeItem !== undefined ? body.freeItem : config.freeItem;
+          pricingConfig.maxFreeItems = body.maxFreeItems !== undefined ? Number(body.maxFreeItems) : config.maxFreeItems;
+        }
+
+        await tx.offerPricing.upsert({
+          where: { offerId: id },
+          create: {
+            offerId: id,
+            pricingType: body.offerType ?? existing.offerType,
+            configuration: pricingConfig as any,
+          },
+          update: {
+            ...(body.offerType !== undefined && { pricingType: body.offerType }),
+            configuration: pricingConfig as any,
+          },
+        });
+      }
+
+      if (
+        body.redemptionType !== undefined ||
+        body.redemptionCode !== undefined ||
+        body.redemptionInstructions !== undefined ||
+        body.bookingUrl !== undefined ||
+        body.maxRedemptions !== undefined ||
+        body.daysOfWeek !== undefined
+      ) {
+        const config = (existing.redemption?.configuration as Record<string, unknown>) ?? {};
+        const redemptionConfig: Record<string, unknown> = {
+          ...config,
+        };
+        if (body.redemptionCode !== undefined) redemptionConfig.code = body.redemptionCode;
+        if (body.redemptionInstructions !== undefined) redemptionConfig.instructions = body.redemptionInstructions;
+        if (body.bookingUrl !== undefined) redemptionConfig.bookingUrl = body.bookingUrl;
+
+        if (body.redemptionType === 'ONLINE_CODE' && existing.redemption?.redemptionType !== 'ONLINE_CODE' && !config.code) {
+          const newCode = await generateUniqueOfferCode();
+          redemptionConfig.code = newCode;
+          await createAuditLog({
+            actorType: 'merchant',
+            merchantId: merchant.id,
+            action: "OFFER_CODE_GENERATED",
+            entityType: "MERCHANT_OFFER",
+            entityId: id,
+            actorId: user?.id ?? null,
+            metadata: { offerCode: newCode, redemptionType: 'ONLINE_CODE' },
+          });
+        }
+
+        if (body.regenerateOfferCode) {
+          const newCode = await generateUniqueOfferCode();
+          redemptionConfig.code = newCode;
+          await createAuditLog({
+            actorType: 'merchant',
+            merchantId: merchant.id,
+            action: "OFFER_CODE_REGENERATED",
+            entityType: "MERCHANT_OFFER",
+            entityId: id,
+            actorId: user?.id ?? null,
+            metadata: { offerCode: newCode },
+          });
+        }
+
+        await tx.offerRedemption.upsert({
+          where: { offerId: id },
+          create: {
+            offerId: id,
+            redemptionType: body.redemptionType ?? null,
+            configuration: Object.keys(redemptionConfig).length > 0 ? (redemptionConfig as any) : null,
+            maxRedemptions: body.maxRedemptions ?? null,
+            currentRedemptions: 0,
+            daysOfWeek: body.daysOfWeek ?? [0, 1, 2, 3, 4, 5, 6],
+          },
+          update: {
+            ...(body.redemptionType !== undefined && { redemptionType: body.redemptionType }),
+            ...(Object.keys(redemptionConfig).length > 0 && { configuration: (redemptionConfig as any) }),
+            ...(body.maxRedemptions !== undefined && { maxRedemptions: Number(body.maxRedemptions) }),
+            ...(body.daysOfWeek !== undefined && {
+              daysOfWeek: Array.isArray(body.daysOfWeek) ? body.daysOfWeek : [0, 1, 2, 3, 4, 5, 6],
+            }),
+          },
+        });
+      }
+
+      if (body.submissionNotes !== undefined || body.replacementReason !== undefined) {
+        await tx.offerReview.upsert({
+          where: { offerId: id },
+          create: {
+            offerId: id,
+            submissionNotes: body.submissionNotes ?? null,
+            replacementReason: body.replacementReason ?? null,
+            isReplacement: !!body.replacesOfferId,
+          },
+          update: {
+            ...(body.submissionNotes !== undefined && { submissionNotes: body.submissionNotes }),
+            ...(body.replacementReason !== undefined && { replacementReason: body.replacementReason }),
+          },
+        });
+      }
+
+      return tx.merchantOffer.findUnique({
+        where: { id },
+        include: {
+          _count: { select: { redemptions: true } },
+          content: true,
+          pricing: true,
+          redemption: true,
+          review: true,
+          analytics: true,
+        },
       });
-    }
-
-    // Allow merchant to regenerate offer code
-    if (body.regenerateOfferCode) {
-      updatable.offerCode = await generateUniqueOfferCode();
-      await createAuditLog({
-        actorType: 'merchant',
-        merchantId: merchant.id,
-        action: "OFFER_CODE_REGENERATED",
-        entityType: "MERCHANT_OFFER",
-        entityId: id,
-        metadata: { offerCode: updatable.offerCode },
-      });
-    }
-
-    const offer = await prisma.merchantOffer.update({
-      where: { id },
-      data: updatable,
     });
 
-    return NextResponse.json({ success: true, data: offer });
+    return NextResponse.json({ success: true, data: updated });
   } catch (error) {
     return internalError(error);
   }

@@ -42,13 +42,12 @@ model Account {
   lastLoginAt DateTime?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
-  employees Employee[] @relation("EmployeeAccount")
+  employees   Employee[]    @relation("EmployeeAccount")
   merchants   Merchant[]
 
   @@index([role])
   @@index([status])
   @@map("accounts")
-  
 }
 
 model Company {
@@ -102,7 +101,7 @@ model CompanyBilling {
   billingEmail         String?       @db.VarChar(255)
   billingCycle         String        @default("monthly") @db.VarChar(20)
   pricePerEmployee     Decimal       @default(5.0) @db.Decimal(10, 2)
-  currency             String        @default("USD") @db.VarChar(3)
+  currency             String        @default("GBP") @db.VarChar(3)
   stripeCustomerId     String?       @db.VarChar(255)
   stripeSubscriptionId String?       @db.VarChar(255)
   currentPeriodStart   DateTime?
@@ -136,7 +135,7 @@ model CompanyAdmin {
   company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
   loginSessions LoginSession[]
   notifications NotificationEvent[] @relation("CompanyAdminNotification")
-  auditLogs     AuditLog[]            @relation("CompanyAdminAuditLogs")
+  auditLogs     AuditLog[]          @relation("CompanyAdminAuditLogs")
 
   @@index([companyId])
   @@map("company_admins")
@@ -169,8 +168,10 @@ model Employee {
   loginSessions LoginSession[]
   notifications NotificationEvent[] @relation("EmployeeNotification")
   redemptions   Redemption[]
-  auditLogs     AuditLog[]            @relation("EmployeeAuditLogs")
-  account Account? @relation("EmployeeAccount", fields: [accountId], references: [authUserId])
+  offerViews    OfferView[]
+  auditLogs     AuditLog[]          @relation("EmployeeAuditLogs")
+  account       Account?            @relation("EmployeeAccount", fields: [accountId], references: [authUserId])
+
   @@index([companyId])
   @@index([status])
   @@index([companyId, status])
@@ -192,6 +193,8 @@ model Merchant {
   onboardingStep      MerchantOnboardingStep       @default(APPLICATION)
   isFeatured          Boolean                      @default(false)
   isTopRated          Boolean                      @default(false)
+  isHomepageMerchant  Boolean                      @default(false)
+  displayPriority     Int                          @default(0)
   averageRating       Decimal                      @default(0) @db.Decimal(3, 2)
   totalRedemptions    Int                          @default(0)
   totalSavings        Decimal                      @default(0) @db.Decimal(12, 2)
@@ -238,6 +241,9 @@ model Merchant {
   @@index([categoryId])
   @@index([status, categoryId])
   @@index([status, deletedAt])
+  @@index([displayPriority])
+  @@index([isFeatured])
+  @@index([isHomepageMerchant])
   @@map("merchants")
 }
 
@@ -298,61 +304,42 @@ model Category {
 }
 
 model MerchantOffer {
-  id                     String                    @id @default(uuid()) @db.Uuid
-  merchantId             String                    @db.Uuid
-  title                  String                    @db.VarChar(255)
-  description            String
-  shortDescription       String?                   @db.VarChar(500)
-  termsAndConditions     String?
-  imageUrls              String[]                  @default([])
-  offerType              String                    @db.VarChar(50)
-  discountValue          Decimal                   @db.Decimal(10, 2)
-  discountMax            Decimal?                  @db.Decimal(10, 2)
-  discountPercent        Int?
-  minimumSpend           Decimal?                  @db.Decimal(10, 2)
-  maxRedemptions         Int?                      @default(0)
-  currentRedemptions     Int                       @default(0)
-  startDate              DateTime
-  endDate                DateTime
-  daysOfWeek             Int[]                     @default([0, 1, 2, 3, 4, 5, 6])
-  isFeatured             Boolean                   @default(false)
-  isExclusive            Boolean                   @default(false)
-  redemptionCode         String?                   @db.VarChar(100)
-  redemptionInstructions String?
-  redemptionType         String?                   @db.VarChar(50)
-  offerCode              String?                   @db.VarChar(6)
-  bookingUrl             String?                   @db.VarChar(500)
-  qrCodeUrl              String?                   @db.VarChar(500)
-  status                 OfferStatus               @default(DRAFT)
-  rejectionReason        String?
-  reviewedBy             String?                   @db.Uuid
-  reviewedAt             DateTime?
-  submittedAt            DateTime?
-  liveAt                 DateTime?
-  expiresAt              DateTime?
-  sortOrder              Int                       @default(0)
-  metadata               Json?
-  createdAt              DateTime                  @default(now())
-  updatedAt              DateTime                  @updatedAt
-  saveCount              Int                       @default(0)
-  viewCount              Int                       @default(0)
-  categoryId             String?                   @db.Uuid
-  replacesOfferId        String?                   @db.Uuid
-  submissionNotes        String?
-  validationErrors       Json?
-  adminNote              String?
-  isReplacement          Boolean                   @default(false)
-  replacementReason      String?
-  reviewNotes            String?
-  deletedAt              DateTime?
-  deletedById            String?                   @db.Uuid
-  deletedByRole          String?                   @db.VarChar(50)
-  merchant               Merchant                  @relation(fields: [merchantId], references: [id])
-  replacesOffer          MerchantOffer?            @relation("OfferReplacement", fields: [replacesOfferId], references: [id])
-  replacedBy             MerchantOffer[]           @relation("OfferReplacement")
-  replacementReqAsOld    OfferReplacementRequest[] @relation("CurrentOffer")
-  replacementReqAsNew    OfferReplacementRequest[] @relation("NewOffer")
-  redemptions            Redemption[]
+  id            String      @id @default(uuid()) @db.Uuid
+  merchantId    String      @db.Uuid
+  categoryId    String?     @db.Uuid
+  title         String      @db.VarChar(255)
+  offerType     String      @db.VarChar(50)
+  status        OfferStatus @default(DRAFT)
+  startDate     DateTime
+  endDate       DateTime
+  submittedAt   DateTime?
+  reviewedAt    DateTime?
+  liveAt        DateTime?
+  expiresAt     DateTime?
+  isFeatured    Boolean     @default(false)
+  isExclusive   Boolean     @default(false)
+  sortOrder     Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  deletedAt     DateTime?
+  deletedById   String?     @db.Uuid
+  deletedByRole String?     @db.VarChar(50)
+
+  merchant            Merchant                  @relation(fields: [merchantId], references: [id])
+  redemptions         Redemption[]
+  replacesOffer       MerchantOffer?            @relation("OfferReplacement", fields: [replacesOfferId], references: [id])
+  replacedBy          MerchantOffer[]           @relation("OfferReplacement")
+  replacementReqAsOld OfferReplacementRequest[] @relation("CurrentOffer")
+  replacementReqAsNew OfferReplacementRequest[] @relation("NewOffer")
+
+  replacesOfferId String? @db.Uuid
+
+  content    OfferContent?
+  pricing    OfferPricing?
+  redemption OfferRedemption?
+  review     OfferReview?
+  analytics  OfferAnalytics?
+  views      OfferView[]
 
   @@index([merchantId])
   @@index([status])
@@ -360,10 +347,87 @@ model MerchantOffer {
   @@index([merchantId, status])
   @@index([status, startDate, endDate])
   @@index([replacesOfferId])
-  @@index([offerCode])
-  @@index([merchantId, offerCode])
   @@index([deletedAt])
   @@map("merchant_offers")
+}
+
+model OfferContent {
+  id                 String   @id @default(uuid()) @db.Uuid
+  offerId            String   @unique @db.Uuid
+  shortDescription   String?  @db.VarChar(500)
+  description        String?
+  termsAndConditions String?
+  imageUrls          String[] @default([])
+  displayData        Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  offer MerchantOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@map("offer_content")
+}
+
+model OfferPricing {
+  id            String   @id @default(uuid()) @db.Uuid
+  offerId       String   @unique @db.Uuid
+  pricingType   String   @db.VarChar(50)
+  configuration Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  offer MerchantOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@map("offer_pricing")
+}
+
+model OfferRedemption {
+  id                 String   @id @default(uuid()) @db.Uuid
+  offerId            String   @unique @db.Uuid
+  redemptionType     String?  @db.VarChar(50)
+  configuration      Json?
+  maxRedemptions     Int?     @default(0)
+  currentRedemptions Int      @default(0)
+  daysOfWeek         Int[]    @default([0, 1, 2, 3, 4, 5, 6])
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  offer MerchantOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@map("offer_redemptions")
+}
+
+model OfferReview {
+  id                String    @id @default(uuid()) @db.Uuid
+  offerId           String    @unique @db.Uuid
+  reviewedBy        String?   @db.Uuid
+  reviewedAt        DateTime?
+  rejectionReason   String?
+  reviewNotes       String?
+  adminNote         String?
+  submissionNotes   String?
+  replacementReason String?
+  isReplacement     Boolean   @default(false)
+  validationErrors  Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  offer MerchantOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@map("offer_reviews")
+}
+
+model OfferAnalytics {
+  id        String   @id @default(uuid()) @db.Uuid
+  offerId   String   @unique @db.Uuid
+  saveCount Int      @default(0)
+  viewCount Int      @default(0)
+  clickCount Int     @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  offer MerchantOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@map("offer_analytics")
 }
 
 model OfferReplacementRequest {
@@ -437,6 +501,7 @@ model Redemption {
   @@index([companyId, redeemedAt])
   @@index([offerId, redeemedAt])
   @@index([redeemedAt, discountAmount, savingsAmount])
+  @@index([merchantId, redeemedAt, discountAmount, savingsAmount])
   @@map("redemptions")
 }
 
@@ -464,7 +529,7 @@ model RedemptionAnalytics {
 model IssueReport {
   id           String      @id @default(uuid()) @db.Uuid
   merchantId   String      @db.Uuid
-  employeeId   String      @db.Uuid
+  employeeId   String?     @db.Uuid
   redemptionId String?     @db.Uuid
   title        String      @db.VarChar(255)
   description  String
@@ -477,7 +542,7 @@ model IssueReport {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
   admin        AdminUser?  @relation("AdminIssueReview", fields: [adminId], references: [id])
-  employee     Employee    @relation(fields: [employeeId], references: [id])
+  employee     Employee?   @relation(fields: [employeeId], references: [id])
   merchant     Merchant    @relation(fields: [merchantId], references: [id])
 
   @@index([merchantId])
@@ -605,26 +670,26 @@ model CSVRejectedRow {
 }
 
 model AuditLog {
-  id             String         @id @default(uuid()) @db.Uuid
-  actorType      String         @db.VarChar(50)
-  adminId        String?        @db.Uuid
-  merchantId     String?        @db.Uuid
-  companyId      String?        @db.Uuid
-  companyAdminId String?        @db.Uuid
-  employeeId     String?        @db.Uuid
-  action         String         @db.VarChar(100)
-  entityType     String         @db.VarChar(50)
-  entityId       String         @db.Uuid
+  id             String        @id @default(uuid()) @db.Uuid
+  actorType      String        @db.VarChar(50)
+  adminId        String?       @db.Uuid
+  merchantId     String?       @db.Uuid
+  companyId      String?       @db.Uuid
+  companyAdminId String?       @db.Uuid
+  employeeId     String?       @db.Uuid
+  action         String        @db.VarChar(100)
+  entityType     String        @db.VarChar(50)
+  entityId       String        @db.Uuid
   changes        Json?
   metadata       Json?
-  ipAddress      String?        @db.VarChar(45)
-  userAgent      String?        @db.VarChar(500)
-  createdAt      DateTime       @default(now())
-  admin          AdminUser?     @relation("AdminAuditLogs", fields: [adminId], references: [id])
-  company        Company?       @relation("CompanyAuditLogs", fields: [companyId], references: [id])
-  merchant       Merchant?      @relation("MerchantAuditLogs", fields: [merchantId], references: [id])
-  companyAdmin   CompanyAdmin?  @relation("CompanyAdminAuditLogs", fields: [companyAdminId], references: [id])
-  employee       Employee?      @relation("EmployeeAuditLogs", fields: [employeeId], references: [id])
+  ipAddress      String?       @db.VarChar(45)
+  userAgent      String?       @db.VarChar(500)
+  createdAt      DateTime      @default(now())
+  admin          AdminUser?    @relation("AdminAuditLogs", fields: [adminId], references: [id])
+  company        Company?      @relation("CompanyAuditLogs", fields: [companyId], references: [id])
+  merchant       Merchant?     @relation("MerchantAuditLogs", fields: [merchantId], references: [id])
+  companyAdmin   CompanyAdmin? @relation("CompanyAdminAuditLogs", fields: [companyAdminId], references: [id])
+  employee       Employee?     @relation("EmployeeAuditLogs", fields: [employeeId], references: [id])
 
   @@index([adminId])
   @@index([merchantId])
@@ -667,6 +732,22 @@ model NotificationEvent {
   @@index([employeeId])
   @@index([createdAt])
   @@map("notification_events")
+}
+
+model OfferView {
+  id         String   @id @default(uuid()) @db.Uuid
+  offerId    String   @db.Uuid
+  employeeId String   @db.Uuid
+  viewedAt   DateTime @default(now())
+
+  offer    MerchantOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  employee Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([offerId, employeeId])
+  @@index([offerId])
+  @@index([employeeId])
+  @@index([viewedAt])
+  @@map("offer_views")
 }
 
 model LoginSession {
@@ -907,6 +988,7 @@ enum ActionQueueStatus {
   FAILED
   SKIPPED
 }
+
 enum ActionQueueType {
   NEW_MERCHANT_APPLICATION
   FIRST_OFFER_APPROVAL
@@ -970,36 +1052,36 @@ enum BranchStatus {
 }
 
 model LoginBranding {
-  id                 String   @id @default(uuid()) @db.Uuid
+  id String @id @default(uuid()) @db.Uuid
 
-  appName            String?
-  tagline            String?
+  appName String?
+  tagline String?
 
-  heading            String?
-  description        String?
+  heading     String?
+  description String?
 
   logoUrl            String?
   bannerUrl          String?
   backgroundImageUrl String?
 
-  primaryColor       String?
-  secondaryColor     String?
-  accentColor        String?
-  textColor          String?
-  cardBackground     String?
+  primaryColor   String?
+  secondaryColor String?
+  accentColor    String?
+  textColor      String?
+  cardBackground String?
 
   // Future: migrate to LoginLayout enum (SPLIT_CARD, CENTER_CARD, FULLSCREEN_HERO)
-  layout             String   @default("SPLIT_CARD")
+  layout String @default("SPLIT_CARD")
 
-  showLogo           Boolean  @default(true)
-  showHeading        Boolean  @default(true)
-  showDescription    Boolean  @default(true)
-  showBanner         Boolean  @default(true)
-  showFooter         Boolean  @default(true)
+  showLogo        Boolean @default(true)
+  showHeading     Boolean @default(true)
+  showDescription Boolean @default(true)
+  showBanner      Boolean @default(true)
+  showFooter      Boolean @default(true)
 
-  footerTitle        String?
-  footerDescription  String?
-  copyright          String?
+  footerTitle       String?
+  footerDescription String?
+  copyright         String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

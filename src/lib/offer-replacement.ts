@@ -54,7 +54,7 @@ interface TargetOfferLite {
   id: string
   status: OfferStatus
   merchantId: string
-  isReplacement: boolean
+  review: { isReplacement: boolean } | null
   replacesOfferId: string | null
 }
 
@@ -82,8 +82,8 @@ export async function validateReplacement(
       id: true,
       status: true,
       merchantId: true,
-      isReplacement: true,
       replacesOfferId: true,
+      review: { select: { isReplacement: true } },
     },
   })
 
@@ -102,7 +102,7 @@ export async function validateReplacement(
   }
 
   // Rule 3: A replacement cannot itself create another replacement.
-  if (target.isReplacement) {
+  if (target.review?.isReplacement) {
     throw new ReplacementValidationError(
       'CHAIN_NOT_ALLOWED',
       'A replacement offer cannot create another replacement until approved.',

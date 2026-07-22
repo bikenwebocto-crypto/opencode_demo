@@ -44,6 +44,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const user = await getCurrentUser();
   try {
     const merchant = await getMerchantFromUser();
     if (!merchant) return unauthorized();
@@ -65,24 +66,48 @@ export async function POST(
     if (offer.status !== "LIVE") {
       return badRequest("Only live offers can be revoked");
     }
+    console.log(`Revoking offer ${id} for merchant ${merchant.id} by user ${user?.id ?? 'unknown'}`);
+    await prisma.$transaction(async (tx) => {
+      await tx.merchantOffer.update({
+        where: { id },
+        data: {
+          status: "ARCHIVED",
+          reviewedAt: new Date(),
+        },
+      });
 
-    await prisma.merchantOffer.update({
-      where: { id },
-      data: {
-        status: "ARCHIVED",
-        reviewedAt: new Date(),
-        reviewNotes: reason.trim(),
-      },
+      await tx.offerReview.upsert({
+        where: { offerId: id },
+        create: {
+          offerId: id,
+          reviewNotes: reason.trim(),
+        },
+        update: {
+          reviewNotes: reason.trim(),
+        },
+      });
     });
 
-    await createAuditLog({
-      actorType: 'merchant',
-      merchantId: merchant.id,
-      action: "OFFER_REVOKED",
-      entityType: "MERCHANT_OFFER",
-      entityId: id,
-      metadata: { title: offer.title, reason: reason.trim(), previousStatus: offer.status },
-    });
+    try {
+      console.log( {actorType: 'merchant',
+        merchantId: merchant.id,
+        action: "OFFER_REVOKED",
+        entityType: "MERCHANT_OFFER",
+        entityId: id,
+        actorId: user?.id ?? null,
+        metadata: { title: offer.title, reason: reason.trim(), previousStatus: offer.status }})
+      await createAuditLog({
+        actorType: 'merchant',
+        merchantId: merchant.id,
+        action: "OFFER_REVOKED",
+        entityType: "MERCHANT_OFFER",
+        entityId: id,
+        actorId: user?.id ?? null,
+        metadata: { title: offer.title, reason: reason.trim(), previousStatus: offer.status },
+      });
+    } catch (auditError) {
+      console.error('Audit log failed (non-fatal):', auditError);
+    }
 
     return NextResponse.json({
       success: true,

@@ -2,63 +2,92 @@ import { prisma } from '@/lib/prisma';
 import type { CurrentUser } from '@/lib/supabase/server';
 
 export interface AuditLogInput {
-  actorType: string;
-  actorId: string | null;
+  actorType: 'admin' | 'merchant' | 'company_admin' | 'employee' | 'system';
+
+  actorId?: string | null;
+
+  // Explicit foreign keys
+  adminId?: string | null;
+  merchantId?: string | null;
+  companyAdminId?: string | null;
+  employeeId?: string | null;
+
   action: string;
   entityType: string;
   entityId: string;
+
   changes?: unknown;
   metadata?: unknown;
 }
 
 export function buildAuditData(input: AuditLogInput) {
-  const { actorType, actorId, action, entityType, entityId, changes, metadata } = input;
+  const {
+    actorType,
+    actorId,
 
-  if (!actorId) {
-    return {
-      actorType: 'system',
-      action,
-      entityType,
-      entityId,
-      changes: changes as any ?? undefined,
-      metadata: metadata as any ?? undefined,
-    };
-  }
+    adminId,
+    merchantId,
+    companyAdminId,
+    employeeId,
 
-  const fieldMap: Record<string, string> = {
-    admin: 'adminId',
-    merchant: 'merchantId',
-    company_admin: 'companyAdminId',
-    employee: 'employeeId',
-  };
+    action,
+    entityType,
+    entityId,
+    changes,
+    metadata,
+  } = input;
 
-  const fkField = fieldMap[actorType];
-  if (fkField) {
-    return {
-      actorType,
-      [fkField]: actorId,
-      action,
-      entityType,
-      entityId,
-      changes: changes as any ?? undefined,
-      metadata: metadata as any ?? undefined,
-    };
-  }
-
-  return {
+  const data: any = {
     actorType,
     action,
     entityType,
     entityId,
-    changes: changes as any ?? undefined,
-    metadata: { ...(metadata as any ?? {}), [actorType + 'Id']: actorId },
+    changes: changes ?? undefined,
+    metadata: metadata ?? undefined,
   };
+
+  if (!actorId) {
+    data.actorType = 'system';
+    return data;
+  }
+
+  switch (actorType) {
+    case 'admin':
+      data.adminId = adminId ?? actorId;
+      break;
+
+    case 'merchant':
+      // NEVER overwrite an explicitly supplied merchantId
+      data.merchantId = merchantId ?? actorId;
+      break;
+
+    case 'company_admin':
+      data.companyAdminId = companyAdminId ?? actorId;
+      break;
+
+    case 'employee':
+      data.employeeId = employeeId ?? actorId;
+      break;
+
+    default:
+      data.metadata = {
+        ...(metadata as any ?? {}),
+        actorId,
+      };
+  }
+
+  return data;
 }
 
 export async function createAuditLog(input: AuditLogInput): Promise<void> {
   try {
     const data = buildAuditData(input);
-    await prisma.auditLog.create({ data: data as any });
+
+    console.log('Audit Data:', data);
+
+    await prisma.auditLog.create({
+      data,
+    });
   } catch (error) {
     console.error('Audit log error:', error);
   }
@@ -69,14 +98,19 @@ export function fromCurrentUser(
   action: string,
   entityType: string,
   entityId: string,
-  opts?: { changes?: unknown; metadata?: unknown },
+  opts?: {
+    changes?: unknown;
+    metadata?: unknown;
+  },
 ): AuditLogInput {
   return {
-    actorType: user.userType,
+    actorType: user.userType as AuditLogInput['actorType'],
     actorId: user.profileId,
+
     action,
     entityType,
     entityId,
+
     changes: opts?.changes,
     metadata: opts?.metadata,
   };

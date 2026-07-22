@@ -24,6 +24,9 @@ export async function GET(_request: NextRequest) {
       ? await prisma.merchantOffer.findMany({
           where: { id: { in: offerIds }, deletedAt: null },
           include: {
+            content: { select: { description: true, shortDescription: true, imageUrls: true } },
+            pricing: { select: { configuration: true } },
+            redemption: { select: { redemptionType: true } },
             merchant: {
               select: {
                 id: true,
@@ -38,7 +41,27 @@ export async function GET(_request: NextRequest) {
         })
       : []
 
-    const offerMap = new Map(offers.map((o) => [o.id, o]))
+    const offerMap = new Map(offers.map((o) => {
+      const pricingConfig = (o.pricing?.configuration as Record<string, unknown>) ?? {}
+      return [o.id, {
+        id: o.id,
+        title: o.title,
+        description: o.content?.description,
+        shortDescription: o.content?.shortDescription,
+        imageUrls: o.content?.imageUrls ?? [],
+        offerType: o.offerType,
+        discountValue: pricingConfig.discountValue ?? pricingConfig.amount ?? pricingConfig.percent,
+        discountPercent: pricingConfig.percent,
+        minimumSpend: pricingConfig.minimumSpend,
+        discountMax: pricingConfig.maximumDiscount,
+        redemptionType: o.redemption?.redemptionType,
+        isFeatured: o.isFeatured,
+        isExclusive: o.isExclusive,
+        endDate: o.endDate,
+        startDate: o.startDate,
+        merchant: o.merchant,
+      }]
+    }))
     const result = saved
       .map((s) => {
         const offer = s.referenceId ? offerMap.get(s.referenceId) : null
@@ -94,8 +117,8 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    await prisma.merchantOffer.update({
-      where: { id: offerId },
+    await prisma.offerAnalytics.update({
+      where: { offerId },
       data: { saveCount: { increment: 1 } },
     })
 

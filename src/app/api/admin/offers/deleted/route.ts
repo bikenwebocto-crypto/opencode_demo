@@ -46,6 +46,8 @@ export async function GET(request: NextRequest) {
         include: {
           merchant: { select: { id: true, businessName: true } },
           _count: { select: { redemptions: true } },
+          content: { select: { imageUrls: true } },
+          redemption: { select: { configuration: true } },
         },
       }),
       prisma.merchantOffer.count({ where }),

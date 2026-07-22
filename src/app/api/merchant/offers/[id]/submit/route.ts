@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/supabase/server';
-import { Prisma } from '@prisma/client';
 import { createAuditLog } from '@/services/audit-log.service';
 
 function unauthorized() {
@@ -42,7 +41,25 @@ function runQualityChecks(body: any): { passed: boolean; errors: Record<string, 
   if (body.description && body.description.length > 2000) errors.description = 'Description must be at most 2000 characters';
   if (body.shortDescription && body.shortDescription.length > 500) errors.shortDescription = 'Short description must be at most 500 characters';
   if (!body.offerType) errors.offerType = 'Offer type is required';
-  if (body.discountValue == null || Number(body.discountValue) <= 0) errors.discountValue = 'Discount value must be a positive number';
+
+  const ot = body.offerType;
+  if (ot === 'flat_rate' || ot === 'fixed_amount') {
+    if (body.discountValue == null || Number(body.discountValue) <= 0) {
+      errors.discountValue = 'Discount value is required for flat offers';
+    }
+  } else if (ot === 'percentage') {
+    if (body.discountPercent == null || Number(body.discountPercent) <= 0) {
+      errors.discountPercent = 'Discount percentage is required for percentage offers';
+    } else if (Number(body.discountPercent) > 90) {
+      errors.discountPercent = 'Discount percentage cannot exceed 90%';
+    }
+  } else if (ot === 'buy_x_get_y') {
+    if (!body.buyQuantity || Number(body.buyQuantity) <= 0) errors.buyQuantity = 'Buy quantity is required';
+    if (!body.buyItem?.trim()) errors.buyItem = 'Buy item is required';
+    if (!body.getQuantity || Number(body.getQuantity) <= 0) errors.getQuantity = 'Get quantity is required';
+    if (!body.freeItem?.trim()) errors.freeItem = 'Free item is required';
+  }
+
   if (!body.startDate) errors.startDate = 'Start date is required';
   if (!body.endDate) errors.endDate = 'End date is required';
   if (body.startDate && body.endDate && new Date(body.endDate) <= new Date(body.startDate)) errors.endDate = 'End date must be after start date';
@@ -89,18 +106,27 @@ export async function POST(
         merchantId: merchant.id,
         deletedAt: null,
       },
+      include: {
+        content: { select: { description: true, shortDescription: true, termsAndConditions: true, imageUrls: true } },
+        pricing: { select: { configuration: true } },
+        redemption: { select: { redemptionType: true, configuration: true } },
+        review: { select: { validationErrors: true } },
+      },
     });
 
     if (!offer) {
       return notFound();
     }
 
+    const redemptionConfig = (offer.redemption?.configuration as Record<string, unknown>) ?? {}
+    const qrCodeUrl = redemptionConfig.qrCodeUrl as string | undefined
+
     console.log('[SUBMIT OFFER] Start - offer:', {
       id: offer.id,
       title: offer.title,
       status: offer.status,
-      redemptionType: offer.redemptionType,
-      hasQrCodeUrl: !!offer.qrCodeUrl,
+      redemptionType: offer.redemption?.redemptionType,
+      hasQrCodeUrl: !!qrCodeUrl,
     });
 
     if (!['DRAFT', 'VALIDATION_FAILED', 'CHANGES_REQUESTED', 'ARCHIVED', 'AWAITING_APPROVAL'].includes(offer.status)) {
@@ -113,9 +139,28 @@ export async function POST(
     const body = await request.json();
     console.log('[SUBMIT OFFER] Body received:', Object.keys(body));
 
+    const pricingConfig = (offer.pricing?.configuration as Record<string, unknown>) ?? {}
+
     const qcResult = runQualityChecks({
       ...offer,
+      ...pricingConfig,
       ...body,
+      description: body.description ?? offer.content?.description,
+      shortDescription: body.shortDescription ?? offer.content?.shortDescription,
+      termsAndConditions: body.termsAndConditions ?? offer.content?.termsAndConditions,
+      imageUrls: body.imageUrls ?? offer.content?.imageUrls,
+      offerType: body.offerType ?? offer.offerType,
+      discountValue:
+        body.discountValue
+        ?? pricingConfig.amount
+        ?? pricingConfig.percent,
+      discountPercent:
+        body.discountPercent
+        ?? pricingConfig.percent,
+      buyQuantity: body.buyQuantity ?? pricingConfig.buyQuantity,
+      buyItem: body.buyItem ?? pricingConfig.buyItem,
+      getQuantity: body.getQuantity ?? pricingConfig.getQuantity,
+      freeItem: body.freeItem ?? pricingConfig.freeItem,
     });
     console.log('[SUBMIT OFFER] qcResult.passed:', qcResult.passed);
 
@@ -124,15 +169,152 @@ export async function POST(
       : 'VALIDATION_FAILED';
     console.log('[SUBMIT OFFER] targetStatus:', targetStatus);
 
-    let finalOffer = await prisma.merchantOffer.update({
-      where: { id },
-      data: {
-        validationErrors: qcResult.passed
-          ? Prisma.DbNull
-          : qcResult.errors,
-        status: targetStatus,
-        submittedAt: new Date(),
-      },
+    const finalOffer = await prisma.$transaction(async (tx) => {
+      // Persist content if the body includes content fields
+      if (
+        body.shortDescription !== undefined ||
+        body.description !== undefined ||
+        body.termsAndConditions !== undefined ||
+        body.imageUrls !== undefined
+      ) {
+        await tx.offerContent.upsert({
+          where: { offerId: id },
+          create: {
+            offerId: id,
+            shortDescription: body.shortDescription ?? null,
+            description: body.description ?? null,
+            termsAndConditions: body.termsAndConditions ?? null,
+            imageUrls: body.imageUrls ?? [],
+          },
+          update: {
+            ...(body.shortDescription !== undefined && { shortDescription: body.shortDescription }),
+            ...(body.description !== undefined && { description: body.description }),
+            ...(body.termsAndConditions !== undefined && { termsAndConditions: body.termsAndConditions }),
+            ...(body.imageUrls !== undefined && { imageUrls: body.imageUrls }),
+          },
+        });
+      }
+
+      // Persist pricing if the body includes pricing fields
+      if (
+        body.offerType !== undefined ||
+        body.discountValue !== undefined ||
+        body.discountMax !== undefined ||
+        body.discountPercent !== undefined ||
+        body.minimumSpend !== undefined ||
+        body.buyQuantity !== undefined ||
+        body.buyItem !== undefined ||
+        body.getQuantity !== undefined ||
+        body.freeItem !== undefined ||
+        body.maxFreeItems !== undefined
+      ) {
+        const config = (offer.pricing?.configuration as Record<string, unknown>) ?? {};
+        const pricingConfig: Record<string, unknown> = { ...config };
+        if (body.discountValue !== undefined) pricingConfig.amount = Number(body.discountValue);
+        if (body.discountPercent !== undefined) pricingConfig.percent = Number(body.discountPercent);
+        if (body.discountMax !== undefined) pricingConfig.maximumDiscount = Number(body.discountMax);
+        if (body.minimumSpend !== undefined) pricingConfig.minimumSpend = Number(body.minimumSpend);
+        if (body.buyQuantity !== undefined) pricingConfig.buyQuantity = Number(body.buyQuantity);
+        if (body.buyItem !== undefined) pricingConfig.buyItem = body.buyItem;
+        if (body.getQuantity !== undefined) pricingConfig.getQuantity = Number(body.getQuantity);
+        if (body.freeItem !== undefined) pricingConfig.freeItem = body.freeItem;
+        if (body.maxFreeItems !== undefined) pricingConfig.maxFreeItems = Number(body.maxFreeItems);
+
+        await tx.offerPricing.upsert({
+          where: { offerId: id },
+          create: {
+            offerId: id,
+            pricingType: body.offerType ?? offer.offerType,
+            configuration: pricingConfig as any,
+          },
+          update: {
+            ...(body.offerType !== undefined && { pricingType: body.offerType }),
+            configuration: pricingConfig as any,
+          },
+        });
+      }
+
+      // Persist redemption if the body includes redemption fields
+      if (
+        body.redemptionType !== undefined ||
+        body.redemptionCode !== undefined ||
+        body.redemptionInstructions !== undefined ||
+        body.bookingUrl !== undefined ||
+        body.maxRedemptions !== undefined ||
+        body.daysOfWeek !== undefined
+      ) {
+        const config = (offer.redemption?.configuration as Record<string, unknown>) ?? {};
+        const redemptionConfig: Record<string, unknown> = { ...config };
+        if (body.redemptionCode !== undefined) redemptionConfig.code = body.redemptionCode;
+        if (body.redemptionInstructions !== undefined) redemptionConfig.instructions = body.redemptionInstructions;
+        if (body.bookingUrl !== undefined) redemptionConfig.bookingUrl = body.bookingUrl;
+
+        await tx.offerRedemption.upsert({
+          where: { offerId: id },
+          create: {
+            offerId: id,
+            redemptionType: body.redemptionType ?? null,
+            configuration: Object.keys(redemptionConfig).length > 0 ? (redemptionConfig as any) : null,
+            maxRedemptions: body.maxRedemptions ?? null,
+            currentRedemptions: 0,
+            daysOfWeek: body.daysOfWeek ?? [0, 1, 2, 3, 4, 5, 6],
+          },
+          update: {
+            ...(body.redemptionType !== undefined && { redemptionType: body.redemptionType }),
+            ...(Object.keys(redemptionConfig).length > 0 && { configuration: redemptionConfig as any }),
+            ...(body.maxRedemptions !== undefined && { maxRedemptions: Number(body.maxRedemptions) }),
+            ...(body.daysOfWeek !== undefined && {
+              daysOfWeek: Array.isArray(body.daysOfWeek) ? body.daysOfWeek : [0, 1, 2, 3, 4, 5, 6],
+            }),
+          },
+        });
+      }
+
+      // Persist core offer fields (dates, category, type)
+      const merchantOfferUpdatable: Record<string, unknown> = {};
+      if (body.startDate) merchantOfferUpdatable.startDate = new Date(body.startDate);
+      if (body.endDate) merchantOfferUpdatable.endDate = new Date(body.endDate);
+      if (body.categoryId !== undefined) merchantOfferUpdatable.categoryId = body.categoryId;
+      if (body.offerType !== undefined) merchantOfferUpdatable.offerType = body.offerType;
+      if (body.title !== undefined) merchantOfferUpdatable.title = body.title;
+
+      if (Object.keys(merchantOfferUpdatable).length > 0) {
+        await tx.merchantOffer.update({
+          where: { id },
+          data: merchantOfferUpdatable,
+        });
+      }
+
+      // Update review with validation errors
+      await tx.offerReview.upsert({
+        where: { offerId: id },
+        create: {
+          offerId: id,
+          validationErrors: qcResult.passed ? null : (qcResult.errors as any),
+        },
+        update: {
+          validationErrors: qcResult.passed ? null : (qcResult.errors as any),
+        },
+      });
+
+      // Update status
+      const updated = await tx.merchantOffer.update({
+        where: { id },
+        data: {
+          status: targetStatus,
+          submittedAt: new Date(),
+        },
+        include: {
+          _count: { select: { redemptions: true } },
+          content: true,
+          pricing: true,
+          redemption: true,
+          review: true,
+          analytics: true,
+        },
+      });
+
+      return updated;
     });
 
     // Post-submission actions for passing offers

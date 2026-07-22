@@ -36,7 +36,6 @@ const pageTitles: Record<string, string> = {
   '/company/settings': 'Settings',
   '/employee': 'Employee Home',
   '/employee/offers': 'Available Offers',
-  '/employee/offers/[id]': 'Offer Details',
   '/employee/saved': 'Saved Offers',
   '/employee/redemptions': 'My Redemptions',
   '/employee/notifications': 'Notifications',

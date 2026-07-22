@@ -22,6 +22,9 @@ export async function GET(
     const offer = await prisma.merchantOffer.findUnique({
       where: { id },
       include: {
+        content: { select: { description: true, shortDescription: true, termsAndConditions: true, imageUrls: true } },
+        pricing: { select: { configuration: true } },
+        redemption: { select: { redemptionType: true, configuration: true } },
         merchant: {
           include: {
             category: { select: { id: true, name: true, icon: true } },
@@ -49,10 +52,34 @@ export async function GET(
       }),
     ])
 
+    const pricingConfig = (offer.pricing?.configuration as Record<string, unknown>) ?? {}
+    const redemptionConfig = (offer.redemption?.configuration as Record<string, unknown>) ?? {}
+
     return NextResponse.json({
       success: true,
       data: {
-        ...offer,
+        id: offer.id,
+        title: offer.title,
+        description: offer.content?.description,
+        shortDescription: offer.content?.shortDescription,
+        termsAndConditions: offer.content?.termsAndConditions,
+        imageUrls: offer.content?.imageUrls ?? [],
+        offerType: offer.offerType,
+        status: offer.status,
+        discountValue: pricingConfig.discountValue ?? pricingConfig.amount ?? pricingConfig.percent,
+        discountPercent: pricingConfig.percent,
+        minimumSpend: pricingConfig.minimumSpend,
+        discountMax: pricingConfig.maximumDiscount,
+        redemptionType: offer.redemption?.redemptionType,
+        offerCode: redemptionConfig.code,
+        bookingUrl: redemptionConfig.bookingUrl,
+        qrCodeUrl: redemptionConfig.qrCodeUrl,
+        startDate: offer.startDate,
+        endDate: offer.endDate,
+        isFeatured: offer.isFeatured,
+        isExclusive: offer.isExclusive,
+        merchant: offer.merchant,
+        redemptionCount: offer._count.redemptions,
         isVisible: visibility.visible,
         visibilityReason: visibility.reason,
         isSaved: !!saved,

@@ -102,6 +102,11 @@ async function loadEntity(queueItem: {
                 postalCode: true,
               },
             },
+            content: true,
+            pricing: true,
+            redemption: true,
+            review: true,
+            analytics: true,
             replacesOffer: true,
           },
         });
@@ -127,6 +132,9 @@ async function loadEntity(queueItem: {
                   state: true,
                 },
               },
+              content: { select: { shortDescription: true, description: true, imageUrls: true } },
+              pricing: { select: { configuration: true } },
+              redemption: { select: { redemptionType: true, configuration: true } },
             },
           });
 
@@ -165,6 +173,11 @@ async function loadEntity(queueItem: {
             postalCode: true,
           },
         },
+        content: true,
+        pricing: true,
+        redemption: true,
+        review: true,
+        analytics: true,
         replacesOffer: true,
       },
     });
@@ -183,6 +196,9 @@ async function loadEntity(queueItem: {
               state: true,
             },
           },
+          content: { select: { shortDescription: true, description: true, imageUrls: true } },
+          pricing: { select: { configuration: true } },
+          redemption: { select: { redemptionType: true, configuration: true } },
         },
       });
       return { ...offer, currentOffer };
@@ -450,6 +466,7 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
 
         const offer = await prisma.merchantOffer.findFirst({
           where: { id: offerId, deletedAt: null },
+          include: { redemption: { select: { redemptionType: true } } },
         });
 
         if (!offer) {
@@ -464,26 +481,40 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
           merchantId: offer.merchantId,
         });
 
-        await prisma.merchantOffer.update({
-          where: { id: offer.id },
-          data: {
-            status: "LIVE",
-            liveAt: now,
-            reviewedAt: now,
-            reviewedBy: adminId,
-          },
+        await prisma.$transaction(async (tx) => {
+          await tx.merchantOffer.update({
+            where: { id: offer.id },
+            data: {
+              status: "LIVE",
+              liveAt: now,
+              reviewedAt: now,
+            },
+          });
+
+          await tx.offerReview.upsert({
+            where: { offerId: offer.id },
+            create: {
+              offerId: offer.id,
+              reviewedBy: adminId,
+              reviewedAt: now,
+            },
+            update: {
+              reviewedBy: adminId,
+              reviewedAt: now,
+            },
+          });
         });
         console.log(`[FIRST_OFFER_APPROVAL] ✅ Offer updated to LIVE`);
 
         // Generate QR for IN_STORE_QR offers upon approval
-        console.log('[FIRST_OFFER_APPROVAL] offer.redemptionType:', offer.redemptionType);
-        if (offer.redemptionType === 'IN_STORE_QR') {
+        console.log('[FIRST_OFFER_APPROVAL] offer.redemptionType:', offer.redemption?.redemptionType);
+        if (offer.redemption?.redemptionType === 'IN_STORE_QR') {
           console.log('[FIRST_OFFER_APPROVAL] ✅ IN_STORE_QR detected, triggering QR generation for offer:', offer.id);
           ensureOfferQRCode(offer.id).catch((err) =>
             console.error('[FIRST_OFFER_APPROVAL] QR generation failed:', err),
           )
         } else {
-          console.log('[FIRST_OFFER_APPROVAL] ⏭️ Skipping QR (redemptionType !== IN_STORE_QR):', offer.redemptionType);
+          console.log('[FIRST_OFFER_APPROVAL] ⏭️ Skipping QR (redemptionType !== IN_STORE_QR):', offer.redemption?.redemptionType);
         }
 
         await prisma.merchant.update({
@@ -513,6 +544,7 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
 
         const newOffer = await prisma.merchantOffer.findFirst({
           where: { id: newOfferId, deletedAt: null },
+          include: { redemption: { select: { redemptionType: true } } },
         });
 
         if (!newOffer) {
@@ -546,28 +578,42 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
           );
         }
 
-        await prisma.merchantOffer.update({
-          where: { id: newOffer.id },
-          data: {
-            status: "LIVE",
-            liveAt: now,
-            reviewedAt: now,
-            reviewedBy: adminId,
-          },
+        await prisma.$transaction(async (tx) => {
+          await tx.merchantOffer.update({
+            where: { id: newOffer.id },
+            data: {
+              status: "LIVE",
+              liveAt: now,
+              reviewedAt: now,
+            },
+          });
+
+          await tx.offerReview.upsert({
+            where: { offerId: newOffer.id },
+            create: {
+              offerId: newOffer.id,
+              reviewedBy: adminId,
+              reviewedAt: now,
+            },
+            update: {
+              reviewedBy: adminId,
+              reviewedAt: now,
+            },
+          });
         });
         console.log(
           `[OFFER_REPLACEMENT] ✅ Replacement offer activated: ${newOffer.id}`,
         );
 
         // Generate QR for IN_STORE_QR replacement offers
-        console.log('[OFFER_REPLACEMENT] newOffer.redemptionType:', newOffer.redemptionType);
-        if (newOffer.redemptionType === 'IN_STORE_QR') {
+        console.log('[OFFER_REPLACEMENT] newOffer.redemptionType:', newOffer.redemption?.redemptionType);
+        if (newOffer.redemption?.redemptionType === 'IN_STORE_QR') {
           console.log('[OFFER_REPLACEMENT] ✅ IN_STORE_QR detected, triggering QR generation for new offer:', newOffer.id);
           ensureOfferQRCode(newOffer.id).catch((err) =>
             console.error('[OFFER_REPLACEMENT] QR generation failed:', err),
           )
         } else {
-          console.log('[OFFER_REPLACEMENT] ⏭️ Skipping QR (redemptionType !== IN_STORE_QR):', newOffer.redemptionType);
+          console.log('[OFFER_REPLACEMENT] ⏭️ Skipping QR (redemptionType !== IN_STORE_QR):', newOffer.redemption?.redemptionType);
         }
 
         break;
@@ -898,14 +944,29 @@ async function performReject(
       where: { id: offerId, deletedAt: null },
     });
     if (offer) {
-      await prisma.merchantOffer.update({
-        where: { id: offer.id },
-        data: {
-          status: "REJECTED",
-          rejectionReason,
-          reviewedAt: now,
-          reviewedBy: adminId,
-        },
+      await prisma.$transaction(async (tx) => {
+        await tx.merchantOffer.update({
+          where: { id: offer.id },
+          data: {
+            status: "REJECTED",
+            reviewedAt: now,
+          },
+        });
+
+        await tx.offerReview.upsert({
+          where: { offerId: offer.id },
+          create: {
+            offerId: offer.id,
+            reviewedBy: adminId,
+            reviewedAt: now,
+            rejectionReason: rejectionReason ?? null,
+          },
+          update: {
+            reviewedBy: adminId,
+            reviewedAt: now,
+            rejectionReason: rejectionReason ?? null,
+          },
+        });
       });
     }
   } else if (kind === "MERCHANT") {

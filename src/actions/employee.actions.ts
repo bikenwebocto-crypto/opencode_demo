@@ -18,10 +18,17 @@ export async function createRedemptionAction(formData: FormData) {
   // Validate offer is live
   const offer = await prisma.merchantOffer.findFirst({
     where: { id: offerId, deletedAt: null, status: 'LIVE' },
+    include: {
+      pricing: { select: { configuration: true } },
+      redemption: { select: { maxRedemptions: true, currentRedemptions: true } },
+    },
   });
 
   if (!offer) throw new Error('Offer not found or no longer active');
-  if ((offer.maxRedemptions ?? 0) > 0 && (offer.currentRedemptions ?? 0) >= (offer.maxRedemptions ?? 0)) {
+  if (
+    (offer.redemption?.maxRedemptions ?? 0) > 0 &&
+    (offer.redemption?.currentRedemptions ?? 0) >= (offer.redemption?.maxRedemptions ?? 0)
+  ) {
     throw new Error('Offer has reached maximum redemptions');
   }
 
@@ -31,7 +38,8 @@ export async function createRedemptionAction(formData: FormData) {
   });
   if (!employee) throw new Error('Employee account is not active');
 
-  const discountAmount = Number(offer.discountValue);
+  const pricingConfig = (offer.pricing?.configuration as Record<string, unknown>) ?? {}
+  const discountAmount = Number(pricingConfig.amount ?? pricingConfig.percent ?? 0);
   const savingsAmount = discountAmount;
 
   const redemption = await prisma.redemption.create({
@@ -48,8 +56,8 @@ export async function createRedemptionAction(formData: FormData) {
   });
 
   // Increment offer redemption counter
-  await prisma.merchantOffer.update({
-    where: { id: offerId },
+  await prisma.offerRedemption.update({
+    where: { offerId },
     data: { currentRedemptions: { increment: 1 } },
   });
 
@@ -135,6 +143,9 @@ export async function getLiveOffersAction(companyId: string, page = 1, pageSize 
       skip: (page - 1) * pageSize,
       take: pageSize,
       include: {
+        content: { select: { description: true, shortDescription: true, imageUrls: true } },
+        pricing: { select: { configuration: true } },
+        redemption: { select: { redemptionType: true, configuration: true } },
         merchant: {
           select: {
             id: true,

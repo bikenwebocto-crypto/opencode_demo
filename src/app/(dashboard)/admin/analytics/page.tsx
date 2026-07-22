@@ -29,7 +29,7 @@ async function fetchAnalytics(params: URLSearchParams): Promise<AnalyticsRespons
 }
 
 function formatCurrency(n: number) {
-  return `$${Number(n).toFixed(2)}`
+  return `£${Number(n).toFixed(2)}`
 }
 
 export default function AdminAnalyticsPage() {

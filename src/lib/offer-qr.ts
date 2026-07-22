@@ -46,7 +46,10 @@ export async function ensureOfferQRCode(
   try {
     const offer = await prisma.merchantOffer.findFirst({
       where: { id: offerId, deletedAt: null },
-      include: { merchant: { select: { id: true, businessName: true } } },
+      include: {
+        merchant: { select: { id: true, businessName: true } },
+        redemption: { select: { id: true, redemptionType: true, configuration: true } },
+      },
     })
 
     if (!offer) {
@@ -55,23 +58,24 @@ export async function ensureOfferQRCode(
       return null
     }
 
+    const redemptionConfig = (offer.redemption?.configuration as Record<string, unknown>) ?? {}
+
     console.log('---------------------------------')
     console.log('Offer ID:', offer.id)
     console.log('Merchant:', offer.merchant.businessName)
     console.log('Status:', offer.status)
-    console.log('Redemption Type:', offer.redemptionType)
-    console.log('Existing QR:', offer.qrCodeUrl ? offer.qrCodeUrl : '(none)')
+    console.log('Redemption Type:', offer.redemption?.redemptionType)
+    console.log('Existing QR:', (redemptionConfig.qrCodeUrl as string) ?? '(none)')
     console.log('---------------------------------')
 
-    if (offer.redemptionType !== 'IN_STORE_QR') {
-      console.log('Skipping — redemptionType is not IN_STORE_QR:', offer.redemptionType)
+    if (offer.redemption?.redemptionType !== 'IN_STORE_QR') {
+      console.log('Skipping — redemptionType is not IN_STORE_QR:', offer.redemption?.redemptionType)
       return null
     }
 
-    if (offer.qrCodeUrl) {
-      console.log('Skipping — QR already exists, returning existing:', offer.qrCodeUrl)
-      const meta = offer.metadata as Record<string, unknown> | null
-      return { qrUrl: offer.qrCodeUrl, qrToken: (meta?.qrToken as string) ?? '' }
+    if (redemptionConfig.qrCodeUrl) {
+      console.log('Skipping — QR already exists, returning existing:', redemptionConfig.qrCodeUrl)
+      return { qrUrl: redemptionConfig.qrCodeUrl as string, qrToken: (redemptionConfig.qrToken as string) ?? '' }
     }
 
     console.log('Generating Token...')
@@ -101,19 +105,14 @@ export async function ensureOfferQRCode(
     console.log('Saving Database...')
     console.log('qrCodeUrl:', qrUrl)
 
-    await prisma.merchantOffer.update({
-      where: { id: offer.id },
-      data: {
-        qrCodeUrl: qrUrl,
-        metadata: {
-          ...(typeof offer.metadata === 'object' && offer.metadata !== null
-            ? { ...(offer.metadata as Record<string, unknown>), qrToken }
-            : { qrToken }),
-        },
-      },
+    const updatedConfig = { ...redemptionConfig, qrCodeUrl: qrUrl, qrToken }
+
+    await prisma.offerRedemption.update({
+      where: { offerId: offer.id },
+      data: { configuration: updatedConfig },
     })
 
-    console.log('Metadata Updated: true')
+    console.log('OfferRedemption Updated: true')
     console.log('---------------------------------')
 
     logEnd(qrUrl, qrToken)

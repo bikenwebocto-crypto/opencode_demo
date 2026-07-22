@@ -1,14 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { EmployeeLayout } from '@/components/employee/EmployeeLayout'
-import { OfferCard, type OfferCardData } from '@/components/employee/OfferCard'
-import { RedeemModal, type RedeemModalOffer } from '@/components/employee/RedeemModal'
+import { OfferCard } from '@/components/employee/OfferCard'
+import { RedeemModal } from '@/components/employee/RedeemModal'
+import {
+  type EmployeeOffer,
+  findOfferInList,
+} from '@/components/employee/offers/employee-offer'
 import { ShoppingBag, TrendingUp, Gift, Bookmark, ChevronRight, Search, AlertCircle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 
@@ -20,9 +24,11 @@ interface Stats {
 }
 
 interface OffersResponse {
-  data: (OfferCardData & { merchant: any })[]
+  data: EmployeeOffer[]
   meta: { page: number; pageSize: number; total: number; totalPages: number }
 }
+
+const FEATURED_QUERY_KEY = ['employee-offers', 'featured'] as const
 
 async function fetchStats(): Promise<{ data: Stats }> {
   const res = await fetch('/api/employee/dashboard/stats')
@@ -31,7 +37,7 @@ async function fetchStats(): Promise<{ data: Stats }> {
   return json
 }
 
-async function fetchOffers(): Promise<OffersResponse> {
+async function fetchFeaturedOffers(): Promise<OffersResponse> {
   const res = await fetch('/api/employee/offers?pageSize=6&featured=true')
   const json = await res.json()
   if (!res.ok) throw new Error(json.error?.message ?? 'Failed to load')
@@ -40,17 +46,34 @@ async function fetchOffers(): Promise<OffersResponse> {
 
 export default function EmployeeHomePage() {
   const [search, setSearch] = useState('')
-  const [redeemOffer, setRedeemOffer] = useState<RedeemModalOffer | null>(null)
+  // The dialog always reflects the current cache value so Save /
+  // Redeem patches from the action components flow in instantly.
+  const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+
   const { data: stats, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ['employee-dashboard-stats'],
     queryFn: fetchStats,
     retry: false,
   })
   const { data: offers, isLoading: offersLoading } = useQuery({
-    queryKey: ['employee-offers', { featured: true }],
-    queryFn: fetchOffers,
+    queryKey: FEATURED_QUERY_KEY,
+    queryFn: fetchFeaturedOffers,
     retry: false,
   })
+
+  const selectedOffer = useMemo<EmployeeOffer | null>(() => {
+    if (!selectedOfferId) return null
+    const cached = queryClient.getQueryData<OffersResponse>(FEATURED_QUERY_KEY)
+    const fromCache = cached
+      ? findOfferInList(cached.data, selectedOfferId)?.offer
+      : undefined
+    return (
+      fromCache ??
+      offers?.data?.find((o) => o.id === selectedOfferId) ??
+      null
+    )
+  }, [selectedOfferId, offers, queryClient])
 
   // Detect the COMPANY_INACTIVE response from the API. The stats
   // endpoint rejects with 403 + code COMPANY_INACTIVE when the
@@ -93,7 +116,7 @@ export default function EmployeeHomePage() {
           />
           <StatCard
             title="Total Saved"
-            value={stats ? `$${stats.data.totalSavings.toFixed(2)}` : '$0.00'}
+            value={stats ? `£${stats.data.totalSavings.toFixed(2)}` : '£0.00'}
             subtitle={stats ? `${stats.data.redemptions.thisMonth} this month` : ''}
             icon={TrendingUp}
             color="text-green-600"
@@ -140,7 +163,11 @@ export default function EmployeeHomePage() {
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {offers.data.map((o) => (
-                  <OfferCard key={o.id} offer={o} onRedeem={setRedeemOffer} />
+                  <OfferCard
+                    key={o.id}
+                    offer={o}
+                    onOpen={(offer) => setSelectedOfferId(offer.id)}
+                  />
                 ))}
               </div>
             )}
@@ -149,9 +176,11 @@ export default function EmployeeHomePage() {
       </div>
 
       <RedeemModal
-        open={!!redeemOffer}
-        onClose={() => setRedeemOffer(null)}
-        offer={redeemOffer}
+        offer={selectedOffer}
+        open={!!selectedOffer}
+        onOpenChange={(o) => {
+          if (!o) setSelectedOfferId(null)
+        }}
       />
     </EmployeeLayout>
   )

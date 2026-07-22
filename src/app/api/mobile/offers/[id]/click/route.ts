@@ -7,7 +7,7 @@ import { createAuditLog } from '@/services/audit-log.service'
 // POST /api/mobile/offers/[id]/click
 //
 // Records a "click" / "view" event for the offer. Increments
-// `MerchantOffer.viewCount` so the "Most Popular" sort on the home feed
+// `OfferAnalytics.viewCount` so the "Most Popular" sort on the home feed
 // can actually rank by it. Visibility is checked via the shared
 // `liveOfferWhere` so suspended merchants or expired offers are rejected
 // with a 400 (not silently accepted).
@@ -39,8 +39,8 @@ export async function POST(
     })
     if (!offer) return notFound('Offer not found or not currently visible')
 
-    await prisma.merchantOffer.update({
-      where: { id: offer.id },
+    await prisma.offerAnalytics.update({
+      where: { offerId: offer.id },
       data: { viewCount: { increment: 1 } },
     })
 

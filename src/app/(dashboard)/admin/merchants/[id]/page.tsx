@@ -103,7 +103,7 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
       header: 'Value',
       render: (o: any) => {
         if (o.offerType === 'PERCENTAGE' || o.discountPercent) return `${o.discountPercent ?? 0}%`
-        return `$${Number(o.discountValue ?? 0).toFixed(2)}`
+        return `£${Number(o.discountValue ?? 0).toFixed(2)}`
       },
     },
     {

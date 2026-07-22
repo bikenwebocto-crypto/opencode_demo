@@ -110,7 +110,7 @@ export default function AdminDeletedOffersPage() {
                   <div className="space-y-1 text-sm text-muted-foreground">
                     <div>Merchant: {offer.merchant?.businessName ?? 'Unknown'}</div>
                     <div>Redemptions: {offer._count?.redemptions ?? 0}</div>
-                    <div>Images: {offer.imageUrls?.length ?? 0} | QR: {offer.qrCodeUrl ? 'Yes' : 'No'}</div>
+                    <div>Images: {offer.content?.imageUrls?.length ?? 0} | QR: {offer.redemption?.configuration?.qrCodeUrl ? 'Yes' : 'No'}</div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button

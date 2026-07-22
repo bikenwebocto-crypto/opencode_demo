@@ -14,7 +14,7 @@ import { createAuditLog } from '@/services/audit-log.service'
 // Save/unsave an offer for the authenticated employee. Mirrors the web
 // `/api/employee/saved` contract exactly — a `NotificationEvent` with
 // `referenceType: 'saved_offer'` is the source of truth, and
-// `MerchantOffer.saveCount` is incremented/decremented on the way in/out
+// `OfferAnalytics.saveCount` is incremented/decremented on the way in/out
 // so the home feed's "Most Popular" section can rank by it.
 
 export async function POST(
@@ -55,8 +55,8 @@ export async function POST(
       },
     })
 
-    await prisma.merchantOffer.update({
-      where: { id },
+    await prisma.offerAnalytics.update({
+      where: { offerId: id },
       data: { saveCount: { increment: 1 } },
     })
 
@@ -95,8 +95,8 @@ export async function DELETE(
 
     await prisma.notificationEvent.delete({ where: { id: existing.id } })
 
-    await prisma.merchantOffer.update({
-      where: { id },
+    await prisma.offerAnalytics.update({
+      where: { offerId: id },
       data: { saveCount: { decrement: 1 } },
     }).catch(() => null)
 

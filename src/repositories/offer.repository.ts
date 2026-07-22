@@ -65,15 +65,32 @@ export class OfferRepository extends BaseRepository<MerchantOffer, OfferCreateIn
     rejectionReason?: string,
     reviewedBy?: string
   ): Promise<MerchantOffer> {
-    return prisma.merchantOffer.update({
-      where: { id },
-      data: {
-        status: status as any,
-        rejectionReason,
-        reviewedBy,
-        reviewedAt: new Date(),
-        liveAt: status === 'LIVE' ? new Date() : undefined,
-      },
+    return prisma.$transaction(async (tx) => {
+      const updated = await tx.merchantOffer.update({
+        where: { id },
+        data: {
+          status: status as any,
+          reviewedAt: new Date(),
+          liveAt: status === 'LIVE' ? new Date() : undefined,
+        },
+      });
+
+      await tx.offerReview.upsert({
+        where: { offerId: id },
+        create: {
+          offerId: id,
+          reviewedBy: reviewedBy ?? null,
+          reviewedAt: new Date(),
+          rejectionReason: rejectionReason ?? null,
+        },
+        update: {
+          reviewedBy: reviewedBy ?? null,
+          reviewedAt: new Date(),
+          rejectionReason: rejectionReason ?? null,
+        },
+      });
+
+      return updated;
     });
   }
 

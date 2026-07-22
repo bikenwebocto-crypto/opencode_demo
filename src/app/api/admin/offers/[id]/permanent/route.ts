@@ -38,16 +38,24 @@ export async function DELETE(
 
     const offer = await prisma.merchantOffer.findFirst({
       where: { id, deletedAt: { not: null } },
-      include: { merchant: { select: { businessName: true } } },
+      include: {
+        merchant: { select: { businessName: true } },
+        content: { select: { imageUrls: true } },
+        redemption: { select: { configuration: true } },
+      },
     });
 
     if (!offer) return notFound("Deleted offer not found");
 
+    const redemptionConfig = (offer.redemption?.configuration as Record<string, unknown>) ?? {}
+    const qrCodeUrl = redemptionConfig.qrCodeUrl as string | undefined
+    const imageUrls = offer.content?.imageUrls ?? []
+
     // Clean up storage
-    if (offer.qrCodeUrl) {
+    if (qrCodeUrl) {
       try {
         const admin = getAdminClient();
-        const pathMatch = offer.qrCodeUrl.match(/offer-qr\/[^?]+/);
+        const pathMatch = qrCodeUrl.match(/offer-qr\/[^?]+/);
         if (pathMatch) {
           await admin.storage.from('offer-images').remove([pathMatch[0]]);
         }
@@ -56,7 +64,7 @@ export async function DELETE(
       }
     }
 
-    for (const url of offer.imageUrls) {
+    for (const url of imageUrls) {
       try {
         const admin = getAdminClient();
         const pathMatch = url.match(/offer-images\/[^?]+/);
@@ -68,7 +76,7 @@ export async function DELETE(
       }
     }
 
-    // Hard delete from database
+    // Hard delete from database (cascades to OfferContent, OfferPricing, OfferRedemption, OfferReview, OfferAnalytics)
     await prisma.merchantOffer.delete({
       where: { id },
     });
@@ -83,8 +91,8 @@ export async function DELETE(
         title: offer.title,
         merchantBusinessName: offer.merchant.businessName,
         previousStatus: offer.status,
-        hadQrCode: !!offer.qrCodeUrl,
-        imageCount: offer.imageUrls.length,
+        hadQrCode: !!qrCodeUrl,
+        imageCount: imageUrls.length,
       },
     });
 

@@ -49,16 +49,81 @@ export async function createOfferAction(merchantId: string, formData: FormData) 
     }
   }
 
-  const offer = await prisma.merchantOffer.create({
-    data: {
-      merchantId,
-      ...parsed,
-      startDate: new Date(parsed.startDate),
-      endDate: new Date(parsed.endDate),
-      status: 'PENDING_APPROVAL',
-      submittedAt: new Date(),
-      currentRedemptions: 0,
-    },
+  // Build pricing configuration
+  const pricingConfig: Record<string, unknown> = {};
+  if (parsed.offerType === 'flat_rate' || parsed.offerType === 'fixed_amount') {
+    pricingConfig.amount = Number(parsed.discountValue) || 0;
+    if (parsed.minimumSpend != null) pricingConfig.minimumSpend = Number(parsed.minimumSpend);
+  } else if (parsed.offerType === 'percentage') {
+    pricingConfig.percent = Number(parsed.discountPercent) || 0;
+    if (parsed.discountMax != null) pricingConfig.maximumDiscount = Number(parsed.discountMax);
+    if (parsed.minimumSpend != null) pricingConfig.minimumSpend = Number(parsed.minimumSpend);
+  }
+
+  const offer = await prisma.$transaction(async (tx) => {
+    const created = await tx.merchantOffer.create({
+      data: {
+        merchantId,
+        title: parsed.title,
+        offerType: parsed.offerType,
+        status: 'PENDING_APPROVAL',
+        startDate: new Date(parsed.startDate),
+        endDate: new Date(parsed.endDate),
+        submittedAt: new Date(),
+        isFeatured: parsed.isFeatured,
+        isExclusive: parsed.isExclusive,
+        categoryId: null,
+      },
+    });
+
+    await tx.offerContent.create({
+      data: {
+        offerId: created.id,
+        description: parsed.description,
+        shortDescription: parsed.shortDescription ?? null,
+        termsAndConditions: parsed.termsAndConditions ?? null,
+        imageUrls: [],
+      },
+    });
+
+    await tx.offerPricing.create({
+      data: {
+        offerId: created.id,
+        pricingType: parsed.offerType,
+        configuration: pricingConfig as any,
+      },
+    });
+
+    await tx.offerRedemption.create({
+      data: {
+        offerId: created.id,
+        redemptionType: null,
+        configuration: {
+          code: parsed.redemptionCode ?? null,
+          instructions: parsed.redemptionInstructions ?? null,
+        } as any,
+        maxRedemptions: parsed.maxRedemptions ?? 0,
+        currentRedemptions: 0,
+        daysOfWeek: parsed.daysOfWeek,
+      },
+    });
+
+    await tx.offerReview.create({
+      data: {
+        offerId: created.id,
+        isReplacement: false,
+      },
+    });
+
+    await tx.offerAnalytics.create({
+      data: {
+        offerId: created.id,
+        saveCount: 0,
+        viewCount: 0,
+      },
+    });
+
+    return created;
   });
 
   // Update merchant's last offer submission date
@@ -98,15 +163,83 @@ export async function submitReplacementOfferAction(
 
   const parsed = offerSchema.parse(newOfferData);
 
-  // Create new offer as draft
-  const newOffer = await prisma.merchantOffer.create({
-    data: {
-      merchantId,
-      ...parsed,
-      startDate: new Date(parsed.startDate),
-      endDate: new Date(parsed.endDate),
-      status: 'DRAFT',
-    },
+  // Build pricing configuration
+  const pricingConfig: Record<string, unknown> = {};
+  if (parsed.offerType === 'flat_rate' || parsed.offerType === 'fixed_amount') {
+    pricingConfig.amount = Number(parsed.discountValue) || 0;
+    if (parsed.minimumSpend != null) pricingConfig.minimumSpend = Number(parsed.minimumSpend);
+  } else if (parsed.offerType === 'percentage') {
+    pricingConfig.percent = Number(parsed.discountPercent) || 0;
+    if (parsed.discountMax != null) pricingConfig.maximumDiscount = Number(parsed.discountMax);
+    if (parsed.minimumSpend != null) pricingConfig.minimumSpend = Number(parsed.minimumSpend);
+  }
+
+  // Create new offer as draft with all related tables
+  const newOffer = await prisma.$transaction(async (tx) => {
+    const created = await tx.merchantOffer.create({
+      data: {
+        merchantId,
+        title: parsed.title,
+        offerType: parsed.offerType,
+        status: 'DRAFT',
+        startDate: new Date(parsed.startDate),
+        endDate: new Date(parsed.endDate),
+        isFeatured: parsed.isFeatured,
+        isExclusive: parsed.isExclusive,
+        categoryId: null,
+        replacesOfferId: currentOfferId,
+      },
+    });
+
+    await tx.offerContent.create({
+      data: {
+        offerId: created.id,
+        description: parsed.description,
+        shortDescription: parsed.shortDescription ?? null,
+        termsAndConditions: parsed.termsAndConditions ?? null,
+        imageUrls: [],
+      },
+    });
+
+    await tx.offerPricing.create({
+      data: {
+        offerId: created.id,
+        pricingType: parsed.offerType,
+        configuration: pricingConfig as any,
+      },
+    });
+
+    await tx.offerRedemption.create({
+      data: {
+        offerId: created.id,
+        redemptionType: null,
+        configuration: {
+          code: parsed.redemptionCode ?? null,
+          instructions: parsed.redemptionInstructions ?? null,
+        } as any,
+        maxRedemptions: parsed.maxRedemptions ?? 0,
+        currentRedemptions: 0,
+        daysOfWeek: parsed.daysOfWeek,
+      },
+    });
+
+    await tx.offerReview.create({
+      data: {
+        offerId: created.id,
+        isReplacement: true,
+        replacementReason: formData.get('replacementReason') as string ?? null,
+      },
+    });
+
+    await tx.offerAnalytics.create({
+      data: {
+        offerId: created.id,
+        saveCount: 0,
+        viewCount: 0,
+      },
+    });
+
+    return created;
   });
 
   // Create replacement request

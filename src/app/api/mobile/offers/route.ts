@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     if (q) {
       where.OR = [
         { title: { contains: q, mode: 'insensitive' } },
-        { description: { contains: q, mode: 'insensitive' } },
+        { content: { description: { contains: q, mode: 'insensitive' } } },
         { merchant: { businessName: { contains: q, mode: 'insensitive' } } },
       ]
     }
@@ -50,20 +50,30 @@ export async function GET(request: NextRequest) {
         select: {
           id: true,
           title: true,
-          shortDescription: true,
-          imageUrls: true,
           offerType: true,
-          discountValue: true,
-          discountPercent: true,
           startDate: true,
           endDate: true,
           isFeatured: true,
           isExclusive: true,
           createdAt: true,
-          redemptionType: true,
-          offerCode: true,
-          bookingUrl: true,
-          qrCodeUrl: true,
+          content: {
+            select: {
+              description: true,
+              shortDescription: true,
+              imageUrls: true,
+            },
+          },
+          pricing: {
+            select: {
+              configuration: true,
+            },
+          },
+          redemption: {
+            select: {
+              redemptionType: true,
+              configuration: true,
+            },
+          },
           merchant: {
             select: {
               id: true,
@@ -103,11 +113,34 @@ export async function GET(request: NextRequest) {
     const savedSet = new Set(saved.map((s) => s.referenceId))
     const redeemedSet = new Set(redeemed.map((r) => r.offerId))
 
-    const data = rows.map((o) => ({
-      ...o,
-      isSaved: savedSet.has(o.id),
-      isRedeemed: redeemedSet.has(o.id),
-    }))
+    const data = rows.map((o) => {
+      const pricingConfig = (o.pricing?.configuration as Record<string, unknown>) ?? {}
+      const redemptionConfig = (o.redemption?.configuration as Record<string, unknown>) ?? {}
+      return {
+        id: o.id,
+        title: o.title,
+        description: o.content?.description,
+        shortDescription: o.content?.shortDescription,
+        imageUrls: o.content?.imageUrls ?? [],
+        offerType: o.offerType,
+        discountValue: pricingConfig.discountValue ?? pricingConfig.amount ?? pricingConfig.percent,
+        discountPercent: pricingConfig.percent,
+        minimumSpend: pricingConfig.minimumSpend,
+        discountMax: pricingConfig.maximumDiscount,
+        redemptionType: o.redemption?.redemptionType,
+        offerCode: redemptionConfig.code,
+        bookingUrl: redemptionConfig.bookingUrl,
+        qrCodeUrl: redemptionConfig.qrCodeUrl,
+        startDate: o.startDate,
+        endDate: o.endDate,
+        isFeatured: o.isFeatured,
+        isExclusive: o.isExclusive,
+        createdAt: o.createdAt,
+        merchant: o.merchant,
+        isSaved: savedSet.has(o.id),
+        isRedeemed: redeemedSet.has(o.id),
+      }
+    })
 
     return NextResponse.json({
       success: true,

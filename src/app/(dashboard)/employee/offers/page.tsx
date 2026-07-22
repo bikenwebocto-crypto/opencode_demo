@@ -1,17 +1,21 @@
 'use client'
 
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useCallback, useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { EmployeeLayout } from '@/components/employee/EmployeeLayout'
-import { OfferCard, type OfferCardData } from '@/components/employee/OfferCard'
-import { RedeemModal, type RedeemModalOffer } from '@/components/employee/RedeemModal'
+import { OfferCard } from '@/components/employee/OfferCard'
+import { RedeemModal } from '@/components/employee/RedeemModal'
+import {
+  type EmployeeOffer,
+  findOfferInList,
+} from '@/components/employee/offers/employee-offer'
 import { Search } from 'lucide-react'
 
 interface OffersResponse {
-  data: OfferCardData[]
+  data: EmployeeOffer[]
   meta: { page: number; pageSize: number; total: number; totalPages: number }
 }
 
@@ -25,18 +29,56 @@ async function fetchOffers(params: URLSearchParams): Promise<OffersResponse> {
 export default function EmployeeOffersPage() {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
-  const [redeemOffer, setRedeemOffer] = useState<RedeemModalOffer | null>(null)
+  // The modal is driven by the live cache value so Save / Redeem
+  // patches instantly reflect in the open modal.
+  const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null)
+  const queryClient = useQueryClient()
 
-  const params = new URLSearchParams()
-  params.set('page', String(page))
-  params.set('pageSize', '12')
-  if (search) params.set('q', search)
+  const params = useMemo(() => {
+    const p = new URLSearchParams()
+    p.set('page', String(page))
+    p.set('pageSize', '12')
+    if (search) p.set('q', search)
+    return p
+  }, [page, search])
 
   const { data, isLoading } = useQuery({
     queryKey: ['employee-offers', params.toString()],
     queryFn: () => fetchOffers(params),
   })
-  console.log('Rendering OfferCard for offer:', data) // Debugging log
+
+  const selectedOffer = useMemo<EmployeeOffer | null>(() => {
+    if (!selectedOfferId) return null
+    const cached = queryClient.getQueryData<OffersResponse>(
+      ['employee-offers', params.toString()],
+    )
+    if (cached) {
+      const found = findOfferInList(cached.data, selectedOfferId)
+      if (found) return found.offer
+    }
+    return data?.data?.find((o) => o.id === selectedOfferId) ?? null
+  }, [selectedOfferId, data, queryClient, params])
+
+  // Patch the cached offers list in place after a Save toggle. Avoids
+  // reloading the entire page just to flip a single boolean.
+  const handleSavedChange = useCallback(
+    (offerId: string, isSaved: boolean) => {
+      queryClient.setQueryData<OffersResponse | undefined>(
+        ['employee-offers', params.toString()],
+        (prev) => {
+          if (!prev?.data) return prev
+          const found = findOfferInList(prev.data, offerId)
+          if (!found) return prev
+          const next = [...prev.data]
+          next[found.index] = { ...found.offer, isSaved }
+          return { ...prev, data: next }
+        },
+      )
+      queryClient.invalidateQueries({ queryKey: ['employee-saved'] })
+    },
+    [queryClient, params],
+  )
+
   return (
     <EmployeeLayout>
       <div className="space-y-4">
@@ -82,7 +124,7 @@ export default function EmployeeOffersPage() {
                 <OfferCard
                   key={o.id}
                   offer={o}
-                  onRedeem={setRedeemOffer as any}
+                  onOpen={(offer) => setSelectedOfferId(offer.id)}
                 />
               ))}
             </div>
@@ -114,9 +156,12 @@ export default function EmployeeOffersPage() {
       </div>
 
       <RedeemModal
-        open={!!redeemOffer}
-        onClose={() => setRedeemOffer(null)}
-        offer={redeemOffer}
+        offer={selectedOffer}
+        open={!!selectedOffer}
+        onOpenChange={(o) => {
+          if (!o) setSelectedOfferId(null)
+        }}
+        onSavedChange={handleSavedChange}
       />
     </EmployeeLayout>
   )

@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
       redeemedAt: { gte: dateFrom, lte: dateTo },
     }
 
-    const [redemptionAgg, offerAgg, branchList, branchRedemptionCounts, trend, totals, liveOffers] = await Promise.all([
+    const [redemptionAgg, offerAgg, branchList, branchRedemptionCounts, trend, liveOffers] = await Promise.all([
       prisma.redemption.aggregate({
         where,
         _count: { _all: true },
@@ -60,11 +60,10 @@ export async function GET(request: NextRequest) {
           id: true,
           title: true,
           status: true,
-          viewCount: true,
-          saveCount: true,
+          analytics: { select: { viewCount: true, saveCount: true } },
           _count: { select: { redemptions: true } },
         },
-        orderBy: { viewCount: 'desc' },
+        orderBy: { analytics: { viewCount: 'desc' } },
         take: 5,
       }),
       prisma.merchantBranch.findMany({
@@ -84,11 +83,6 @@ export async function GET(request: NextRequest) {
         GROUP BY DATE("redeemedAt")
         ORDER BY DATE("redeemedAt") ASC
       `.catch(() => [] as { date: string; total: number }[]),
-      prisma.redemption.aggregate({
-        where: { merchantId: merchant.id },
-        _count: { _all: true },
-        _sum: { savingsAmount: true },
-      }),
       prisma.merchantOffer.count({
         where: { merchantId: merchant.id, status: 'LIVE' },
       }),
@@ -101,10 +95,10 @@ export async function GET(request: NextRequest) {
         id: o.id,
         title: o.title,
         status: o.status,
-        views: o.viewCount,
-        saves: o.saveCount,
+        views: o.analytics?.viewCount ?? 0,
+        saves: o.analytics?.saveCount ?? 0,
         redemptions: o._count.redemptions,
-        conversionRate: o.viewCount > 0 ? Number(((o._count.redemptions / o.viewCount) * 100).toFixed(2)) : 0,
+        conversionRate: (o.analytics?.viewCount ?? 0) > 0 ? Number(((o._count.redemptions / (o.analytics?.viewCount ?? 0)) * 100).toFixed(2)) : 0,
       }))
       .sort((a, b) => b.redemptions - a.redemptions)
       .slice(0, 5)
@@ -126,8 +120,8 @@ export async function GET(request: NextRequest) {
           totalRedemptions: redemptionAgg._count._all,
           totalDiscount: Number(redemptionAgg._sum.discountAmount ?? 0),
           totalSavings: Number(redemptionAgg._sum.savingsAmount ?? 0),
-          allTimeRedemptions: totals._count._all,
-          allTimeSavings: Number(totals._sum.savingsAmount ?? 0),
+          allTimeRedemptions: merchant.totalRedemptions,
+          allTimeSavings: Number(merchant.totalSavings),
           liveOffers,
         },
         topOffers,

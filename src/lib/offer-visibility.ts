@@ -1,5 +1,9 @@
 // Centralized business rules for the employee offer visibility flow.
-// Used by: /api/employee/offers, /api/employee/offers/[id], /api/employee/redeem
+// Used by:
+//   - GET /api/employee/offers               (inlined as evaluateVisibility)
+//   - POST /api/employee/redeem              (isOfferVisibleToEmployees)
+//   - POST /api/employee/redeem              (checkRedemptionEligibility)
+//   - verifyOfferQRToken                     (in-store QR validation)
 //
 // Rules:
 // 1. offer.status = 'LIVE'
@@ -73,8 +77,7 @@ export async function verifyOfferQRToken(
     select: {
       id: true,
       merchantId: true,
-      redemptionType: true,
-      metadata: true,
+      redemption: { select: { redemptionType: true, configuration: true } },
     },
   })
 
@@ -82,12 +85,12 @@ export async function verifyOfferQRToken(
     return { valid: false, reason: 'Offer not found' }
   }
 
-  if (offer.redemptionType !== 'IN_STORE_QR') {
+  if (offer.redemption?.redemptionType !== 'IN_STORE_QR') {
     return { valid: false, reason: 'Offer is not an in-store QR offer' }
   }
 
-  const meta = offer.metadata as Record<string, unknown> | null
-  const storedToken = meta?.qrToken as string | undefined
+  const config = (offer.redemption?.configuration as Record<string, unknown>) ?? {}
+  const storedToken = config.qrToken as string | undefined
 
   if (!storedToken || storedToken !== token) {
     return { valid: false, reason: 'Invalid or expired QR token' }
@@ -103,10 +106,20 @@ export async function checkRedemptionEligibility(
   const visibility = await isOfferVisibleToEmployees(offerId)
   if (!visibility.visible) return { eligible: false, reason: visibility.reason }
 
-  const offer = await prisma.merchantOffer.findFirst({ where: { id: offerId, deletedAt: null } })
+  const offer = await prisma.merchantOffer.findFirst({
+    where: { id: offerId, deletedAt: null },
+    select: {
+      id: true,
+      redemption: { select: { maxRedemptions: true, currentRedemptions: true } },
+    },
+  })
   if (!offer) return { eligible: false, reason: 'Offer not found' }
 
-  if (offer.maxRedemptions != null && offer.currentRedemptions >= offer.maxRedemptions) {
+  if (
+    offer.redemption?.maxRedemptions != null &&
+    offer.redemption?.maxRedemptions > 0 &&
+    (offer.redemption?.currentRedemptions ?? 0) >= offer.redemption!.maxRedemptions
+  ) {
     return { eligible: false, reason: 'Offer usage limit reached' }
   }
 

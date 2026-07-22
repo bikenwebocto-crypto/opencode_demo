@@ -1,333 +1,759 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Tag, CheckCircle2, Copy, ExternalLink, MapPin, Phone } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import {
+  AlertCircle,
+  Calendar,
+  CheckCircle2,
+  Copy,
+  ExternalLink,
+  Gift,
+  Info,
+  Loader2,
+  MapPin,
+  Phone,
+  Star,
+  Store,
+  Tag,
+  X,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { showToast } from '@/hooks/use-toast'
+import { type EmployeeOffer } from './offers/employee-offer'
 
-export interface RedeemModalOffer {
+/* ------------------------------------------------------------------ */
+/* Types                                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Shape of the data returned by `POST /api/employee/redeem`. The
+ * field union varies by `redemptionType`. The modal renders the
+ * subset relevant to the current offer.
+ */
+interface RedemptionResult {
   id: string
-  title: string
-  discountValue: number | string
-  redemptionType: string | null
+  type: 'ONLINE_CODE' | 'BOOKING_LINK' | 'IN_STORE_QR'
+  status: 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED'
   offerCode?: string | null
   bookingUrl?: string | null
-  merchant: { id: string; businessName: string; logoUrl: string | null }
-  branches?: { id: string; name: string; branchType: string; addressLine1: string; city: string; state: string | null; phone?: string | null }[]
+  merchantWebsite?: string | null
+  instructions?: string | null
+  merchant?: { businessName: string; website?: string | null }
+  branch?: {
+    name: string
+    addressLine1: string
+    addressLine2?: string | null
+    city: string
+    state?: string | null
+    postalCode?: string | null
+    phone?: string | null
+    latitude?: number | null
+    longitude?: number | null
+    openingHours?: string | null
+    googleMapsUrl?: string | null
+  }
 }
 
-interface Props {
+/* ------------------------------------------------------------------ */
+/* Formatters                                                           */
+/* ------------------------------------------------------------------ */
+
+const TYPE_LABELS: Record<string, string> = {
+  FLAT: 'Flat',
+  PERCENTAGE: '% Off',
+  BUY_X_GET_Y: 'BOGO',
+  fixed_amount: 'Fixed',
+  percentage: '% Off',
+  flat_rate: 'Flat',
+  buy_x_get_y: 'BOGO',
+}
+
+const REDEMPTION_METHOD_LABELS: Record<string, string> = {
+  ONLINE_CODE: 'Online Code',
+  BOOKING_LINK: 'Booking Link',
+  IN_STORE_QR: 'In-Store (QR Code)',
+}
+
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
+
+function formatDiscount(o: EmployeeOffer): string {
+  switch (o.offerType) {
+    case 'PERCENTAGE':
+    case 'percentage':
+      return `${o.discountPercent ?? Math.round(Number(o.discountValue))}% OFF`
+    case 'BUY_X_GET_Y':
+    case 'buy_x_get_y':
+      return 'Buy 1 Get 1 Free'
+    case 'FLAT':
+    case 'flat_rate':
+    case 'fixed_amount':
+      return `£${Number(o.discountValue).toFixed(2)} OFF`
+    default:
+      return `${o.discountValue ?? ''}`
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Cache helpers                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Patch every cached `['employee-offers', ...]` query so the affected
+ * offer shows `isRedeemed = true` everywhere it's rendered (list
+ * cards, featured row on the home page, etc.). Avoids a full refetch
+ * — the user gets instant visual feedback.
+ */
+function patchOffersListCache(
+  queryClient: QueryClient,
+  offerId: string,
+  patch: { isRedeemed?: boolean; currentRedemptions?: number },
+) {
+  queryClient.setQueriesData<{ data: any[]; meta?: any }>(
+    { queryKey: ['employee-offers'] },
+    (prev) => {
+      if (!prev?.data) return prev
+      const idx = prev.data.findIndex((o) => o.id === offerId)
+      if (idx < 0) return prev
+      const next = [...prev.data]
+      next[idx] = { ...next[idx], ...patch }
+      return { ...prev, data: next }
+    },
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Public component                                                     */
+/* ------------------------------------------------------------------ */
+
+export interface RedeemModalProps {
+  /**
+   * The full offer object. The modal is a pure presentation
+   * component: it does NOT fetch offer details. Pass `null` to keep
+   * the modal closed.
+   */
+  offer: EmployeeOffer | null
+  /** Whether the modal is open. The host owns this flag. */
   open: boolean
-  onClose: () => void
-  offer: RedeemModalOffer | null
+  /** Called when the modal requests to open or close. */
+  onOpenChange: (open: boolean) => void
+  /**
+   * Optional callback fired when the user toggles the saved state.
+   * The host is expected to perform the API call + cache update.
+   */
+  onSavedChange?: (offerId: string, isSaved: boolean) => void
 }
 
-export function RedeemModal({ open, onClose, offer }: Props) {
-  const router = useRouter()
+/**
+ * Single source of truth for the offer view + redeem experience.
+ *
+ * - Receives the full `EmployeeOffer` (no fetch).
+ * - Opens instantly — zero network round trips.
+ * - The only network request issued by this component is the
+ *   redemption POST (`POST /api/employee/redeem`).
+ *
+ * Lifecycle:
+ *   1. View the offer details + a single "Redeem Now" button. No
+ *      offer code, booking link, or branch info is shown before
+ *      the user redeems.
+ *   2. On click, the modal POSTs to `/api/employee/redeem`.
+ *   3. On success, the button flips to a disabled "Already
+ *      Redeemed" and the type-specific redemption details are
+ *      revealed in the same modal.
+ */
+export function RedeemModal({
+  offer,
+  open,
+  onOpenChange,
+  onSavedChange,
+}: RedeemModalProps) {
   const queryClient = useQueryClient()
 
-  const [branchId, setBranchId] = useState<string>('')
-  const [notes, setNotes] = useState('')
-  const [result, setResult] = useState<any>(null)
+  // ── Local state ────────────────────────────────────────────
+  // `hasRedeemed` is initialised from the offer so an already-
+  // redeemed offer shows the details immediately when the modal
+  // opens. `redemptionResult` holds the response from the POST so
+  // we can render offer code / booking link / branch info.
+  const [hasRedeemed, setHasRedeemed] = useState<boolean>(
+    !!offer?.isRedeemed,
+  )
+  const [redemptionResult, setRedemptionResult] =
+    useState<RedemptionResult | null>(null)
   const [copied, setCopied] = useState(false)
 
-  const redemptionType = offer?.redemptionType
+  // Reset local state every time the host hands us a different
+  // offer, so reopening the modal for offer A does not leak the
+  // redemption state of offer B.
+  useEffect(() => {
+    setHasRedeemed(!!offer?.isRedeemed)
+    setRedemptionResult(null)
+    setCopied(false)
+  }, [offer?.id, offer?.isRedeemed])
 
+  // ── Derived data ───────────────────────────────────────────
+  const canRedeem = !!offer?.isVisible && !hasRedeemed
+  const initials = offer?.merchant.businessName
+    .split(' ')
+    .map((s) => s[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+  const bannerImage =
+    offer?.imageUrls && offer.imageUrls.length > 0
+      ? offer.imageUrls[0]
+      : null
+
+  // ── Redeem mutation ───────────────────────────────────────
+  // IN_STORE_QR requires a `branchId`. The list endpoint already
+  // returns the active branches, so we auto-pick the first one.
+  // The "Select a store" picker was removed in the simplified UI.
   const redeemMutation = useMutation({
     mutationFn: async () => {
+      const branchId =
+        offer?.redemptionType === 'IN_STORE_QR' && offer.merchant.branches[0]
+          ? offer.merchant.branches[0].id
+          : null
       const res = await fetch('/api/employee/redeem', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          offerId: offer?.id,
-          branchId: branchId || null,
-          notes: notes.trim() || null,
-        }),
+        body: JSON.stringify({ offerId: offer?.id, branchId }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to redeem')
+      if (!res.ok) {
+        throw new Error(json.error?.message ?? 'Failed to redeem')
+      }
       return json
     },
     onSuccess: (json) => {
-      setResult(json.data)
+      const data = json?.data as RedemptionResult | undefined
+      setHasRedeemed(true)
+      setRedemptionResult(data ?? null)
+
+      // Patch every cached offers list so the card flips to
+      // "Already Redeemed" everywhere it's rendered.
+      if (offer?.id) {
+        patchOffersListCache(queryClient, offer.id, { isRedeemed: true })
+      }
+
+      // Invalidate related queries so subsequent navigations see
+      // fresh server data. We intentionally do NOT invalidate
+      // ['employee-offers'] — we patched it in place.
       queryClient.invalidateQueries({ queryKey: ['employee-redemptions'] })
       queryClient.invalidateQueries({ queryKey: ['employee-dashboard-stats'] })
+      queryClient.invalidateQueries({ queryKey: ['employee-saved'] })
+
       showToast({
         type: 'success',
         title: 'Redemption submitted',
-        description: 'Offer redeemed successfully.',
+        description: 'Your offer has been redeemed.',
       })
     },
-    onError: (e: any) =>
-      showToast({ type: 'error', title: 'Redemption failed', description: e?.message }),
+    onError: (err: any) =>
+      showToast({
+        type: 'error',
+        title: 'Redemption failed',
+        description: err?.message ?? 'Please try again.',
+      }),
   })
 
-  if (!open || !offer) return null
-
-  function handleClose() {
-    onClose()
-    setResult(null)
-    setBranchId('')
-    setNotes('')
-    setCopied(false)
-  }
-
-  function handleViewRedemptions() {
-    handleClose()
-    router.push('/employee/redemptions')
-  }
-
+  // ── Clipboard helper ──────────────────────────────────────
   function handleCopy(text: string) {
     navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // ── Result state ──────────────────────────────────
-  if (result) {
-    return (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-        onClick={handleClose}
-      >
-        <div
-          className="w-full max-w-md rounded-lg bg-card p-6 shadow-lg"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex items-start justify-between">
-            <CheckCircle2 className="h-10 w-10 text-green-600" />
-            <button onClick={handleClose} className="rounded p-1 hover:bg-muted" aria-label="Close">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <h2 className="mt-3 text-lg font-semibold">
-            {result.type === 'IN_STORE_QR' ? 'Redemption submitted' :
-             result.type === 'ONLINE_CODE' ? 'Your promo code is ready' :
-             result.type === 'BOOKING_LINK' ? 'Booking link ready' :
-             'Redemption completed'}
-          </h2>
+  // ── Render ────────────────────────────────────────────────
+  // If the host passes `open` while there's no offer, stay closed
+  // silently. This avoids briefly opening the modal during the
+  // close → clear state → next open sequence.
+  if (!open || !offer) return null
 
-          {result.type === 'ONLINE_CODE' && result.offerCode ? (
-            <div className="mt-4 space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Use this code at checkout on the merchant website.
-              </p>
-              <div className="rounded-md border bg-muted/30 p-4 text-center">
-                <p className="text-xs text-muted-foreground">Promo Code</p>
-                <p className="mt-1 font-mono text-2xl font-bold tracking-widest">{result.offerCode}</p>
-              </div>
-              <Button className="w-full" variant="outline" onClick={() => handleCopy(result.offerCode)}>
-                <Copy className="mr-1 h-4 w-4" />
-                {copied ? 'Copied!' : 'Copy Code'}
-              </Button>
-              {result.merchantWebsite && (
-                <a
-                  href={result.merchantWebsite}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-                >
-                  <ExternalLink className="h-4 w-4" /> Visit Website
-                </a>
-              )}
-              {result.instructions && (
-                <p className="text-xs text-muted-foreground">{result.instructions}</p>
-              )}
-            </div>
-          ) : result.type === 'BOOKING_LINK' && result.bookingUrl ? (
-            <div className="mt-4 space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Complete your booking on the merchant's platform.
-              </p>
-              <a
-                href={result.bookingUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-              >
-                <ExternalLink className="h-4 w-4" /> Open Booking Website
-              </a>
-              {result.instructions && (
-                <p className="text-xs text-muted-foreground">{result.instructions}</p>
-              )}
-            </div>
-          ) : result.type === 'IN_STORE_QR' && result.branch ? (
-            <div className="mt-4 space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Visit the store below to redeem your offer in person.
-              </p>
-              <div className="rounded-md border bg-muted/30 p-4 space-y-2">
-                <p className="font-semibold">{result.branch.name}</p>
-                <p className="text-sm text-muted-foreground">
-                  {result.branch.addressLine1}
-                  {result.branch.addressLine2 ? `, ${result.branch.addressLine2}` : ''}
-                  {result.branch.city ? `, ${result.branch.city}` : ''}
-                  {result.branch.state ? `, ${result.branch.state}` : ''}
-                  {result.branch.postalCode ? ` ${result.branch.postalCode}` : ''}
-                </p>
-                {result.branch.phone && (
-                  <p className="flex items-center gap-1 text-sm text-muted-foreground">
-                    <Phone className="h-4 w-4" /> {result.branch.phone}
-                  </p>
-                )}
-                {result.branch.googleMapsUrl && (
-                  <a
-                    href={result.branch.googleMapsUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-                  >
-                    <MapPin className="h-4 w-4" /> Open in Google Maps
-                  </a>
-                )}
-              </div>
-              {result.instructions && (
-                <p className="text-sm text-muted-foreground">{result.instructions}</p>
-              )}
-            </div>
-          ) : (
-            <p className="mt-3 text-sm text-muted-foreground">
-              Your redemption has been recorded.
-            </p>
-          )}
+  const o = offer
 
-          <div className="mt-4 flex justify-end gap-2">
-            <Button variant="outline" onClick={handleClose}>
-              Close
-            </Button>
-            <Button onClick={handleViewRedemptions}>View my redemptions</Button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // ── Form state ────────────────────────────────────
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={handleClose}
+      onClick={() => onOpenChange(false)}
     >
       <div
-        className="w-full max-w-md rounded-lg bg-card p-6 shadow-lg"
+        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-lg bg-card shadow-lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between">
-          <div>
-            <h2 className="text-lg font-semibold">Redeem offer</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{offer.title}</p>
-            <p className="text-xs text-muted-foreground">{offer.merchant.businessName}</p>
+        {/* ── Header ──────────────────────────────────────────── */}
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b bg-card p-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-semibold leading-tight">
+              {o.merchant.businessName}
+            </h2>
+            <p className="truncate text-sm text-muted-foreground">{o.title}</p>
           </div>
-          <button onClick={handleClose} className="rounded p-1 hover:bg-muted" aria-label="Close">
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="rounded p-1 text-muted-foreground hover:bg-muted"
+            aria-label="Close"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="mt-4 space-y-3">
-          {/* Type badge */}
-          {redemptionType && (
-            <div className="rounded-md bg-muted/30 p-3">
-              <p className="text-xs font-medium text-muted-foreground">Redemption type</p>
-              <p className="mt-0.5 text-sm font-semibold">
-                {redemptionType === 'IN_STORE_QR' ? 'In-Store (QR Code)' :
-                 redemptionType === 'ONLINE_CODE' ? 'Online Code' :
-                 redemptionType === 'BOOKING_LINK' ? 'Booking Link' :
-                 redemptionType}
-              </p>
-            </div>
-          )}
-
-          {/* Unknown / unconfigured redemption type */}
-          {!redemptionType && (
-            <div className="rounded-md border border-yellow-300 bg-yellow-50 p-3 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-200">
-              <p className="font-medium">Redemption type not configured</p>
-              <p className="mt-1 text-xs">
-                This offer cannot be redeemed because the merchant has not specified a redemption method.
-              </p>
-            </div>
-          )}
-
-          {/* IN_STORE_QR: branch selector */}
-          {redemptionType === 'IN_STORE_QR' && offer.branches && offer.branches.length > 0 && (
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Select a store branch *
-              </label>
-              <select
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={branchId}
-                onChange={(e) => setBranchId(e.target.value)}
-              >
-                <option value="">— Select a branch —</option>
-                {offer.branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name} — {b.addressLine1}, {b.city}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* ONLINE_CODE: info text */}
-          {redemptionType === 'ONLINE_CODE' && (
-            <div className="rounded-md border p-3 text-sm text-muted-foreground">
-              <MapPin className="mb-1 h-4 w-4" />
-              <p>This offer provides a promo code for use on the merchant's website. You will receive the code after confirming.</p>
-            </div>
-          )}
-
-          {/* BOOKING_LINK: info text */}
-          {redemptionType === 'BOOKING_LINK' && offer.bookingUrl && (
-            <div className="rounded-md border p-3 text-sm text-muted-foreground">
-              <ExternalLink className="mb-1 h-4 w-4" />
-              <p>You will be redirected to the merchant's booking page after confirming.</p>
-            </div>
-          )}
-
-          {/* Notes (optional) */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              Notes (optional)
-            </label>
-            <textarea
-              rows={2}
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Anything the merchant should know…"
+        {/* ── Banner ──────────────────────────────────────────── */}
+        <div className="relative w-full aspect-[16/9] bg-gradient-to-br from-primary/10 to-primary/5">
+          {bannerImage ? (
+            <img
+              src={bannerImage}
+              alt={o.title}
+              className="h-full w-full object-cover"
             />
-          </div>
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <Gift className="h-16 w-16 text-muted-foreground/30" />
+            </div>
+          )}
+          {(o.isFeatured || o.isExclusive) && (
+            <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
+              {o.isFeatured && (
+                <Badge variant="default" className="text-[10px] shadow-md">
+                  <Star className="mr-0.5 h-3 w-3" /> Featured
+                </Badge>
+              )}
+              {o.isExclusive && (
+                <Badge variant="secondary" className="text-[10px] shadow-md">
+                  <SparklesIcon /> Exclusive
+                </Badge>
+              )}
+            </div>
+          )}
         </div>
 
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <Button type="button" variant="outline" onClick={handleClose}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            onClick={() => redeemMutation.mutate()}
-            disabled={
-              redeemMutation.isPending ||
-              !offer ||
-              !redemptionType ||
-              (redemptionType === 'IN_STORE_QR' && !branchId)
-            }
-          >
-            <Tag className="mr-1 h-4 w-4" />
-            {redeemMutation.isPending
-              ? 'Submitting…'
-              : !redemptionType
-                ? 'Cannot Redeem'
-                : redemptionType === 'IN_STORE_QR'
-                  ? 'Confirm In-Store Redemption'
-                  : redemptionType === 'ONLINE_CODE'
-                    ? 'Get Promo Code'
-                    : 'Get Booking Link'}
-          </Button>
+        <div className="space-y-4 p-4">
+          {/* ── Visibility warning ─────────────────────────── */}
+          {!o.isVisible && (
+            <div className="flex items-start gap-2 rounded-md bg-yellow-50 p-3 text-sm text-yellow-900 dark:bg-yellow-900/20 dark:text-yellow-300">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>
+                <p className="font-medium">
+                  This offer is not currently available
+                </p>
+                {o.visibilityReason && (
+                  <p className="text-xs">{o.visibilityReason}</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Merchant + offer summary ───────────────────── */}
+          <div className="flex items-center gap-3">
+            {o.merchant.logoUrl ? (
+              <img
+                src={o.merchant.logoUrl}
+                alt={o.merchant.businessName}
+                className="h-12 w-12 rounded-full border object-cover"
+              />
+            ) : (
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-sm font-bold">
+                {initials || <Store className="h-5 w-5" />}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-semibold">
+                {o.merchant.businessName}
+              </p>
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                <span>{Number(o.merchant.averageRating).toFixed(1)}</span>
+                <span className="ml-1">·</span>
+                <MapPin className="h-3 w-3 shrink-0" />
+                <span className="truncate">
+                  {o.merchant.city ?? '—'}
+                  {o.merchant.state ? `, ${o.merchant.state}` : ''}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Title + discount + type ────────────────────── */}
+          <div>
+            <h3 className="text-xl font-bold tracking-tight">{o.title}</h3>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-primary px-3 py-1 text-sm font-bold text-primary-foreground">
+                {formatDiscount(o)}
+              </span>
+              <Badge variant="secondary">
+                {TYPE_LABELS[o.offerType] ?? o.offerType}
+              </Badge>
+              {o.redemptionType && (
+                <Badge variant="outline">
+                  {REDEMPTION_METHOD_LABELS[o.redemptionType] ?? o.redemptionType}
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          {o.shortDescription && (
+            <p className="text-sm">{o.shortDescription}</p>
+          )}
+
+          {/* ── Description (if present) ────────────────────── */}
+          {o.description && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Info className="h-4 w-4" /> About this offer
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="whitespace-pre-wrap text-sm">{o.description}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Gallery (skip the first image — it's the banner) ── */}
+          {o.imageUrls && o.imageUrls.length > 1 && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {o.imageUrls.slice(1, 4).map((url, i) => (
+                <img
+                  key={i}
+                  src={url}
+                  alt={`${o.title} ${i + 2}`}
+                  className="h-40 w-full rounded-md border object-cover"
+                />
+              ))}
+            </div>
+          )}
+
+          {/* ── Pricing + validity grid ────────────────────── */}
+          <Card>
+            <CardContent className="grid gap-2 p-3 sm:grid-cols-2">
+              <div className="rounded-md border p-2 text-sm">
+                <p className="text-xs text-muted-foreground">Valid</p>
+                <p className="font-medium">
+                  {new Date(o.startDate).toLocaleDateString()} –{' '}
+                  {new Date(o.endDate).toLocaleDateString()}
+                </p>
+              </div>
+              {o.maxRedemptions != null && (
+                <div className="rounded-md border p-2 text-sm">
+                  <p className="text-xs text-muted-foreground">
+                    Total redemptions
+                  </p>
+                  <p className="font-medium">
+                    {o.currentRedemptions} / {o.maxRedemptions}
+                  </p>
+                </div>
+              )}
+              {o.minimumSpend != null && Number(o.minimumSpend) > 0 && (
+                <div className="rounded-md border p-2 text-sm">
+                  <p className="text-xs text-muted-foreground">Minimum spend</p>
+                  <p className="font-medium">
+                    ${Number(o.minimumSpend).toFixed(2)}
+                  </p>
+                </div>
+              )}
+              {o.discountMax != null && Number(o.discountMax) > 0 && (
+                <div className="rounded-md border p-2 text-sm">
+                  <p className="text-xs text-muted-foreground">Max discount</p>
+                  <p className="font-medium">
+                    ${Number(o.discountMax).toFixed(2)}
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* ── Available days ─────────────────────────────── */}
+          {(() => {
+            const days =
+              Array.isArray(o.daysOfWeek) && o.daysOfWeek.length > 0
+                ? o.daysOfWeek
+                : [0, 1, 2, 3, 4, 5, 6]
+            const isEveryDay = days.length === 7
+            return (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Calendar className="h-4 w-4" />
+                <span>
+                  {isEveryDay
+                    ? 'Available every day'
+                    : `Available ${days
+                        .map((d: number) => DAY_LABELS[d] ?? `D${d}`)
+                        .join(' • ')}`}
+                </span>
+              </div>
+            )
+          })()}
+
+          {/* ── Terms & Conditions ──────────────────────────── */}
+          {o.termsAndConditions && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Terms &amp; Conditions
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+                  {o.termsAndConditions}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Available branches (informational) ─────────── */}
+          {o.merchant.branches.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <MapPin className="h-4 w-4" /> Available at
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-2 text-sm">
+                  {o.merchant.branches.map((b) => (
+                    <li key={b.id} className="rounded-md border p-2">
+                      <p className="font-medium">{b.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {b.addressLine1}, {b.city}
+                        {b.state ? `, ${b.state}` : ''} · {b.branchType}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ──────────────────────────────────────────────── */}
+          {/*   REDEEM BUTTON — single source of the call.      */}
+          {/* ──────────────────────────────────────────────── */}
+          <div className="flex items-center gap-2">
+            {hasRedeemed ? (
+              <Button size="lg" disabled className="w-full sm:w-auto">
+                <CheckCircle2 className="mr-2 h-4 w-4" /> Already Redeemed
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                disabled={!canRedeem || redeemMutation.isPending}
+                onClick={() => redeemMutation.mutate()}
+                className="w-full sm:w-auto"
+              >
+                {redeemMutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Submitting…
+                  </>
+                ) : (
+                  <>
+                    <Tag className="mr-2 h-4 w-4" /> Redeem Now
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+
+          {/* ──────────────────────────────────────────────── */}
+          {/*   POST-REDEMPTION REVEAL — shown only after success.*/}
+          {/* ──────────────────────────────────────────────── */}
+          {hasRedeemed && (
+            <>
+              {o.redemptionType === 'ONLINE_CODE' && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Your Offer Code</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center justify-between rounded-md border p-4">
+                      <div>
+                        <p className="text-2xl font-bold tracking-wider">
+                          {redemptionResult?.offerCode ?? o.offerCode}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Use this code at checkout on the merchant website
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const code =
+                            redemptionResult?.offerCode ?? o.offerCode
+                          if (code) handleCopy(code)
+                        }}
+                      >
+                        <Copy className="mr-1 h-4 w-4" />
+                        {copied ? 'Copied!' : 'Copy Code'}
+                      </Button>
+                    </div>
+                    {(redemptionResult?.merchantWebsite ?? o.bookingUrl) && (
+                      <div className="mt-3">
+                        <a
+                          href={
+                            (redemptionResult?.merchantWebsite ??
+                              o.bookingUrl) as string
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex animate-pulse items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                        >
+                          <ExternalLink className="h-4 w-4" /> Visit merchant
+                          website →
+                        </a>
+                      </div>
+                    )}
+                    {redemptionResult?.instructions && (
+                      <p className="mt-3 text-sm text-muted-foreground">
+                        {redemptionResult.instructions}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {o.redemptionType === 'BOOKING_LINK' && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Book This Offer</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="mb-3 text-sm text-muted-foreground">
+                      Click below to complete your booking on the
+                      merchant&apos;s platform.
+                    </p>
+                    <a
+                      href={
+                        (redemptionResult?.bookingUrl ?? o.bookingUrl) as string
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex animate-pulse items-center gap-2 rounded-md bg-primary px-6 py-3 text-base font-bold text-primary-foreground hover:bg-primary/90 shadow-lg"
+                    >
+                      <ExternalLink className="h-4 w-4" /> Open Link
+                    </a>
+                    {redemptionResult?.instructions && (
+                      <p className="mt-3 text-sm text-muted-foreground">
+                        {redemptionResult.instructions}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {o.redemptionType === 'IN_STORE_QR' && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Redeem In-Store</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {redemptionResult?.branch ? (
+                      <div className="space-y-3">
+                        <div className="rounded-md border bg-muted/30 p-4 space-y-2">
+                          <p className="font-semibold">
+                            {redemptionResult.branch.name}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {redemptionResult.branch.addressLine1}
+                            {redemptionResult.branch.addressLine2
+                              ? `, ${redemptionResult.branch.addressLine2}`
+                              : ''}
+                            {redemptionResult.branch.city
+                              ? `, ${redemptionResult.branch.city}`
+                              : ''}
+                            {redemptionResult.branch.state
+                              ? `, ${redemptionResult.branch.state}`
+                              : ''}
+                            {redemptionResult.branch.postalCode
+                              ? ` ${redemptionResult.branch.postalCode}`
+                              : ''}
+                          </p>
+                          {redemptionResult.branch.phone && (
+                            <p className="flex items-center gap-1 text-sm text-muted-foreground">
+                              <Phone className="h-4 w-4" />
+                              {redemptionResult.branch.phone}
+                            </p>
+                          )}
+                          {redemptionResult.branch.googleMapsUrl && (
+                            <a
+                              href={redemptionResult.branch.googleMapsUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                            >
+                              <MapPin className="h-4 w-4" /> Open in Google
+                              Maps
+                            </a>
+                          )}
+                        </div>
+                        {redemptionResult.instructions && (
+                          <p className="text-sm text-muted-foreground">
+                            {redemptionResult.instructions}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        Visit the merchant location to complete your
+                        in-store redemption. Your redemption code is
+                        available in the My Redemptions list.
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Generic post-redemption instructions card — only
+                  shown if the API returned instructions but no
+                  type-specific card above already displayed them. */}
+              {redemptionResult?.instructions &&
+                o.redemptionType !== 'ONLINE_CODE' &&
+                o.redemptionType !== 'BOOKING_LINK' &&
+                o.redemptionType !== 'IN_STORE_QR' && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">
+                        How to redeem
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                        {redemptionResult.instructions}
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+            </>
+          )}
         </div>
       </div>
     </div>
+  )
+}
+
+/* Sparkles is a small icon not in the lucide-react default bundle
+   that we want for the "Exclusive" badge. Defining a tiny wrapper
+   keeps the import block above tidy. */
+function SparklesIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="mr-0.5 inline"
+    >
+      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
+      <path d="M20 3v4" />
+      <path d="M22 5h-4" />
+      <path d="M4 17v2" />
+      <path d="M5 18H3" />
+    </svg>
   )
 }

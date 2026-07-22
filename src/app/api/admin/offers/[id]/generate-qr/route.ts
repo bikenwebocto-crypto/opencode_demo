@@ -44,12 +44,13 @@ export async function POST(
 
     const offer = await prisma.merchantOffer.findFirst({
       where: { id, deletedAt: null },
+      include: { redemption: { select: { redemptionType: true } } },
     });
 
     if (!offer) return notFound();
 
-    if (offer.redemptionType !== 'IN_STORE_QR') {
-      return badRequest(`Offer redemption type is "${offer.redemptionType}", not IN_STORE_QR. QR codes are only generated for IN_STORE_QR offers.`);
+    if (offer.redemption?.redemptionType !== 'IN_STORE_QR') {
+      return badRequest(`Offer redemption type is "${offer.redemption?.redemptionType}", not IN_STORE_QR. QR codes are only generated for IN_STORE_QR offers.`);
     }
 
     console.log('[ADMIN GENERATE QR] Admin', user.email, 'requested QR regeneration for offer:', id);

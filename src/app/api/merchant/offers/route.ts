@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/supabase/server";
-import { Prisma, OfferStatus } from "@prisma/client";
+import { OfferStatus } from "@prisma/client";
 import {
   ReplacementValidationError,
   validateReplacement,
@@ -15,6 +15,8 @@ const MAX_DESCRIPTION_LENGTH = 2000;
 const MAX_SHORT_DESCRIPTION_LENGTH = 500;
 const ALLOWED_IMAGE_FORMATS = ["jpg", "jpeg", "png", "webp"];
 const VALID_REDEMPTION_TYPES = ['ONLINE_CODE', 'BOOKING_LINK', 'IN_STORE_QR'] as const;
+
+const VALID_OFFER_TYPES = ['flat_rate', 'percentage', 'buy_x_get_y'] as const;
 
 function unauthorized() {
   return NextResponse.json(
@@ -57,6 +59,7 @@ function runQualityChecks(body: any): {
   errors: Record<string, string>;
 } {
   const errors: Record<string, string> = {};
+  const ot = body.offerType;
 
   if (!body.title || body.title.trim().length < MIN_TITLE_LENGTH) {
     errors.title = `Title must be at least ${MIN_TITLE_LENGTH} characters`;
@@ -73,10 +76,42 @@ function runQualityChecks(body: any): {
   ) {
     errors.shortDescription = `Short description must be at most ${MAX_SHORT_DESCRIPTION_LENGTH} characters`;
   }
-  if (!body.offerType) errors.offerType = "Offer type is required";
-  if (body.discountValue == null || Number(body.discountValue) <= 0) {
-    errors.discountValue = "Discount value must be a positive number";
+  if (!ot) {
+    errors.offerType = "Offer type is required";
+  } else if (!VALID_OFFER_TYPES.includes(ot)) {
+    errors.offerType = `Offer type must be one of: ${VALID_OFFER_TYPES.join(', ')}`;
   }
+
+  if (ot === 'flat_rate') {
+    if (body.discountValue == null || Number(body.discountValue) <= 0) {
+      errors.discountValue = "Discount value is required for flat offers";
+    }
+  } else if (ot === 'percentage') {
+    if (body.discountPercent == null || Number(body.discountPercent) <= 0) {
+      errors.discountPercent = "Discount percentage is required for percentage offers";
+    } else if (Number(body.discountPercent) > 90) {
+      errors.discountPercent = "Discount percentage cannot exceed 90%";
+    }
+    if (body.discountMax != null && body.discountValue != null) {
+      if (Number(body.discountMax) > Number(body.discountValue)) {
+        errors.discountMax = "Maximum discount cannot exceed discount value";
+      }
+    }
+  } else if (ot === 'buy_x_get_y') {
+    if (!body.buyQuantity || Number(body.buyQuantity) <= 0) {
+      errors.buyQuantity = "Buy quantity is required";
+    }
+    if (!body.buyItem?.trim()) {
+      errors.buyItem = "Buy item is required";
+    }
+    if (!body.getQuantity || Number(body.getQuantity) <= 0) {
+      errors.getQuantity = "Get quantity is required";
+    }
+    if (!body.freeItem?.trim()) {
+      errors.freeItem = "Free item is required";
+    }
+  }
+
   if (!body.startDate) errors.startDate = "Start date is required";
   if (!body.endDate) errors.endDate = "End date is required";
   if (
@@ -160,7 +195,7 @@ export async function GET(request: NextRequest) {
     if (q)
       where.OR = [
         { title: { contains: q, mode: "insensitive" } },
-        { description: { contains: q, mode: "insensitive" } },
+        { content: { is: { description: { contains: q, mode: "insensitive" } } } },
       ];
     if (scope === "history") {
       where.status = { in: ["REPLACED", "EXPIRED", "ARCHIVED"] };
@@ -170,31 +205,37 @@ export async function GET(request: NextRequest) {
       where.status = "ARCHIVED";
     }
 
-    const [offers, total] = await Promise.all([
+    const [offers, total, currentLive] = await Promise.all([
       prisma.merchantOffer.findMany({
         where,
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: {
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          offerType: true,
+          startDate: true,
+          endDate: true,
           _count: { select: { redemptions: true } },
           replacesOffer: { select: { id: true, title: true } },
+          pricing: { select: { configuration: true } },
+          redemption: { select: { currentRedemptions: true, maxRedemptions: true } },
         },
       }),
       prisma.merchantOffer.count({ where }),
-    ]);
-
-    // Get current live offer separately
-    const currentLive = await prisma.merchantOffer.findFirst({
-      where: { merchantId: merchant.id, status: "LIVE", deletedAt: null },
-      include: {
-        _count: { select: { redemptions: true } },
-        replacementReqAsNew: {
-          where: { status: { in: ["PENDING", "AWAITING_APPROVAL"] } },
-          include: { newOffer: true },
+      prisma.merchantOffer.findFirst({
+        where: { merchantId: merchant.id, status: "LIVE", deletedAt: null },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          offerType: true,
+          pricing: { select: { configuration: true } },
         },
-      },
-    });
+      }),
+    ]);
 
     // Get pending replacement (if any). CHANGES_REQUESTED counts as
     // "still in flight" — merchant must edit+resubmit or delete before
@@ -213,6 +254,16 @@ export async function GET(request: NextRequest) {
                 "CHANGES_REQUESTED",
               ],
             },
+          },
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            offerType: true,
+            createdAt: true,
+            submittedAt: true,
+            pricing: { select: { configuration: true } },
+            review: { select: { reviewNotes: true, rejectionReason: true } },
           },
         })
       : null;
@@ -277,17 +328,16 @@ export async function POST(request: NextRequest) {
       saveAsDraft,
       redemptionType,
       bookingUrl,
+      buyQuantity,
+      buyItem,
+      getQuantity,
+      freeItem,
+      maxFreeItems,
     } = body;
 
-    if (
-      !title ||
-      !offerType ||
-      discountValue == null ||
-      !startDate ||
-      !endDate
-    ) {
+    if (!title || !offerType || !startDate || !endDate) {
       return badRequest(
-        "Missing required fields: title, offerType, discountValue, startDate, endDate",
+        "Missing required fields: title, offerType, startDate, endDate",
       );
     }
 
@@ -412,39 +462,98 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const offer = await prisma.merchantOffer.create({
-      data: {
-        merchantId: merchant.id,
-        title,
-        description: description ?? "",
-        shortDescription: shortDescription ?? null,
-        termsAndConditions: termsAndConditions ?? null,
-        imageUrls: imageUrls ?? [],
-        offerType,
-        discountValue,
-        discountMax: discountMax ?? null,
-        discountPercent: discountPercent ?? null,
-        minimumSpend: minimumSpend ?? null,
-        maxRedemptions: maxRedemptions ?? null,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        daysOfWeek: daysOfWeek ?? [0, 1, 2, 3, 4, 5, 6],
-        redemptionCode: redemptionCode ?? null,
-        redemptionInstructions: redemptionInstructions ?? null,
-        categoryId: categoryId ?? null,
-        replacesOfferId: replacesOfferId ?? null,
-        submissionNotes: submissionNotes ?? null,
-        isReplacement: !!replacesOfferId,
-        replacementReason: body.replacementReason ?? null,
-        validationErrors: qcResult.passed
-          ? Prisma.DbNull
-          : (qcResult.errors as any),
-        status: targetStatus,
-        submittedAt: saveAsDraft ? null : new Date(),
-        redemptionType: redemptionType ?? null,
-        offerCode: offerCodeValue,
-        bookingUrl: bookingUrl ?? null,
-      },
+    const offer = await prisma.$transaction(async (tx) => {
+      const created = await tx.merchantOffer.create({
+        data: {
+          merchantId: merchant.id,
+          categoryId: categoryId ?? null,
+          title,
+          offerType,
+          status: targetStatus,
+          startDate: new Date(startDate),
+          endDate: new Date(endDate),
+          submittedAt: saveAsDraft ? null : new Date(),
+          replacesOfferId: replacesOfferId ?? null,
+        },
+      });
+
+      await tx.offerContent.create({
+        data: {
+          offerId: created.id,
+          shortDescription: shortDescription ?? null,
+          description: description ?? null,
+          termsAndConditions: termsAndConditions ?? null,
+          imageUrls: imageUrls ?? [],
+          displayData: undefined,
+        },
+      });
+
+      const pricingConfig: Record<string, unknown> = {};
+      if (offerType === 'flat_rate') {
+        pricingConfig.amount = Number(discountValue) || 0;
+        if (minimumSpend != null) pricingConfig.minimumSpend = Number(minimumSpend);
+      } else if (offerType === 'percentage') {
+        pricingConfig.percent = Number(discountPercent) || 0;
+        if (discountMax != null) pricingConfig.maximumDiscount = Number(discountMax);
+        if (minimumSpend != null) pricingConfig.minimumSpend = Number(minimumSpend);
+      } else if (offerType === 'buy_x_get_y') {
+        pricingConfig.buyQuantity = Number(buyQuantity) || 0;
+        pricingConfig.buyItem = buyItem ?? '';
+        pricingConfig.getQuantity = Number(getQuantity) || 0;
+        pricingConfig.freeItem = freeItem ?? '';
+        if (maxFreeItems != null) pricingConfig.maxFreeItems = Number(maxFreeItems);
+      }
+
+      await tx.offerPricing.create({
+        data: {
+          offerId: created.id,
+          pricingType: offerType,
+          configuration: pricingConfig as any,
+        },
+      });
+
+      const redemptionConfig: Record<string, unknown> = {};
+      if (redemptionType === 'ONLINE_CODE') {
+        redemptionConfig.code = redemptionCode ?? offerCodeValue;
+        redemptionConfig.bookingUrl = bookingUrl ?? null;
+        redemptionConfig.instructions = redemptionInstructions ?? null;
+      } else if (redemptionType === 'BOOKING_LINK') {
+        redemptionConfig.bookingUrl = bookingUrl ?? null;
+        redemptionConfig.instructions = redemptionInstructions ?? null;
+      } else if (redemptionType === 'IN_STORE_QR') {
+        redemptionConfig.instructions = redemptionInstructions ?? null;
+      }
+
+      await tx.offerRedemption.create({
+        data: {
+          offerId: created.id,
+          redemptionType: redemptionType ?? null,
+          configuration: Object.keys(redemptionConfig).length > 0 ? (redemptionConfig as any) : null,
+          maxRedemptions: maxRedemptions ?? null,
+          currentRedemptions: 0,
+          daysOfWeek: daysOfWeek ?? [0, 1, 2, 3, 4, 5, 6],
+        },
+      });
+
+      await tx.offerReview.create({
+        data: {
+          offerId: created.id,
+          submissionNotes: submissionNotes ?? null,
+          replacementReason: replacementReason ?? null,
+          isReplacement: !!replacesOfferId,
+          validationErrors: qcResult.passed ? null : (qcResult.errors as any),
+        },
+      });
+
+      await tx.offerAnalytics.create({
+        data: {
+          offerId: created.id,
+          saveCount: 0,
+          viewCount: 0,
+        },
+      });
+
+      return created;
     });
     console.log('** Created offer with ID:', offer.id, 'Status:', offer.status);
 

@@ -167,7 +167,7 @@ export function SplitCardLayout({
               )}
               {branding.showHeading !== false && (
                 <h1 className="mt-2 text-3xl md:text-4xl font-bold text-white">
-                  {branding.heading || "Welcome Back"}
+                  {branding.heading || ""}
                 </h1>
               )}
               {branding.showDescription !== false && (
@@ -187,12 +187,12 @@ export function SplitCardLayout({
         className={`rounded-[24px] bg-white shadow-xl ${
           compact 
             ? "w-full p-6" 
-            : "w-full max-w-[390px] p-5 md:mt-[120px] mx-auto md:mx-0"
+            : "w-full max-w-[390px] p-5 mx-auto md:mx-0"
         }`}
       >
-        <span className="text-xs uppercase tracking-[4px] text-slate-400">
+        {/* <span className="text-xs uppercase tracking-[4px] text-slate-400">
           {appName ? `${appName.toUpperCase()} ACCESS` : "PLATFORM ACCESS"}
-        </span>
+        </span> */}
         <h1
           className={`mt-3 font-bold text-gray-900 ${
             compact ? "text-2xl" : "text-2xl md:text-4xl"

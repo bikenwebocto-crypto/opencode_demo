@@ -32,9 +32,15 @@ export function SaveButton({ offerId, initialSaved, onToggle, size = 'md' }: Pro
     },
     onSuccess: () => {
       setSaved(true)
+      // Always invalidate the saved list — that's a different query.
       queryClient.invalidateQueries({ queryKey: ['employee-saved'] })
-      queryClient.invalidateQueries({ queryKey: ['employee-offers'] })
+      // Invalidate the dashboard stats counter (savedOffers count).
       queryClient.invalidateQueries({ queryKey: ['employee-dashboard-stats'] })
+      // If the host didn't pass `onToggle`, fall back to invalidating
+      // the offers list (forces a refetch — slow).
+      if (!onToggle) {
+        queryClient.invalidateQueries({ queryKey: ['employee-offers'] })
+      }
       onToggle?.(true)
       showToast({ type: 'success', title: 'Offer saved' })
     },
@@ -51,8 +57,10 @@ export function SaveButton({ offerId, initialSaved, onToggle, size = 'md' }: Pro
     onSuccess: () => {
       setSaved(false)
       queryClient.invalidateQueries({ queryKey: ['employee-saved'] })
-      queryClient.invalidateQueries({ queryKey: ['employee-offers'] })
       queryClient.invalidateQueries({ queryKey: ['employee-dashboard-stats'] })
+      if (!onToggle) {
+        queryClient.invalidateQueries({ queryKey: ['employee-offers'] })
+      }
       onToggle?.(false)
       showToast({ type: 'info', title: 'Removed from saved' })
     },

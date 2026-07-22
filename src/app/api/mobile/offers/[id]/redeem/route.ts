@@ -26,14 +26,21 @@ export async function POST(
 
     const offer = await prisma.merchantOffer.findFirst({
       where: { id: offerId, deletedAt: null },
-      include: { merchant: { select: { id: true, businessName: true, website: true } } },
+      include: {
+        merchant: { select: { id: true, businessName: true, website: true } },
+        pricing: { select: { configuration: true } },
+        redemption: { select: { redemptionType: true, configuration: true } },
+      },
     })
     if (!offer) return notFound('Offer not found')
 
-    const redemptionType = offer.redemptionType
+    const redemptionType = offer.redemption?.redemptionType ?? null
     if (!redemptionType) {
       return badRequest('This offer does not have a redemption type configured')
     }
+
+    const pricingConfig = (offer.pricing?.configuration as Record<string, unknown>) ?? {}
+    const redemptionConfig = (offer.redemption?.configuration as Record<string, unknown>) ?? {}
 
     let validBranch: any = null
     if (branchId) {
@@ -47,14 +54,14 @@ export async function POST(
       return badRequest('Branch is required for in-store QR redemptions')
     }
 
-    if (redemptionType === 'ONLINE_CODE' && !offer.offerCode) {
+    if (redemptionType === 'ONLINE_CODE' && !redemptionConfig.code) {
       return badRequest('This offer does not have a valid offer code')
     }
-    if (redemptionType === 'BOOKING_LINK' && !offer.bookingUrl) {
+    if (redemptionType === 'BOOKING_LINK' && !redemptionConfig.bookingUrl) {
       return badRequest('This offer does not have a booking link')
     }
 
-    const discountAmount = Number(offer.discountValue ?? 0)
+    const discountAmount = Number(pricingConfig.amount ?? pricingConfig.percent ?? 0)
     const spent = spentAmount ? Number(spentAmount) : 0
     const savings = redemptionType === 'IN_STORE_QR' ? discountAmount : Math.max(0, discountAmount - spent)
 
@@ -82,8 +89,8 @@ export async function POST(
       },
     })
 
-    await prisma.merchantOffer.update({
-      where: { id: offerId },
+    await prisma.offerRedemption.update({
+      where: { offerId },
       data: { currentRedemptions: { increment: 1 } },
     })
 
@@ -99,7 +106,7 @@ export async function POST(
         method,
         branchId: validBranch?.id ?? null,
         redemptionType,
-        offerCode: redemptionType === 'ONLINE_CODE' ? offer.offerCode : null,
+        offerCode: redemptionType === 'ONLINE_CODE' ? redemptionConfig.code : null,
         loginSource: 'mobile',
       },
     })
@@ -123,18 +130,18 @@ export async function POST(
         openingHours: validBranch.openingHours,
         googleMapsUrl: lat && lng ? `https://www.google.com/maps?q=${lat},${lng}` : null,
       }
-      data.instructions = offer.redemptionInstructions
+      data.instructions = redemptionConfig.instructions ?? null
     }
 
     if (redemptionType === 'ONLINE_CODE') {
-      data.offerCode = offer.offerCode
-      data.merchantWebsite = offer.bookingUrl
-      data.instructions = offer.redemptionInstructions
+      data.offerCode = redemptionConfig.code ?? null
+      data.merchantWebsite = redemptionConfig.bookingUrl ?? null
+      data.instructions = redemptionConfig.instructions ?? null
     }
 
     if (redemptionType === 'BOOKING_LINK') {
-      data.bookingUrl = offer.bookingUrl
-      data.instructions = offer.redemptionInstructions
+      data.bookingUrl = redemptionConfig.bookingUrl ?? null
+      data.instructions = redemptionConfig.instructions ?? null
     }
 
     return NextResponse.json({ success: true, data }, { status: 201 })

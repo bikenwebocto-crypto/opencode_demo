@@ -7,8 +7,11 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import type { ReviewComponentProps } from './types'
 
 function formatDiscount(offer: any): string {
-  if (offer.discountPercent) return `${offer.discountPercent}% OFF`
-  if (offer.discountValue) return `$${Number(offer.discountValue).toFixed(2)} OFF`
+  const config = offer.pricing?.configuration as Record<string, unknown> | undefined
+  const percent = config?.percent as number | undefined
+  const amount = config?.amount as number | undefined
+  if (percent) return `${percent}% OFF`
+  if (amount) return `£${Number(amount).toFixed(2)} OFF`
   return 'N/A'
 }
 
@@ -19,6 +22,10 @@ function formatDate(d?: string | Date | null) {
 
 export function OfferReview({ entity }: ReviewComponentProps) {
   if (!entity) return null
+
+  const pricingConfig = (entity.pricing?.configuration as Record<string, unknown> | undefined) ?? {}
+  const review = entity.review
+  const content = entity.content
 
   return (
     <div className="grid gap-6 lg:grid-cols-3">
@@ -33,15 +40,15 @@ export function OfferReview({ entity }: ReviewComponentProps) {
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xl font-semibold">{entity.title}</p>
-              {entity.shortDescription && (
-                <p className="text-sm text-muted-foreground">{entity.shortDescription}</p>
+              {content?.shortDescription && (
+                <p className="text-sm text-muted-foreground">{content.shortDescription}</p>
               )}
             </div>
             <StatusBadge status={entity.status} />
           </div>
 
-          {entity.description && (
-            <p className="text-sm text-muted-foreground">{entity.description}</p>
+          {content?.description && (
+            <p className="text-sm text-muted-foreground">{content.description}</p>
           )}
 
           <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -49,10 +56,10 @@ export function OfferReview({ entity }: ReviewComponentProps) {
               <p className="text-xs text-muted-foreground">Discount</p>
               <p className="font-semibold text-primary">{formatDiscount(entity)}</p>
             </div>
-            {entity.minimumSpend != null && Number(entity.minimumSpend) > 0 && (
+            {pricingConfig.minimumSpend != null && Number(pricingConfig.minimumSpend) > 0 && (
               <div className="rounded-md bg-muted/30 p-2">
                 <p className="text-xs text-muted-foreground">Min. Spend</p>
-                <p className="font-medium">${Number(entity.minimumSpend).toFixed(2)}</p>
+                <p className="font-medium">${Number(pricingConfig.minimumSpend).toFixed(2)}</p>
               </div>
             )}
             <div className="rounded-md bg-muted/30 p-2">
@@ -61,17 +68,17 @@ export function OfferReview({ entity }: ReviewComponentProps) {
             </div>
             <div className="rounded-md bg-muted/30 p-2">
               <p className="text-xs text-muted-foreground">Max Redemptions</p>
-              <p className="font-medium">{entity.maxRedemptions ?? 'Unlimited'}</p>
+              <p className="font-medium">{entity.redemption?.maxRedemptions ?? 'Unlimited'}</p>
             </div>
-            {entity.discountMax != null && Number(entity.discountMax) > 0 && (
+            {pricingConfig.maximumDiscount != null && Number(pricingConfig.maximumDiscount) > 0 && (
               <div className="rounded-md bg-muted/30 p-2">
                 <p className="text-xs text-muted-foreground">Max Discount</p>
-                <p className="font-medium">${Number(entity.discountMax).toFixed(2)}</p>
+                <p className="font-medium">${Number(pricingConfig.maximumDiscount).toFixed(2)}</p>
               </div>
             )}
             <div className="rounded-md bg-muted/30 p-2">
               <p className="text-xs text-muted-foreground">Current</p>
-              <p className="font-medium">{entity.currentRedemptions ?? 0}</p>
+              <p className="font-medium">{entity.redemption?.currentRedemptions ?? 0}</p>
             </div>
           </div>
 
@@ -88,30 +95,30 @@ export function OfferReview({ entity }: ReviewComponentProps) {
             )}
           </div>
 
-          {entity.termsAndConditions && (
+          {content?.termsAndConditions && (
             <div>
               <p className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground">
                 <FileText className="h-3 w-3" /> Terms & Conditions
               </p>
               <p className="rounded-md bg-muted/30 p-2 text-xs text-muted-foreground">
-                {entity.termsAndConditions}
+                {content.termsAndConditions}
               </p>
             </div>
           )}
 
-          {entity.submissionNotes && (
+          {review?.submissionNotes && (
             <div>
               <p className="mb-1 text-xs font-medium text-muted-foreground">Merchant Submission Notes</p>
               <p className="rounded-md bg-muted/30 p-2 text-xs text-muted-foreground">
-                {entity.submissionNotes}
+                {review.submissionNotes}
               </p>
             </div>
           )}
 
-          {entity.rejectionReason && (
+          {review?.rejectionReason && (
             <div className="rounded-md bg-destructive/10 p-2 text-xs">
               <p className="font-medium text-destructive">Previous Rejection</p>
-              <p className="text-muted-foreground">{entity.rejectionReason}</p>
+              <p className="text-muted-foreground">{review.rejectionReason}</p>
             </div>
           )}
         </CardContent>

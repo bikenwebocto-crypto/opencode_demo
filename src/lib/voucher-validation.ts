@@ -21,23 +21,27 @@ async function checkVoucherExists(
   code: string,
   merchantId?: string
 ): Promise<ValidationResult> {
-  const offer = await prisma.merchantOffer.findFirst({
+  const offerRedemption = await prisma.offerRedemption.findFirst({
     where: {
-      redemptionCode: code,
-      ...(merchantId ? { merchantId } : {}),
+      configuration: { path: ['code'], equals: code },
     },
     include: {
-      merchant: {
-        select: {
-          id: true,
-          businessName: true,
-          status: true,
+      offer: {
+        include: {
+          merchant: {
+            select: {
+              id: true,
+              businessName: true,
+              status: true,
+            },
+          },
+          pricing: { select: { configuration: true } },
         },
       },
     },
   })
 
-  if (!offer) {
+  if (!offerRedemption || !offerRedemption.offer) {
     return {
       valid: false,
       errorCode: 'VOUCHER_NOT_FOUND',
@@ -45,34 +49,45 @@ async function checkVoucherExists(
     }
   }
 
+  if (merchantId && offerRedemption.offer.merchantId !== merchantId) {
+    return {
+      valid: false,
+      errorCode: 'VOUCHER_NOT_FOUND',
+      errorMessage: 'Voucher code not found',
+    }
+  }
+
+  const pricingConfig = (offerRedemption.offer.pricing?.configuration as Record<string, unknown>) ?? {}
+  const discountValue = Number(pricingConfig.amount ?? pricingConfig.percent ?? 0)
+
   return {
     valid: true,
     voucher: {
-      id: offer.id,
-      title: offer.title,
-      merchant: offer.merchant.businessName,
-      merchantId: offer.merchant.id,
-      discountValue: Number(offer.discountValue),
-      discountType: offer.offerType,
-      expiresAt: offer.endDate.toISOString(),
+      id: offerRedemption.offer.id,
+      title: offerRedemption.offer.title,
+      merchant: offerRedemption.offer.merchant.businessName,
+      merchantId: offerRedemption.offer.merchant.id,
+      discountValue,
+      discountType: offerRedemption.offer.offerType,
+      expiresAt: offerRedemption.offer.endDate.toISOString(),
     },
   }
 }
 
 async function checkVoucherActive(code: string): Promise<ValidationResult> {
-  const offer = await prisma.merchantOffer.findFirst({
-    where: { redemptionCode: code },
+  const offerRedemption = await prisma.offerRedemption.findFirst({
+    where: { configuration: { path: ['code'], equals: code } },
     include: {
-      merchant: {
-        select: {
-          id: true,
-          businessName: true,
+      offer: {
+        include: {
+          merchant: { select: { id: true, businessName: true } },
+          pricing: { select: { configuration: true } },
         },
       },
     },
   })
 
-  if (!offer) {
+  if (!offerRedemption || !offerRedemption.offer) {
     return {
       valid: false,
       errorCode: 'VOUCHER_NOT_FOUND',
@@ -80,42 +95,45 @@ async function checkVoucherActive(code: string): Promise<ValidationResult> {
     }
   }
 
-  if (offer.status !== 'LIVE') {
+  if (offerRedemption.offer.status !== 'LIVE') {
     return {
       valid: false,
       errorCode: 'VOUCHER_INACTIVE',
-      errorMessage: `Voucher is not active (status: ${offer.status})`,
+      errorMessage: `Voucher is not active (status: ${offerRedemption.offer.status})`,
     }
   }
+
+  const pricingConfig = (offerRedemption.offer.pricing?.configuration as Record<string, unknown>) ?? {}
+  const discountValue = Number(pricingConfig.amount ?? pricingConfig.percent ?? 0)
 
   return {
     valid: true,
     voucher: {
-      id: offer.id,
-      title: offer.title,
-      merchant: offer.merchant.businessName,
-      merchantId: offer.merchant.id,
-      discountValue: Number(offer.discountValue),
-      discountType: offer.offerType,
-      expiresAt: offer.endDate.toISOString(),
+      id: offerRedemption.offer.id,
+      title: offerRedemption.offer.title,
+      merchant: offerRedemption.offer.merchant.businessName,
+      merchantId: offerRedemption.offer.merchant.id,
+      discountValue,
+      discountType: offerRedemption.offer.offerType,
+      expiresAt: offerRedemption.offer.endDate.toISOString(),
     },
   }
 }
 
 async function checkVoucherDates(code: string): Promise<ValidationResult> {
-  const offer = await prisma.merchantOffer.findFirst({
-    where: { redemptionCode: code },
+  const offerRedemption = await prisma.offerRedemption.findFirst({
+    where: { configuration: { path: ['code'], equals: code } },
     include: {
-      merchant: {
-        select: {
-          id: true,
-          businessName: true,
+      offer: {
+        include: {
+          merchant: { select: { id: true, businessName: true } },
+          pricing: { select: { configuration: true } },
         },
       },
     },
   })
 
-  if (!offer) {
+  if (!offerRedemption || !offerRedemption.offer) {
     return {
       valid: false,
       errorCode: 'VOUCHER_NOT_FOUND',
@@ -125,50 +143,53 @@ async function checkVoucherDates(code: string): Promise<ValidationResult> {
 
   const now = new Date()
 
-  if (offer.startDate > now) {
+  if (offerRedemption.offer.startDate > now) {
     return {
       valid: false,
       errorCode: 'VOUCHER_NOT_STARTED',
-      errorMessage: `Voucher is not yet valid (starts: ${offer.startDate.toISOString()})`,
+      errorMessage: `Voucher is not yet valid (starts: ${offerRedemption.offer.startDate.toISOString()})`,
     }
   }
 
-  if (offer.endDate < now) {
+  if (offerRedemption.offer.endDate < now) {
     return {
       valid: false,
       errorCode: 'VOUCHER_EXPIRED',
-      errorMessage: `Voucher has expired (expired: ${offer.endDate.toISOString()})`,
+      errorMessage: `Voucher has expired (expired: ${offerRedemption.offer.endDate.toISOString()})`,
     }
   }
+
+  const pricingConfig = (offerRedemption.offer.pricing?.configuration as Record<string, unknown>) ?? {}
+  const discountValue = Number(pricingConfig.amount ?? pricingConfig.percent ?? 0)
 
   return {
     valid: true,
     voucher: {
-      id: offer.id,
-      title: offer.title,
-      merchant: offer.merchant.businessName,
-      merchantId: offer.merchant.id,
-      discountValue: Number(offer.discountValue),
-      discountType: offer.offerType,
-      expiresAt: offer.endDate.toISOString(),
+      id: offerRedemption.offer.id,
+      title: offerRedemption.offer.title,
+      merchant: offerRedemption.offer.merchant.businessName,
+      merchantId: offerRedemption.offer.merchant.id,
+      discountValue,
+      discountType: offerRedemption.offer.offerType,
+      expiresAt: offerRedemption.offer.endDate.toISOString(),
     },
   }
 }
 
 async function checkVoucherUsageLimits(code: string): Promise<ValidationResult> {
-  const offer = await prisma.merchantOffer.findFirst({
-    where: { redemptionCode: code },
+  const offerRedemption = await prisma.offerRedemption.findFirst({
+    where: { configuration: { path: ['code'], equals: code } },
     include: {
-      merchant: {
-        select: {
-          id: true,
-          businessName: true,
+      offer: {
+        include: {
+          merchant: { select: { id: true, businessName: true } },
+          pricing: { select: { configuration: true } },
         },
       },
     },
   })
 
-  if (!offer) {
+  if (!offerRedemption || !offerRedemption.offer) {
     return {
       valid: false,
       errorCode: 'VOUCHER_NOT_FOUND',
@@ -176,26 +197,31 @@ async function checkVoucherUsageLimits(code: string): Promise<ValidationResult> 
     }
   }
 
-  if (offer.maxRedemptions !== null && offer.maxRedemptions > 0) {
-    if (offer.currentRedemptions >= offer.maxRedemptions) {
-      return {
-        valid: false,
-        errorCode: 'VOUCHER_USAGE_LIMIT_REACHED',
-        errorMessage: `Voucher usage limit reached (${offer.currentRedemptions}/${offer.maxRedemptions})`,
-      }
+  if (
+    offerRedemption.maxRedemptions !== null &&
+    offerRedemption.maxRedemptions > 0 &&
+    offerRedemption.currentRedemptions >= offerRedemption.maxRedemptions
+  ) {
+    return {
+      valid: false,
+      errorCode: 'VOUCHER_USAGE_LIMIT_REACHED',
+      errorMessage: `Voucher usage limit reached (${offerRedemption.currentRedemptions}/${offerRedemption.maxRedemptions})`,
     }
   }
+
+  const pricingConfig = (offerRedemption.offer.pricing?.configuration as Record<string, unknown>) ?? {}
+  const discountValue = Number(pricingConfig.amount ?? pricingConfig.percent ?? 0)
 
   return {
     valid: true,
     voucher: {
-      id: offer.id,
-      title: offer.title,
-      merchant: offer.merchant.businessName,
-      merchantId: offer.merchant.id,
-      discountValue: Number(offer.discountValue),
-      discountType: offer.offerType,
-      expiresAt: offer.endDate.toISOString(),
+      id: offerRedemption.offer.id,
+      title: offerRedemption.offer.title,
+      merchant: offerRedemption.offer.merchant.businessName,
+      merchantId: offerRedemption.offer.merchant.id,
+      discountValue,
+      discountType: offerRedemption.offer.offerType,
+      expiresAt: offerRedemption.offer.endDate.toISOString(),
     },
   }
 }
@@ -315,6 +341,7 @@ export async function validateVoucher(
               status: true,
             },
           },
+          pricing: { select: { configuration: true } },
         },
       },
     },
@@ -396,7 +423,7 @@ export async function validateVoucher(
         title: redemption.offer.title,
         merchant: redemption.offer.merchant.businessName,
         merchantId: redemption.offer.merchant.id,
-        discountValue: Number(redemption.offer.discountValue),
+        discountValue: Number(redemption.discountAmount),
         discountType: redemption.offer.offerType,
         expiresAt: redemption.offer.endDate.toISOString(),
       },

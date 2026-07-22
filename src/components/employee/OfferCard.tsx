@@ -1,35 +1,30 @@
 "use client";
 
-import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { MapPin, Star, Store, Sparkles, Gift, Tag } from "lucide-react";
+import {
+  MapPin,
+  Star,
+  Store,
+  Sparkles,
+  Gift,
+  Tag,
+} from "lucide-react";
 import { SaveButton } from "./SaveButton";
+import { type EmployeeOffer } from "./offers/employee-offer";
 
-export interface OfferCardData {
-  id: string;
-  title: string;
-  description: string | null;
-  shortDescription: string | null;
-  offerType: string;
-  discountValue: number | string;
-  discountPercent?: number | null;
-  imageUrls: string[];
-  isFeatured?: boolean;
-  isExclusive?: boolean;
-  endDate: string | Date;
-  redemptionType: string | null;
-  merchant: {
-    id: string;
-    businessName: string;
-    logoUrl: string | null;
-    averageRating: number | string;
-    city: string | null;
-    state: string | null;
+/**
+ * @deprecated Use `EmployeeOffer` from `@/components/employee/offers/employee-offer`.
+ * This alias is kept for backward-compat with existing call sites.
+ */
+export type OfferCardData = EmployeeOffer;
+
+function getFlatOfferCard(offer: EmployeeOffer) {
+  return {
+    ...offer,
+    imageUrls: offer.imageUrls ?? [],
   };
-  isSaved: boolean;
-  isRedeemed: boolean;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -41,23 +36,6 @@ const TYPE_LABELS: Record<string, string> = {
   flat_rate: "Flat",
   buy_x_get_y: "BOGO",
 };
-
-function formatDiscount(o: OfferCardData): string {
-  switch (o.offerType) {
-    case "PERCENTAGE":
-    case "percentage":
-      return `${o.discountPercent ?? Math.round(Number(o.discountValue))}% OFF`;
-    case "BUY_X_GET_Y":
-    case "buy_x_get_y":
-      return "BOGO";
-    case "FLAT":
-    case "flat_rate":
-    case "fixed_amount":
-      return `$${Number(o.discountValue).toFixed(2)} OFF`;
-    default:
-      return `${o.discountValue}`;
-  }
-}
 
 function getBadgeColor(offerType: string): string {
   if (offerType === "PERCENTAGE" || offerType === "percentage")
@@ -74,34 +52,74 @@ function getBadgeColor(offerType: string): string {
 }
 
 interface Props {
-  offer: OfferCardData;
-  onRedeem?: (offer: OfferCardData) => void;
+  offer: EmployeeOffer;
+  onRedeem?: (offer: EmployeeOffer) => void;
+  /**
+   * Called when the user taps anywhere on the card body.
+   * The card itself is no longer a navigation link — it opens the
+   * `RedeemModal` owned by the parent page.
+   *
+   * The FULL offer is passed; the modal does not refetch.
+   */
+  onOpen?: (offer: EmployeeOffer) => void;
 }
 
-export function OfferCard({ offer, onRedeem }: Props) {
-  const discount = formatDiscount(offer);
-  const initials = offer.merchant.businessName
-    .split(" ")
-    .map((s) => s[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-  
-  const bannerImage = offer?.imageUrls?.length > 0 ? offer.imageUrls[0] : "";
-  
+export function OfferCard({ offer, onRedeem, onOpen }: Props) {
+  const flatOffer = getFlatOfferCard(offer);
+
+  const initials =
+    flatOffer.merchant?.businessName
+      .split(" ")
+      .map((s) => s[0])
+      .filter(Boolean)
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() ?? "";
+
+  const bannerImage =
+    flatOffer.imageUrls.length > 0 ? flatOffer.imageUrls[0] : "";
+
   const discountLabel = () => {
-    const val = offer?.discountValue ? Number(offer.discountValue) : 0;
-    if (!val) return "";
-    return offer.offerType === "PERCENTAGE" 
-      ? `${val}% OFF` 
-      : offer.offerType === "BUY_X_GET_Y" 
-        ? `Buy X Get Y` 
-        : `$${val.toFixed(2)} OFF`;
+    switch (flatOffer.offerType) {
+      case "percentage":
+      case "PERCENTAGE":
+        return `${Number(flatOffer.discountValue)}% OFF`;
+      case "buy_x_get_y":
+      case "BUY_X_GET_Y":
+        return "Buy X Get Y";
+      case "flat_rate":
+      case "fixed_amount":
+      case "FLAT":
+        return `£${Number(flatOffer.discountValue).toFixed(2)} OFF`;
+      default:
+        return "";
+    }
+  };
+
+  // Open the details dialog when the user taps anywhere on the card,
+  // except for interactive children (save button, redeem button) which
+  // call `stopPropagation` themselves.
+  const handleOpen = () => onOpen?.(offer);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!onOpen) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onOpen(offer);
+    }
   };
 
   return (
-    <Card className="relative overflow-hidden transition-shadow hover:shadow-md">
+    <Card
+      role={onOpen ? "button" : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      aria-label={onOpen ? `View details for ${offer.title}` : undefined}
+      onClick={onOpen ? handleOpen : undefined}
+      onKeyDown={onOpen ? handleKeyDown : undefined}
+      className={`relative overflow-hidden transition-shadow ${
+        onOpen ? "cursor-pointer hover:shadow-md" : ""
+      }`}
+    >
       {/* Image Section - Full width */}
       <div className="relative w-full aspect-[16/9] bg-gradient-to-br from-primary/10 to-primary/5">
         {bannerImage ? (
@@ -134,19 +152,33 @@ export function OfferCard({ offer, onRedeem }: Props) {
           )}
         </div>
 
-        {/* Save Button - Top right */}
-        <div className="absolute right-3 top-3">
-          <SaveButton offerId={offer.id} initialSaved={offer.isSaved} size="sm" />
+        {/* Save Button - Top right. Stops propagation so it does NOT
+            open the details dialog when clicked. */}
+        <div
+          className="absolute right-3 top-3"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <SaveButton
+            offerId={offer.id}
+            initialSaved={offer.isSaved ?? false}
+            size="sm"
+          />
         </div>
 
         {/* Redemption Type Badge */}
         {offer.redemptionType && (
           <div className="absolute right-3 top-12">
-            <Badge variant="secondary" className="text-[10px] shadow-md bg-white/90 text-foreground">
-              {offer.redemptionType === 'IN_STORE_QR' ? 'In-Store' :
-               offer.redemptionType === 'ONLINE_CODE' ? 'Online' :
-               offer.redemptionType === 'BOOKING_LINK' ? 'Booking' :
-               offer.redemptionType}
+            <Badge
+              variant="secondary"
+              className="text-[10px] shadow-md bg-white/90 text-foreground"
+            >
+              {offer.redemptionType === "IN_STORE_QR"
+                ? "In-Store"
+                : offer.redemptionType === "ONLINE_CODE"
+                  ? "Online"
+                  : offer.redemptionType === "BOOKING_LINK"
+                    ? "Booking"
+                    : offer.redemptionType}
             </Badge>
           </div>
         )}
@@ -160,8 +192,8 @@ export function OfferCard({ offer, onRedeem }: Props) {
 
         {/* Offer Type Badge - Bottom left */}
         <div className="absolute bottom-3 left-3">
-          <Badge 
-            variant="secondary" 
+          <Badge
+            variant="secondary"
             className={`text-[10px] shadow-md ${getBadgeColor(offer.offerType)}`}
           >
             {TYPE_LABELS[offer.offerType] ?? offer.offerType}
@@ -173,7 +205,7 @@ export function OfferCard({ offer, onRedeem }: Props) {
       <CardContent className="p-4 space-y-3">
         {/* Merchant Info */}
         <div className="flex items-center gap-3">
-          {offer.merchant.logoUrl ? (
+          {offer.merchant?.logoUrl ? (
             <img
               src={offer.merchant.logoUrl}
               alt={offer.merchant.businessName}
@@ -188,27 +220,27 @@ export function OfferCard({ offer, onRedeem }: Props) {
           )}
           <div className="min-w-0 flex-1">
             <p className="truncate font-semibold text-sm">
-              {offer.merchant.businessName}
+              {offer.merchant?.businessName ?? "—"}
             </p>
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-              <span>{Number(offer.merchant.averageRating).toFixed(1)}</span>
+              <span>
+                {Number(offer.merchant?.averageRating ?? 0).toFixed(1)}
+              </span>
               <span className="ml-1">·</span>
               <MapPin className="h-3 w-3 flex-shrink-0" />
               <span className="truncate">
-                {offer.merchant.city ?? "—"}
-                {offer.merchant.state ? `, ${offer.merchant.state}` : ""}
+                {offer.merchant?.city ?? "—"}
+                {offer.merchant?.state ? `, ${offer.merchant.state}` : ""}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Title */}
-        <Link href={`/employee/offers/${offer.id}`} className="block">
-          <p className="line-clamp-2 text-sm font-medium hover:underline">
-            {offer.title}
-          </p>
-        </Link>
+        {/* Title — no longer a link, but still styled to look tappable. */}
+        <p className="line-clamp-2 text-sm font-medium">
+          {offer.title}
+        </p>
 
         {/* Description */}
         {offer.shortDescription && (
@@ -227,15 +259,18 @@ export function OfferCard({ offer, onRedeem }: Props) {
               Already Redeemed
             </Button>
           ) : onRedeem ? (
-            <Button size="sm" onClick={() => onRedeem(offer)} className="text-xs">
+            <Button
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                onRedeem(offer)
+              }}
+              className="text-xs"
+            >
               <Tag className="mr-1 h-3 w-3" /> Redeem
             </Button>
           ) : (
-            <Link href={`/employee/offers/${offer.id}`}>
-              <Button size="sm" className="text-xs">
-                <Tag className="mr-1 h-3 w-3" /> View &amp; Redeem
-              </Button>
-            </Link>
+            <span className="text-xs text-primary">View details →</span>
           )}
         </div>
       </CardContent>
