@@ -1,48 +1,67 @@
-'use client'
+"use client";
 
-import { useState, useEffect, useCallback, useRef } from 'react'
-import Link from 'next/link'
-import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
-import { cn } from '@/utils/cn'
-import { ChevronLeft, ChevronRight, Gift, ShoppingBag, Eye, CalendarDays, Plus } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/utils/cn";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Gift,
+  ShoppingBag,
+  Eye,
+  CalendarDays,
+  Plus,
+} from "lucide-react";
 
 interface LiveOffer {
-  id: string
-  title: string
-  offerType: string
-  endDate: string
-  pricing?: { configuration?: Record<string, unknown> }
-  redemption?: { currentRedemptions?: number; maxRedemptions?: number }
-  views?: number
-  bannerGradient?: string
+  id: string;
+  title: string;
+  offerType: string;
+  endDate: string;
+  pricing?: { configuration?: Record<string, unknown> };
+  redemption?: { currentRedemptions?: number; maxRedemptions?: number };
+  views?: number;
+  bannerGradient?: string;
+  content?: { imageUrls?: string[] };
+  status:
+    | "LIVE"
+    | "DRAFT"
+    | "ARCHIVED"
+    | "VALIDATION_FAILED"
+    | "AWAITING_APPROVAL";
 }
 
 const GRADIENTS = [
-  'from-blue-500 to-indigo-600',
-  'from-emerald-500 to-teal-600',
-  'from-purple-500 to-pink-600',
-  'from-amber-500 to-orange-600',
-  'from-rose-500 to-red-600',
-]
+  "from-blue-500 to-indigo-600",
+  "from-emerald-500 to-teal-600",
+  "from-purple-500 to-pink-600",
+  "from-amber-500 to-orange-600",
+  "from-rose-500 to-red-600",
+];
 
 function formatOfferValue(offer: LiveOffer): string {
-  const cfg = (offer.pricing?.configuration as Record<string, unknown>) ?? {}
-  const offerType = offer.offerType
-  if (offerType === 'percentage' || offerType === 'PERCENTAGE') {
-    return `${Number(cfg.percent ?? cfg.amount ?? 0)}% OFF`
+  const cfg = (offer.pricing?.configuration as Record<string, unknown>) ?? {};
+  const offerType = offer.offerType;
+  if (offerType === "percentage" || offerType === "PERCENTAGE") {
+    return `${Number(cfg.percent ?? cfg.amount ?? 0)}% OFF`;
   }
-  if (offerType === 'buy_x_get_y' || offerType === 'BUY_X_GET_Y') {
-    return 'Buy X Get Y'
+  if (offerType === "buy_x_get_y" || offerType === "BUY_X_GET_Y") {
+    return "Buy X Get Y";
   }
-  const amount = Number(cfg.amount ?? 0)
-  return `£${amount.toFixed(2)} OFF`
+  const amount = Number(cfg.amount ?? 0);
+  return `£${amount.toFixed(2)} OFF`;
 }
 
 function formatExpiry(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(dateStr).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 function CarouselSkeleton() {
@@ -52,7 +71,7 @@ function CarouselSkeleton() {
         <Skeleton className="h-full w-full rounded-none" />
       </div>
     </Card>
-  )
+  );
 }
 
 function EmptyCarousel() {
@@ -64,7 +83,8 @@ function EmptyCarousel() {
         </div>
         <h3 className="mt-4 text-base font-medium">No live offers yet</h3>
         <p className="mt-1 max-w-xs text-sm text-muted-foreground">
-          Create your first campaign to start reaching employees and tracking performance
+          Create your first campaign to start reaching employees and tracking
+          performance
         </p>
         <Link href="/merchant/offers/create">
           <Button className="mt-6 gap-1.5">
@@ -73,50 +93,66 @@ function EmptyCarousel() {
         </Link>
       </CardContent>
     </Card>
-  )
+  );
 }
 
 interface FeaturedLiveCarouselProps {
-  offers: LiveOffer[]
-  isLoading?: boolean
+  offers: LiveOffer[];
+  isLoading?: boolean;
 }
 
-export function FeaturedLiveCarousel({ offers, isLoading }: FeaturedLiveCarouselProps) {
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [isPaused, setIsPaused] = useState(false)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const touchStartX = useRef(0)
-  const touchEndX = useRef(0)
+export function FeaturedLiveCarousel({
+  offers,
+  isLoading,
+}: FeaturedLiveCarouselProps) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const touchStartX = useRef(0);
+  const touchEndX = useRef(0);
+  const total = offers.length;
 
-  const total = offers.length
+  const goTo = useCallback(
+    (index: number) => {
+      setCurrentIndex(Math.max(0, Math.min(index, total - 1)));
+    },
+    [total],
+  );
 
-  const goTo = useCallback((index: number) => {
-    setCurrentIndex(Math.max(0, Math.min(index, total - 1)))
-  }, [total])
-
-  const goNext = useCallback(() => goTo(currentIndex + 1), [goTo, currentIndex])
-  const goPrev = useCallback(() => goTo(currentIndex - 1), [goTo, currentIndex])
+  const goNext = useCallback(
+    () => goTo(currentIndex + 1),
+    [goTo, currentIndex],
+  );
+  const goPrev = useCallback(
+    () => goTo(currentIndex - 1),
+    [goTo, currentIndex],
+  );
 
   useEffect(() => {
-    if (isPaused || total <= 1) return
-    intervalRef.current = setInterval(goNext, 5000)
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [isPaused, goNext, total])
+    if (isPaused || total <= 1) return;
+    intervalRef.current = setInterval(goNext, 5000);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [isPaused, goNext, total]);
 
-  const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0]?.clientX ?? 0 }
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0]?.clientX ?? 0;
+  };
   const handleTouchEnd = (e: React.TouchEvent) => {
-    touchEndX.current = e.changedTouches[0]?.clientX ?? 0
-    const diff = touchStartX.current - touchEndX.current
+    touchEndX.current = e.changedTouches[0]?.clientX ?? 0;
+    const diff = touchStartX.current - touchEndX.current;
     if (Math.abs(diff) > 50) {
-      diff > 0 ? goNext() : goPrev()
+      diff > 0 ? goNext() : goPrev();
     }
-  }
+  };
 
-  if (isLoading) return <CarouselSkeleton />
-  if (total === 0) return <EmptyCarousel />
+  if (isLoading) return <CarouselSkeleton />;
+  if (total === 0) return <EmptyCarousel />;
 
-  const offer = offers[currentIndex]!
-  const grad = offer.bannerGradient ?? GRADIENTS[currentIndex % GRADIENTS.length]
+  const offer = offers[currentIndex]!;
+  const grad =
+    offer.bannerGradient ?? GRADIENTS[currentIndex % GRADIENTS.length];
 
   return (
     <div
@@ -126,39 +162,206 @@ export function FeaturedLiveCarousel({ offers, isLoading }: FeaturedLiveCarousel
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      <Link href={`/merchant/offers/${offer.id}`}>
-        <div className={cn('relative flex h-[260px] sm:h-[300px] bg-gradient-to-br p-6 sm:p-8 text-white', grad)}>
-          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PHBhdGggZD0iTTM2IDM0djItSDI0di0yaDEyek0zNiAyNHYySDI0di0yaDEyeiIvPjwvZz48L2c+PC9zdmc+')] opacity-20" />
-          <div className="relative flex w-full flex-col justify-between">
-            <div className="flex items-start justify-between">
-              <div className="space-y-1">
-                <Badge variant="live" className="uppercase text-[10px] tracking-wider shadow-sm">
-                  <ShoppingBag className="mr-1 h-3 w-3" /> Featured Offer
-                </Badge>
-                <h3 className="mt-3 text-xl font-bold tracking-tight sm:text-2xl">{offer.title}</h3>
-                <p className="text-sm text-white/80">{formatOfferValue(offer)}</p>
+      <Link href={`/merchant/offers/${offer.id}`} prefetch={false}>
+        <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-2 p-2 sm:p-4 md:p-6">
+          {offers.map((offer) => (
+            <Link
+              key={offer.id}
+              href={`/merchant/offers/${offer.id}`}
+              prefetch={false}
+            >
+              <div
+                className={cn(
+                  "relative w-full rounded-xl overflow-hidden transition-all duration-300",
+                  "active:scale-[0.98] hover:scale-[1.02] hover:shadow-xl",
+                  "h-[200px] xs:h-[220px] sm:h-[280px] md:h-[320px]",
+                  // Desktop specific height
+                  "lg:h-[380px] xl:h-[400px]",
+                  // Max width for desktop
+                  "lg:max-w-[450px] xl:max-w-[450px]",
+                  // Center card in grid
+                  "mx-auto w-full",
+                  // Use image if available, otherwise fallback to gradient
+                  offer.content?.imageUrls?.[0]
+                    ? ""
+                    : "bg-gradient-to-br from-gray-800 to-gray-900",
+                )}
+                style={{
+                  backgroundImage: offer.content?.imageUrls?.[0]
+                    ? `url(${offer.content.imageUrls[0]})`
+                    : undefined,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                }}
+              >
+                {/* Gradient overlay - better for mobile readability */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20 transition-opacity group-hover:bg-black/30" />
+
+                {/* Pattern overlay - reduced opacity on mobile */}
+                <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PHBhdGggZD0iTTM2IDM0djItSDI0di0yaDEyek0zNiAyNHYySDI0di0yaDEyeiIvPjwvZz48L2c+PC9zdmc+')] opacity-5 xs:opacity-10 sm:opacity-20" />
+
+                {/* Status Badge - Mobile optimized */}
+                <div className="absolute left-2 top-2 z-10 xs:left-3 xs:top-3 sm:left-4 sm:top-4">
+                  <Badge
+                    variant={offer.status === "LIVE" ? "live" : "default"}
+                    className={cn(
+                      "uppercase tracking-wider shadow-sm backdrop-blur-sm border-none",
+                      "text-[8px] xs:text-[10px] sm:text-[10px] lg:text-xs",
+                      "px-1.5 py-0.5 xs:px-2 xs:py-0.5 sm:px-3 sm:py-1",
+                      offer.status === "LIVE"
+                        ? "bg-green-500/80 text-white"
+                        : "bg-gray-600/80 text-white",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "inline-block rounded-full mr-1",
+                        "w-1 h-1 xs:w-1.5 xs:h-1.5 sm:w-1.5 sm:h-1.5",
+                        offer.status === "LIVE"
+                          ? "bg-green-300 animate-pulse"
+                          : "bg-gray-300",
+                      )}
+                    />
+                    {offer.status === "LIVE" ? "Live" : offer.status}
+                  </Badge>
+                </div>
+
+                {/* Offer Type Badge - Top Right */}
+                <div className="absolute right-2 top-2 z-10 xs:right-3 xs:top-3 sm:right-4 sm:top-4">
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "border-white/30 text-white backdrop-blur-sm",
+                      "text-[8px] xs:text-[10px] sm:text-[10px] lg:text-xs",
+                      "px-1.5 py-0.5 xs:px-2 xs:py-0.5 sm:px-3 sm:py-1",
+                      "bg-black/30 hover:bg-black/40",
+                    )}
+                  >
+                    {offer.offerType === "flat_rate"
+                      ? "Flat"
+                      : offer.offerType === "percentage"
+                        ? "% Off"
+                        : "BXGY"}
+                  </Badge>
+                </div>
+
+                {/* Content */}
+                <div className="relative z-10 flex h-full flex-col justify-between p-3 xs:p-4 sm:p-6 lg:p-8">
+                  {/* Top section */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-0.5 xs:space-y-1 sm:space-y-2 flex-1 min-w-0">
+                      <h3
+                        className={cn(
+                          "font-bold tracking-tight text-white line-clamp-2",
+                          "text-sm xs:text-base sm:text-xl lg:text-2xl xl:text-2xl",
+                        )}
+                      >
+                        {offer.title}
+                      </h3>
+                      <p
+                        className={cn(
+                          "text-white/90 font-medium",
+                          "text-[10px] xs:text-xs sm:text-sm lg:text-base",
+                        )}
+                      >
+                        {formatOfferValue(offer)}
+                      </p>
+                    </div>
+
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-md backdrop-blur-sm transition-all",
+                        "bg-white/20 hover:bg-white/30 active:bg-white/40",
+                        "text-[10px] xs:text-xs sm:text-sm lg:text-base",
+                        "px-1.5 py-1 xs:px-2 xs:py-1 sm:px-3 sm:py-1.5 lg:px-4 lg:py-2",
+                        "font-medium text-white flex-shrink-0",
+                      )}
+                    >
+                      <span className="hidden xs:inline">View</span>
+                      <span className="xs:hidden">→</span>
+                      <span className="hidden xs:inline">Details</span>
+                      <ChevronRight
+                        className={cn(
+                          "h-2.5 w-2.5 xs:h-3 xs:w-3 sm:h-4 sm:w-4 lg:h-5 lg:w-5",
+                        )}
+                      />
+                    </span>
+                  </div>
+
+                  {/* Bottom section - Responsive metadata */}
+                  <div className="flex flex-wrap items-center gap-1 xs:gap-1.5 sm:gap-2 lg:gap-3">
+                    {/* Redemptions */}
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-0.5 xs:gap-1 sm:gap-1.5 lg:gap-2",
+                        "bg-black/30 sm:bg-black/20 backdrop-blur-sm rounded-full",
+                        "px-1.5 py-0.5 xs:px-2 xs:py-0.5 sm:px-3 sm:py-1 lg:px-4 lg:py-1.5",
+                      )}
+                    >
+                      <ShoppingBag className="h-2.5 w-2.5 xs:h-3 xs:w-3 sm:h-3.5 sm:w-3.5 lg:h-4 lg:w-4" />
+                      <span
+                        className={cn(
+                          "text-white/90",
+                          "text-[8px] xs:text-[10px] sm:text-xs lg:text-sm",
+                        )}
+                      >
+                        {offer.redemption?.currentRedemptions ?? 0}
+                      </span>
+                      <span className="hidden xs:inline text-white/70 text-[8px] xs:text-[10px] sm:text-xs lg:text-sm">
+                        redemptions
+                      </span>
+                    </span>
+
+                    {/* Views - if available */}
+                    {offer.views !== undefined && offer.views > 0 && (
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-0.5 xs:gap-1 sm:gap-1.5 lg:gap-2",
+                          "bg-black/30 sm:bg-black/20 backdrop-blur-sm rounded-full",
+                          "px-1.5 py-0.5 xs:px-2 xs:py-0.5 sm:px-3 sm:py-1 lg:px-4 lg:py-1.5",
+                        )}
+                      >
+                        <Eye className="h-2.5 w-2.5 xs:h-3 xs:w-3 sm:h-3.5 sm:w-3.5 lg:h-4 lg:w-4" />
+                        <span
+                          className={cn(
+                            "text-white/90",
+                            "text-[8px] xs:text-[10px] sm:text-xs lg:text-sm",
+                          )}
+                        >
+                          {offer.views}
+                        </span>
+                        <span className="hidden sm:inline text-white/70 text-[8px] xs:text-[10px] sm:text-xs lg:text-sm">
+                          views
+                        </span>
+                      </span>
+                    )}
+
+                    {/* Expiry */}
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-0.5 xs:gap-1 sm:gap-1.5 lg:gap-2",
+                        "bg-black/30 sm:bg-black/20 backdrop-blur-sm rounded-full",
+                        "px-1.5 py-0.5 xs:px-2 xs:py-0.5 sm:px-3 sm:py-1 lg:px-4 lg:py-1.5",
+                      )}
+                    >
+                      <CalendarDays className="h-2.5 w-2.5 xs:h-3 xs:w-3 sm:h-3.5 sm:w-3.5 lg:h-4 lg:w-4" />
+                      <span className="hidden xs:inline text-white/70 text-[8px] xs:text-[10px] sm:text-xs lg:text-sm">
+                        Expires
+                      </span>
+                      <span
+                        className={cn(
+                          "text-white/90",
+                          "text-[8px] xs:text-[10px] sm:text-xs lg:text-sm",
+                        )}
+                      >
+                        {formatExpiry(offer.endDate)}
+                      </span>
+                    </span>
+                  </div>
+                </div>
               </div>
-              <span className="inline-flex items-center gap-1 rounded-md bg-white/20 px-3 py-1.5 text-sm font-medium text-white backdrop-blur-sm">
-                View Details
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-4 text-sm text-white/80">
-              <span className="inline-flex items-center gap-1.5">
-                <ShoppingBag className="h-4 w-4" />
-                {offer.redemption?.currentRedemptions ?? 0} redemptions
-              </span>
-              {offer.views !== undefined && (
-                <span className="inline-flex items-center gap-1.5">
-                  <Eye className="h-4 w-4" />
-                  {offer.views} views
-                </span>
-              )}
-              <span className="inline-flex items-center gap-1.5">
-                <CalendarDays className="h-4 w-4" />
-                Expires {formatExpiry(offer.endDate)}
-              </span>
-            </div>
-          </div>
+            </Link>
+          ))}
         </div>
       </Link>
 
@@ -184,8 +387,10 @@ export function FeaturedLiveCarousel({ offers, isLoading }: FeaturedLiveCarousel
                 key={i}
                 onClick={() => goTo(i)}
                 className={cn(
-                  'rounded-full transition-all duration-300',
-                  i === currentIndex ? 'h-2 w-6 bg-white' : 'h-2 w-2 bg-white/50 hover:bg-white/70',
+                  "rounded-full transition-all duration-300",
+                  i === currentIndex
+                    ? "h-2 w-6 bg-white"
+                    : "h-2 w-2 bg-white/50 hover:bg-white/70",
                 )}
                 aria-label={`Go to offer ${i + 1}`}
               />
@@ -194,5 +399,5 @@ export function FeaturedLiveCarousel({ offers, isLoading }: FeaturedLiveCarousel
         </>
       )}
     </div>
-  )
+  );
 }

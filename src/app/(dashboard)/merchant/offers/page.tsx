@@ -129,70 +129,64 @@ export default function MerchantOffersPage() {
       key: 'actions',
       header: '',
       render: (o: any) => (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {['DRAFT', 'VALIDATION_FAILED','ARCHIVED','AWAITING_APPROVAL'].includes(o.status) && (
-            <Link
-              href={`/merchant/offers/${o.id}/edit`}
-              onClick={(e) => e.stopPropagation()}
-              className="text-sm text-muted-foreground hover:text-foreground"
-              title="Edit offer"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </Link>
+            <Button variant="outline" size="sm" asChild className="h-8 border-blue-200 text-blue-700 hover:bg-blue-50 hover:text-blue-800 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950/50">
+              <Link href={`/merchant/offers/${o.id}/edit`} onClick={(e) => e.stopPropagation()} title="Edit offer">
+                <Pencil className="h-3.5 w-3.5" /> 
+              </Link>
+            </Button>
           )}
           {o.status === 'LIVE' && !pendingReplacement && (
             <>
-              <Link
-                href={`/merchant/offers/${o.id}/replace`}
-                onClick={(e) => e.stopPropagation()}
-                className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-                title="Replace offer"
-              >
-                <RefreshCw className="h-3.5 w-3.5" /> Replace
-              </Link>
-              <button
+              <Button variant="outline" size="sm" asChild className="h-8 border-purple-200 text-purple-700 hover:bg-purple-50 hover:text-purple-800 dark:border-purple-800 dark:text-purple-400 dark:hover:bg-purple-950/50">
+                <Link href={`/merchant/offers/${o.id}/replace`} onClick={(e) => e.stopPropagation()} title="Replace offer">
+                  <RefreshCw className="h-3.5 w-3.5" /> 
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={(e) => { e.stopPropagation(); setSelectedIds(new Set([o.id])); setRevokeTarget(o); setRevokeOpen(true) }}
-                className="text-sm text-red-600 hover:text-red-700 inline-flex items-center gap-1"
+                className="h-8 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/50"
                 title="Revoke offer"
               >
-                <Ban className="h-3.5 w-3.5" /> Revoke
-              </button>
+                <Ban className="h-3.5 w-3.5" /> 
+              </Button>
             </>
           )}
           {o.status === 'LIVE' && pendingReplacement && (
             <>
-              <span
-                className="inline-flex cursor-not-allowed items-center gap-1 text-sm text-muted-foreground"
-                title="You already have a replacement under review."
-              >
-                <RefreshCw className="h-3.5 w-3.5" /> Replace
-              </span>
-              <button
+              <Button variant="outline" size="sm" disabled className="h-8 opacity-50 cursor-not-allowed">
+                <RefreshCw className="h-3.5 w-3.5" /> 
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={(e) => { e.stopPropagation(); setSelectedIds(new Set([o.id])); setRevokeTarget(o); setRevokeOpen(true) }}
-                className="text-sm text-red-600 hover:text-red-700 inline-flex items-center gap-1"
+                className="h-8 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/50"
                 title="Revoke offer"
               >
-                <Ban className="h-3.5 w-3.5" /> Revoke
-              </button>
+                <Ban className="h-3.5 w-3.5" /> 
+              </Button>
             </>
           )}
           {['DRAFT', 'VALIDATION_FAILED', 'REJECTED', 'EXPIRED', 'REPLACED', 'AWAITING_APPROVAL', 'ARCHIVED'].includes(o.status) && (
-            <button
+            <Button
+              variant="outline"
+              size="sm"
               onClick={(e) => { e.stopPropagation(); setSelectedIds(new Set([o.id])); setDeleteOpen(true) }}
-              className="text-sm text-destructive hover:text-destructive/80"
+              className="h-8 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/50"
               title="Delete offer"
             >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+              <Trash2 className="h-3.5 w-3.5" /> 
+            </Button>
           )}
-          <Link
-            href={`/merchant/offers/${o.id}`}
-            onClick={(e) => e.stopPropagation()}
-            className="text-sm text-primary hover:underline"
-            title="View details"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-          </Link>
+          <Button variant="ghost" size="sm" asChild className="h-8">
+            <Link href={`/merchant/offers/${o.id}`} onClick={(e) => e.stopPropagation()} title="View details">
+              <ExternalLink className="h-3.5 w-3.5" /> 
+            </Link>
+          </Button>
         </div>
       ),
     },

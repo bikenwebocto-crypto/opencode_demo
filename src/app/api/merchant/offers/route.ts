@@ -222,6 +222,7 @@ export async function GET(request: NextRequest) {
           replacesOffer: { select: { id: true, title: true } },
           pricing: { select: { configuration: true } },
           redemption: { select: { currentRedemptions: true, maxRedemptions: true } },
+          content: {select: { imageUrls: true } }
         },
       }),
       prisma.merchantOffer.count({ where }),
