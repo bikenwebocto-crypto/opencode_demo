@@ -24,9 +24,14 @@ export function useCompanyDashboard() {
     queryKey: companyDashboardKeys.all,
     queryFn: async (): Promise<CompanyDashboard> => {
       const res = await fetch('/api/company/dashboard')
-      if (!res.ok) throw new Error('Failed to fetch dashboard')
       const body = await res.json()
-      if (!body.success) throw new Error(body.error?.message ?? 'Failed to fetch dashboard')
+      if (!res.ok || !body.success) {
+        const code = body.error?.code
+        const msg = body.error?.message ?? 'Failed to fetch dashboard'
+        const err = new Error(msg) as Error & { code?: string }
+        err.code = code
+        throw err
+      }
       return body.data
     },
     refetchInterval: 30000,

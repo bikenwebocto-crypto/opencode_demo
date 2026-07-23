@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import {
   AlertCircle,
@@ -183,6 +183,28 @@ export function RedeemModal({
     useState<RedemptionResult | null>(null)
   const [copied, setCopied] = useState(false)
 
+  // Tracks whether we've already fired the view analytics request
+  // for the current offer. Reset when the offer changes.
+  const viewRecordedRef = useRef(false)
+
+  // ── Offer view tracking ───────────────────────────────────
+  // Fire POST /api/employee/offers/view once per (offerId, employee).
+  // The backend enforces "one view per employee per offer" via
+  // offerAnalytics.upsert, so repeated calls are safe (no-ops).
+  // This is fire-and-forget — never blocks the UI.
+  const recordView = useCallback((offerId: string) => {
+    if (viewRecordedRef.current) return
+    viewRecordedRef.current = true
+    console.log('recordView', offerId)
+    fetch('/api/employee/offers/view', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ offerId }),
+    }).catch(() => {
+      // Silently ignore — analytics must never block the UI.
+    })
+  }, [])
+
   // Reset local state every time the host hands us a different
   // offer, so reopening the modal for offer A does not leak the
   // redemption state of offer B.
@@ -190,7 +212,15 @@ export function RedeemModal({
     setHasRedeemed(!!offer?.isRedeemed)
     setRedemptionResult(null)
     setCopied(false)
+    viewRecordedRef.current = false
   }, [offer?.id, offer?.isRedeemed])
+
+  // Record a view when the modal opens (employee sees offer details)
+  useEffect(() => {
+    if (open && offer?.id) {
+      recordView(offer.id)
+    }
+  }, [open, offer?.id, recordView])
 
   // ── Derived data ───────────────────────────────────────────
   const canRedeem = !!offer?.isVisible && !hasRedeemed
@@ -538,7 +568,10 @@ export function RedeemModal({
               <Button
                 size="lg"
                 disabled={!canRedeem || redeemMutation.isPending}
-                onClick={() => redeemMutation.mutate()}
+                onClick={() => {
+                  if (offer?.id) recordView(offer.id)
+                  redeemMutation.mutate()
+                }}
                 className="w-full sm:w-auto"
               >
                 {redeemMutation.isPending ? (

@@ -78,6 +78,7 @@ const navConfig: Record<string, NavItem[]> = {
   company_admin: [
     { label: 'Overview', href: '/company', icon: LayoutDashboard },
     { label: 'Employees', href: '/company/employees', icon: Users },
+    { label: 'Analytics', href: '/company/analytics', icon: BarChart3 },
     { label: 'Billing', href: '/company/billing', icon: CreditCard },
     { label: 'Settings', href: '/company/settings', icon: Settings },
   ],
