@@ -149,3 +149,12 @@ export const QR_OPTIONS: UploadImageOptions = {
   bucket: 'offer-images',
   folder: 'qr-code',
 }
+
+// ---------------------------------------------------------------------------
+// Preset: Banner Images (merchant banner bookings)
+// ---------------------------------------------------------------------------
+
+export const BANNER_IMAGE_OPTIONS: UploadImageOptions = {
+  bucket: 'banner-images',
+  folder: 'banner-images',
+}

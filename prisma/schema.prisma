@@ -26,6 +26,8 @@ model AdminUser {
   profileEditReqs      MerchantProfileEditRequest[] @relation("AdminProfileEdit")
   notifications        NotificationEvent[]          @relation("AdminNotification")
   offerReplacementReqs OfferReplacementRequest[]    @relation("AdminOfferReplacement")
+  escalatedComplaints  ComplaintEscalation[]
+  complaintActions     ComplaintAction[]            @relation("AdminComplaintActions")
 
   @@index([role])
   @@map("admin_users")
@@ -86,6 +88,7 @@ model Company {
   employees            Employee[]
   mostPopularMerchants MostPopularMerchant[]
   redemptions          Redemption[]
+  complaints           Complaint[]
 
   @@index([status])
   @@index([slug])
@@ -136,6 +139,8 @@ model CompanyAdmin {
   loginSessions LoginSession[]
   notifications NotificationEvent[] @relation("CompanyAdminNotification")
   auditLogs     AuditLog[]          @relation("CompanyAdminAuditLogs")
+  escalations   ComplaintEscalation[]
+  complaintActions ComplaintAction[] @relation("CompanyAdminComplaintActions")
 
   @@index([companyId])
   @@map("company_admins")
@@ -163,14 +168,16 @@ model Employee {
   approvedById  String?             @db.Uuid
   deletedById   String?             @db.Uuid
   accountId     String?             @db.Uuid
-  company       Company             @relation(fields: [companyId], references: [id])
-  reports       IssueReport[]
-  loginSessions LoginSession[]
-  notifications NotificationEvent[] @relation("EmployeeNotification")
-  redemptions   Redemption[]
-  offerViews    OfferView[]
-  auditLogs     AuditLog[]          @relation("EmployeeAuditLogs")
-  account       Account?            @relation("EmployeeAccount", fields: [accountId], references: [authUserId])
+  company        Company             @relation(fields: [companyId], references: [id])
+  reports        IssueReport[]
+  loginSessions  LoginSession[]
+  notifications  NotificationEvent[] @relation("EmployeeNotification")
+  redemptions    Redemption[]
+  offerViews     OfferView[]
+  auditLogs      AuditLog[]          @relation("EmployeeAuditLogs")
+  complaints     Complaint[]
+  complaintActions ComplaintAction[] @relation("EmployeeComplaintActions")
+  account        Account?            @relation("EmployeeAccount", fields: [accountId], references: [authUserId])
 
   @@index([companyId])
   @@index([status])
@@ -234,7 +241,10 @@ model Merchant {
   redemptions         Redemption[]
   weeklyPicks         WeeklyPick[]
 
-  account Account? @relation(fields: [accountId], references: [authUserId])
+  complaints      Complaint[]
+  complaintActions ComplaintAction[] @relation("MerchantComplaintActions")
+  bannerBookings  BannerBooking[]
+  account         Account? @relation(fields: [accountId], references: [authUserId])
 
   @@index([status])
   @@index([slug])
@@ -339,7 +349,9 @@ model MerchantOffer {
   redemption OfferRedemption?
   review     OfferReview?
   analytics  OfferAnalytics?
+  dailyAnalytics DailyOfferAnalytics[]
   views      OfferView[]
+  complaints Complaint[]
 
   @@index([merchantId])
   @@index([status])
@@ -1049,6 +1061,197 @@ enum BranchStatus {
   ACTIVE
   INACTIVE
   CLOSED
+}
+
+// ─────────────────────────────────────────────────────────────
+// Complaint Management
+// ─────────────────────────────────────────────────────────────
+
+model Complaint {
+  id              String               @id @default(uuid()) @db.Uuid
+  offerId         String               @db.Uuid
+  employeeId      String               @db.Uuid
+  merchantId      String               @db.Uuid
+  companyId       String               @db.Uuid
+  complaintType   ComplaintType
+  description     String
+  evidenceUrls    Json?
+  status          ComplaintStatus      @default(OPEN)
+  priority        ComplaintPriority    @default(MEDIUM)
+  escalationNote  String?
+  resolutionNotes String?
+  resolvedAt      DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  offer       MerchantOffer       @relation(fields: [offerId], references: [id])
+  employee    Employee            @relation(fields: [employeeId], references: [id])
+  merchant    Merchant            @relation(fields: [merchantId], references: [id])
+  company     Company             @relation(fields: [companyId], references: [id])
+  escalations ComplaintEscalation[]
+  actions     ComplaintAction[]
+
+  @@index([employeeId])
+  @@index([merchantId])
+  @@index([companyId])
+  @@index([offerId])
+  @@index([status])
+  @@index([companyId, status])
+  @@map("complaints")
+}
+
+model ComplaintEscalation {
+  id              String   @id @default(uuid()) @db.Uuid
+  complaintId     String   @db.Uuid
+  companyAdminId  String   @db.Uuid
+  superAdminId    String?  @db.Uuid
+  reason          String
+  status          String   @default("PENDING") // PENDING, RESOLVED
+  resolvedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  complaint   Complaint   @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  companyAdmin CompanyAdmin @relation(fields: [companyAdminId], references: [id])
+  superAdmin  AdminUser?  @relation(fields: [superAdminId], references: [id])
+
+  @@index([complaintId])
+  @@map("complaint_escalations")
+}
+
+model ComplaintAction {
+  id              String   @id @default(uuid()) @db.Uuid
+  complaintId     String   @db.Uuid
+  actorType       String   @db.VarChar(50) // COMPANY_ADMIN, SUPER_ADMIN, MERCHANT, EMPLOYEE
+  adminId         String?  @db.Uuid
+  companyAdminId  String?  @db.Uuid
+  employeeId      String?  @db.Uuid
+  merchantId      String?  @db.Uuid
+  actionType      String   @db.VarChar(50) // REVIEWED, CLARIFICATION_REQUESTED, ESCALATED, RESOLVED, REJECTED, RESPONDED
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  complaint   Complaint      @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  admin       AdminUser?     @relation("AdminComplaintActions", fields: [adminId], references: [id])
+  companyAdmin CompanyAdmin? @relation("CompanyAdminComplaintActions", fields: [companyAdminId], references: [id])
+  employee    Employee?      @relation("EmployeeComplaintActions", fields: [employeeId], references: [id])
+  merchant    Merchant?      @relation("MerchantComplaintActions", fields: [merchantId], references: [id])
+
+  @@index([complaintId])
+  @@map("complaint_actions")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Daily Offer Analytics (for per-day aggregation)
+// ─────────────────────────────────────────────────────────────
+
+model DailyOfferAnalytics {
+  id               String   @id @default(uuid()) @db.Uuid
+  offerId          String   @db.Uuid
+  date             DateTime @db.Date
+  views            Int      @default(0)
+  redemptions      Int      @default(0)
+  revenueGenerated Decimal  @default(0) @db.Decimal(12, 2)
+  conversionRate   Float?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  offer MerchantOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@unique([offerId, date])
+  @@index([offerId])
+  @@index([date])
+  @@map("daily_offer_analytics")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Banner Booking & Promotions
+// ─────────────────────────────────────────────────────────────
+
+model Banner {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(255)
+  description String?  @db.VarChar(500)
+  position    String   @db.VarChar(50) // HOME_TOP, SIDEBAR, OFFERS_TOP
+  pricePerDay Decimal  @default(10.0) @db.Decimal(10, 2)
+  minDays     Int      @default(7)
+  maxDays     Int      @default(30)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  bookings    BannerBooking[]
+
+  @@index([position])
+  @@index([isActive])
+  @@map("banners")
+}
+
+model BannerBooking {
+  id          String        @id @default(uuid()) @db.Uuid
+  bannerId    String        @db.Uuid
+  merchantId  String        @db.Uuid
+  startDate   DateTime      @db.Date
+  endDate     DateTime      @db.Date
+  totalPrice  Decimal       @default(0) @db.Decimal(12, 2)
+  status      BookingStatus @default(PENDING)
+  paid        Boolean       @default(false)
+  approvedBy  String?       @db.Uuid
+  approvedAt  DateTime?
+  rejectedReason String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  banner   Banner         @relation(fields: [bannerId], references: [id])
+  merchant Merchant       @relation(fields: [merchantId], references: [id])
+  content  BannerContent?
+
+  @@index([bannerId])
+  @@index([merchantId])
+  @@index([status])
+  @@index([status, paid, startDate, endDate])
+  @@map("banner_bookings")
+}
+
+model BannerContent {
+  id          String        @id @default(uuid()) @db.Uuid
+  bookingId   String        @unique @db.Uuid
+  imageUrl    String        @db.VarChar(500)
+  altText     String?       @db.VarChar(255)
+  redirectUrl String?       @db.VarChar(500)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  booking BannerBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("banner_contents")
+}
+
+enum ComplaintType {
+  MISLEADING
+  INVALID_TERMS
+  NON_FUNCTIONAL
+  POLICY_VIOLATION
+}
+
+enum ComplaintStatus {
+  OPEN
+  UNDER_REVIEW
+  CLARIFICATION_REQ
+  ESCALATED
+  RESOLVED
+  REJECTED
+}
+
+enum ComplaintPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum BookingStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
 }
 
 model LoginBranding {

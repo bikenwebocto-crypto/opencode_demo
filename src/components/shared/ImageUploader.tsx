@@ -60,6 +60,14 @@ export interface ImageUploaderProps {
    * - 'deferred': stores File objects locally and returns them via onFilesSelected. Parent is responsible for uploading.
    */
   uploadMode?: 'immediate' | 'deferred'
+  /** Minimum image width in pixels. Enforces dimension check before upload. */
+  minWidth?: number
+  /** Minimum image height in pixels. Enforces dimension check before upload. */
+  minHeight?: number
+  /** Required aspect ratio (width/height), e.g. 3 for 3:1 ratio. */
+  aspectRatio?: number
+  /** Tolerance for aspect ratio matching as a fraction (default 0.1 = 10%). */
+  aspectRatioTolerance?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -97,6 +105,10 @@ export function ImageUploader({
   previewClassName,
   previewHint,
   uploadMode = 'immediate',
+  minWidth,
+  minHeight,
+  aspectRatio,
+  aspectRatioTolerance = 0.1,
 }: ImageUploaderProps) {
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -184,6 +196,38 @@ export function ImageUploader({
 
   // ---- Immediate mode: upload files right away ---------------------------
 
+  const checkDimensions = (file: File): Promise<string | null> => {
+    return new Promise((resolve) => {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        if (minWidth && img.width < minWidth) {
+          resolve(`Image too narrow (${img.width}px). Minimum width: ${minWidth}px.`)
+          return
+        }
+        if (minHeight && img.height < minHeight) {
+          resolve(`Image too short (${img.height}px). Minimum height: ${minHeight}px.`)
+          return
+        }
+        if (aspectRatio) {
+          const tol = aspectRatioTolerance ?? 0.1
+          const actual = img.width / img.height
+          if (Math.abs(actual - aspectRatio) > tol) {
+            resolve(`Aspect ratio ${actual.toFixed(2)}:1 is outside tolerance. Expected approximately ${aspectRatio}:1.`)
+            return
+          }
+        }
+        resolve(null)
+      }
+      img.onerror = () => {
+        URL.revokeObjectURL(url)
+        resolve('Could not read image dimensions.')
+      }
+      img.src = url
+    })
+  }
+
   const processFilesImmediate = async (files: FileList | File[]) => {
     const valid = validateFiles(files)
     if (valid.length === 0) return
@@ -199,6 +243,23 @@ export function ImageUploader({
     }))
 
     onImagesReady?.(pending)
+
+    for (const item of pending) {
+      const dimError = await checkDimensions(item.file)
+      if (dimError) {
+        item.status = 'error'
+        item.error = dimError
+        setUploadError(dimError)
+        setUploadSuccess(false)
+        continue
+      }
+    }
+
+    const hasErrors = pending.some((p) => p.status === 'error')
+    if (hasErrors) {
+      onImagesReady?.([...pending])
+      return
+    }
 
     setUploading(true)
     const results: PendingImage[] = []
