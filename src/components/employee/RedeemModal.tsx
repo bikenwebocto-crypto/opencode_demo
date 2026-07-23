@@ -183,6 +183,29 @@ export function RedeemModal({
     useState<RedemptionResult | null>(null)
   const [copied, setCopied] = useState(false)
 
+  // ── Review state ───────────────────────────────────────────
+  const [existingReview, setExistingReview] = useState<{
+    id: string
+    rating: number
+  } | null>(null)
+  const [reviewRating, setReviewRating] = useState<number>(0)
+  const [hoverRating, setHoverRating] = useState<number>(0)
+  const [savingReview, setSavingReview] = useState(false)
+
+  // After redemption, fetch existing review for this merchant
+  useEffect(() => {
+    if (!hasRedeemed || !offer?.merchant.id) return
+    fetch(`/api/employee/reviews?merchantId=${offer.merchant.id}`)
+      .then((r) => r.json())
+      .then((json) => {
+        if (json?.data) {
+          setExistingReview(json.data)
+          setReviewRating(json.data.rating)
+        }
+      })
+      .catch(() => {})
+  }, [hasRedeemed, offer?.merchant.id])
+
   // Tracks whether we've already fired the view analytics request
   // for the current offer. Reset when the offer changes.
   const viewRecordedRef = useRef(false)
@@ -212,6 +235,9 @@ export function RedeemModal({
     setHasRedeemed(!!offer?.isRedeemed)
     setRedemptionResult(null)
     setCopied(false)
+    setExistingReview(null)
+    setReviewRating(0)
+    setHoverRating(0)
     viewRecordedRef.current = false
   }, [offer?.id, offer?.isRedeemed])
 
@@ -757,6 +783,70 @@ export function RedeemModal({
                     </CardContent>
                   </Card>
                 )}
+
+              {/* ── Review this merchant ─────────────────── */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                    Rate this merchant
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        disabled={savingReview}
+                        onMouseEnter={() => setHoverRating(star)}
+                        onMouseLeave={() => setHoverRating(0)}
+                        onClick={async () => {
+                          setSavingReview(true)
+                          setReviewRating(star)
+                          try {
+                            const res = await fetch("/api/employee/reviews", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                merchantId: o.merchant.id,
+                                rating: star,
+                              }),
+                            })
+                            const json = await res.json()
+                            if (json?.data) {
+                              setExistingReview(json.data)
+                            }
+                          } catch {
+                            setReviewRating(existingReview?.rating ?? 0)
+                          } finally {
+                            setSavingReview(false)
+                          }
+                        }}
+                        className="transition-transform hover:scale-110 disabled:opacity-50"
+                      >
+                        <Star
+                          className={`h-7 w-7 ${
+                            (hoverRating || reviewRating) >= star
+                              ? "fill-yellow-400 text-yellow-400"
+                              : "text-muted-foreground"
+                          }`}
+                        />
+                      </button>
+                    ))}
+                    {savingReview && (
+                      <Loader2 className="ml-2 h-4 w-4 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
+                  {existingReview && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {reviewRating > 0
+                        ? `You rated this merchant ${reviewRating} out of 5`
+                        : "Tap a star above to rate this merchant"}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
             </>
           )}
         </div>

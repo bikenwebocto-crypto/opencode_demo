@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,8 +8,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { showToast } from '@/hooks/use-toast'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Sparkles } from 'lucide-react'
 import Link from 'next/link'
+import { getPriorityForType } from '@/features/complaints/constants'
 
 interface Offer {
   id: string
@@ -37,6 +38,12 @@ export default function NewComplaintPage() {
   const [priority, setPriority] = useState('MEDIUM')
   const [description, setDescription] = useState('')
   const [evidenceUrls, setEvidenceUrls] = useState('')
+
+  useEffect(() => {
+    setPriority(getPriorityForType(complaintType))
+  }, [complaintType])
+
+  const isAutoSet = priority === getPriorityForType(complaintType)
 
   const { data: offersData, isLoading: offersLoading } = useQuery({
     queryKey: ['employee-offers-list'],
@@ -141,15 +148,27 @@ export default function NewComplaintPage() {
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Priority *</label>
-                <select
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  value={priority}
-                  onChange={(e) => setPriority(e.target.value)}
-                >
-                  {PRIORITIES.map((p) => (
-                    <option key={p.value} value={p.value}>{p.label}</option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value)}
+                  >
+                    {PRIORITIES.map((p) => (
+                      <option key={p.value} value={p.value}>{p.label}</option>
+                    ))}
+                  </select>
+                  {isAutoSet && (
+                    <span className="pointer-events-none absolute right-8 top-1/2 -translate-y-1/2" title="Auto-set based on type">
+                      <Sparkles className="h-3.5 w-3.5 text-muted-foreground/50" />
+                    </span>
+                  )}
+                </div>
+                {isAutoSet && (
+                  <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                    <Sparkles className="h-3 w-3" /> Auto-set based on complaint type
+                  </p>
+                )}
               </div>
             </div>
 

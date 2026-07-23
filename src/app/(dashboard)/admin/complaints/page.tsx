@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/page-header'
 import { FilterBar } from '@/components/shared/filter-bar'
 import { useTablePagination } from '@/hooks/use-table-pagination'
-import { Search, AlertTriangle } from 'lucide-react'
+import { Search, AlertTriangle, RefreshCw } from 'lucide-react'
 
 interface Complaint {
   id: string
@@ -61,7 +61,7 @@ export default function AdminComplaintsPage() {
     return p
   }, [page, pageSize, search, statusFilter, priorityFilter])
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['admin-complaints', params.toString()],
     queryFn: async () => {
       const res = await fetch(`/api/complaints/admin?${params.toString()}`)
@@ -79,6 +79,12 @@ export default function AdminComplaintsPage() {
       <PageHeader
         title="All Complaints"
         description="Manage complaints from all companies and merchants"
+        actions={
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RefreshCw className="mr-1 h-4 w-4" />
+            Refresh
+          </Button>
+        }
       />
 
       <FilterBar

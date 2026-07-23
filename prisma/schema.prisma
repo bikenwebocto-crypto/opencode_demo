@@ -88,7 +88,8 @@ model Company {
   employees            Employee[]
   mostPopularMerchants MostPopularMerchant[]
   redemptions          Redemption[]
-  complaints           Complaint[]
+  complaints   Complaint[]
+  reviews      MerchantReview[]
 
   @@index([status])
   @@index([slug])
@@ -177,6 +178,7 @@ model Employee {
   auditLogs      AuditLog[]          @relation("EmployeeAuditLogs")
   complaints     Complaint[]
   complaintActions ComplaintAction[] @relation("EmployeeComplaintActions")
+  reviews        MerchantReview[]
   account        Account?            @relation("EmployeeAccount", fields: [accountId], references: [authUserId])
 
   @@index([companyId])
@@ -243,6 +245,7 @@ model Merchant {
 
   complaints      Complaint[]
   complaintActions ComplaintAction[] @relation("MerchantComplaintActions")
+  reviews         MerchantReview[]
   bannerBookings  BannerBooking[]
   account         Account? @relation(fields: [accountId], references: [authUserId])
 
@@ -351,7 +354,8 @@ model MerchantOffer {
   analytics  OfferAnalytics?
   dailyAnalytics DailyOfferAnalytics[]
   views      OfferView[]
-  complaints Complaint[]
+  complaints           Complaint[]
+  reviews              MerchantReview[]
 
   @@index([merchantId])
   @@index([status])
@@ -503,6 +507,7 @@ model Redemption {
   employee       Employee      @relation(fields: [employeeId], references: [id])
   merchant       Merchant      @relation(fields: [merchantId], references: [id])
   offer          MerchantOffer @relation(fields: [offerId], references: [id])
+  review         MerchantReview?
 
   @@index([merchantId])
   @@index([offerId])
@@ -1288,4 +1293,25 @@ model LoginBranding {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model MerchantReview {
+  id         String   @id @default(uuid()) @db.Uuid
+  employeeId String   @db.Uuid
+  merchantId String   @db.Uuid
+  companyId  String   @db.Uuid
+  offerId    String?  @db.Uuid
+  redemptionId String? @db.Uuid
+  rating     Int      // 1-5
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  employee  Employee  @relation(fields: [employeeId], references: [id])
+  merchant  Merchant  @relation(fields: [merchantId], references: [id])
+  company   Company   @relation(fields: [companyId], references: [id])
+  offer     MerchantOffer? @relation(fields: [offerId], references: [id])
+  redemption Redemption?   @relation(fields: [redemptionId], references: [id])
+
+  @@unique([employeeId, merchantId])
+  @@index([merchantId])
 }
