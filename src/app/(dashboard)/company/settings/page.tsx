@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 import { Input } from '@/components/ui/input'
 import { SettingsForm } from '@/features/settings/components/settings-form'
 import { SecuritySection } from '@/features/settings/components/security-section'
@@ -85,27 +86,27 @@ export default function CompanySettingsPage() {
             <label className="text-sm font-medium">Approved Domain</label>
             <Input name="approvedDomain" placeholder="e.g. company.com" />
           </div>
-          <Button type="submit" disabled={updateProfile.isPending} className="sm:col-span-2">
-            {updateProfile.isPending ? 'Saving...' : 'Save Changes'}
-          </Button>
+          <LoadingButton type="submit" loading={updateProfile.isPending} loadingText="Saving..." className="sm:col-span-2">
+            Save Changes
+          </LoadingButton>
         </form>
       </SettingsForm>
 
-      <SecuritySection onPasswordChange={handlePasswordChange} />
+      <SecuritySection onPasswordChange={handlePasswordChange} disabled={changePassword.isPending} loading={changePassword.isPending} />
 
       <SettingsForm title="Session" description="Manage your active sessions">
         <div className="space-y-3">
-          <Button variant="outline" onClick={() => logoutAll.mutate()} disabled={logoutAll.isPending}>
+          <LoadingButton variant="outline" onClick={() => logoutAll.mutate()} loading={logoutAll.isPending} loadingText="Logging out...">
             <LogOut className="mr-2 h-4 w-4" /> Logout All Devices
-          </Button>
+          </LoadingButton>
         </div>
       </SettingsForm>
 
       <SettingsForm title="Data" description="Export or manage your company data">
         <div className="space-y-3">
-          <Button variant="outline" onClick={() => exportData.mutate()} disabled={exportData.isPending}>
+          <LoadingButton variant="outline" onClick={() => exportData.mutate()} loading={exportData.isPending} loadingText="Exporting...">
             <Download className="mr-2 h-4 w-4" /> Export Company Data
-          </Button>
+          </LoadingButton>
         </div>
       </SettingsForm>
 
@@ -130,9 +131,9 @@ export default function CompanySettingsPage() {
                 placeholder="Reason for cancellation (min. 10 characters)"
               />
               <div className="flex gap-2">
-                <Button variant="destructive" onClick={handleCancel} disabled={requestCancel.isPending}>
-                  {requestCancel.isPending ? 'Submitting...' : 'Confirm Cancellation'}
-                </Button>
+                <LoadingButton variant="destructive" onClick={handleCancel} loading={requestCancel.isPending} loadingText="Submitting...">
+                  Confirm Cancellation
+                </LoadingButton>
                 <Button variant="outline" onClick={() => { setShowCancel(false); setCancelReason('') }}>Cancel</Button>
               </div>
             </div>

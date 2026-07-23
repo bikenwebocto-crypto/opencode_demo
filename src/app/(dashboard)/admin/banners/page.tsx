@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/page-header'
 import { showToast } from '@/hooks/use-toast'
@@ -303,9 +304,9 @@ export default function AdminBannersPage() {
                   </div>
                   <div className="flex justify-end gap-2">
                     <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
-                    <Button type="submit" disabled={createMutation.isPending}>
-                      {createMutation.isPending ? 'Creating…' : 'Create'}
-                    </Button>
+                    <LoadingButton type="submit" loading={createMutation.isPending} loadingText="Creating…">
+                      Create
+                    </LoadingButton>
                   </div>
                 </form>
               </CardContent>
@@ -338,9 +339,9 @@ export default function AdminBannersPage() {
                         <div className="flex items-center gap-2">
                           <span className="font-semibold">£{Number(b.pricePerDay).toFixed(2)}/day</span>
                           <Button size="sm" variant="outline" onClick={() => openEdit(b)}>Edit</Button>
-                          <Button size="sm" variant="outline" onClick={() => toggleMutation.mutate({ id: b.id, isActive: !b.isActive })}>
+                          <LoadingButton size="sm" variant="outline" loading={toggleMutation.isPending} onClick={() => toggleMutation.mutate({ id: b.id, isActive: !b.isActive })}>
                             {b.isActive ? <ToggleRight className="h-4 w-4 text-green-600" /> : <ToggleLeft className="h-4 w-4 text-gray-400" />}
-                          </Button>
+                          </LoadingButton>
                         </div>
                       </div>
                       {b.description && <p className="mt-1 text-xs text-muted-foreground">{b.description}</p>}
@@ -397,9 +398,9 @@ export default function AdminBannersPage() {
                   </div>
                   <div className="flex justify-end gap-2">
                     <Button type="button" variant="outline" onClick={() => setEditBanner(null)}>Cancel</Button>
-                    <Button type="submit" disabled={updateMutation.isPending}>
-                      {updateMutation.isPending ? 'Saving…' : 'Save'}
-                    </Button>
+                    <LoadingButton type="submit" loading={updateMutation.isPending} loadingText="Saving…">
+                      Save
+                    </LoadingButton>
                   </div>
                 </form>
               </CardContent>
@@ -453,7 +454,7 @@ export default function AdminBannersPage() {
                     </div>
                     {b.status === 'PENDING' && (
                       <div className="mt-2 flex gap-2">
-                        <Button size="sm" onClick={() => handleApprove(b)}><Check className="mr-1 h-3 w-3" /> Approve</Button>
+                        <LoadingButton size="sm" loading={reviewMutation.isPending} onClick={() => handleApprove(b)}><Check className="mr-1 h-3 w-3" /> Approve</LoadingButton>
                         <Button size="sm" variant="outline" className="text-destructive border-destructive/50" onClick={() => { setReviewBooking(b); setRejectReason('') }}>
                           <Ban className="mr-1 h-3 w-3" /> Reject
                         </Button>
@@ -501,9 +502,9 @@ export default function AdminBannersPage() {
                   </div>
                   <div className="flex justify-end gap-2">
                     <Button variant="outline" onClick={() => setReviewBooking(null)}>Cancel</Button>
-                    <Button variant="destructive" onClick={handleReject} disabled={reviewMutation.isPending}>
-                      {reviewMutation.isPending ? 'Rejecting…' : 'Reject Booking'}
-                    </Button>
+                    <LoadingButton variant="destructive" onClick={handleReject} loading={reviewMutation.isPending} loadingText="Rejecting…">
+                      Reject Booking
+                    </LoadingButton>
                   </div>
                 </CardContent>
               </Card>

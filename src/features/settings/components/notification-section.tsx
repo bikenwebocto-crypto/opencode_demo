@@ -1,13 +1,15 @@
 'use client'
 import { useState } from 'react'
 import { SettingsForm } from './settings-form'
-import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 
 interface NotificationSectionProps {
   onSubmit: (data: { emailNotifications: boolean; pushNotifications: boolean; digestFrequency: string }) => void
+  disabled?: boolean
+  loading?: boolean
 }
 
-export function NotificationSection({ onSubmit }: NotificationSectionProps) {
+export function NotificationSection({ onSubmit, disabled, loading }: NotificationSectionProps) {
   const [emailNotifications, setEmailNotifications] = useState(true)
   const [pushNotifications, setPushNotifications] = useState(false)
   const [digestFrequency, setDigestFrequency] = useState('daily')
@@ -59,7 +61,7 @@ export function NotificationSection({ onSubmit }: NotificationSectionProps) {
             <option value="monthly">Monthly</option>
           </select>
         </div>
-        <Button type="submit">Save Preferences</Button>
+        <LoadingButton type="submit" disabled={disabled} loading={loading} loadingText="Saving...">Save Preferences</LoadingButton>
       </form>
     </SettingsForm>
   )

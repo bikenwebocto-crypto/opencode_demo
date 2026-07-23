@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/page-header'
 import { ImageUpload } from '@/components/ui/image-upload'
@@ -235,9 +236,9 @@ export default function MerchantBannersPage() {
 
                 <div className="flex justify-end gap-2 pt-2">
                   <Button type="button" variant="outline" onClick={() => setShowBook(false)}>Cancel</Button>
-                  <Button type="submit" disabled={bookMutation.isPending || !form.imageUrl}>
-                    {bookMutation.isPending ? 'Submitting…' : 'Submit Booking'}
-                  </Button>
+                  <LoadingButton type="submit" loading={bookMutation.isPending} disabled={!form.imageUrl} loadingText="Submitting…">
+                    Submit Booking
+                  </LoadingButton>
                 </div>
               </form>
             )}

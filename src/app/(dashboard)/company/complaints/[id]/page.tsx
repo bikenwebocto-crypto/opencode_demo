@@ -250,6 +250,7 @@ export default function CompanyComplaintDetailPage({ params }: { params: Promise
             <select
               className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={priority}
+              disabled={updateMutation.isPending}
               onChange={(e) => handlePriorityChange(e.target.value)}
             >
               <option value="LOW">Low</option>

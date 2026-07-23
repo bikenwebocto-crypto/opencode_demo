@@ -1,14 +1,16 @@
 'use client'
 import { useState } from 'react'
 import { SettingsForm } from './settings-form'
-import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 import { Input } from '@/components/ui/input'
 
 interface SecuritySectionProps {
   onPasswordChange: (data: { currentPassword: string; newPassword: string }) => void
+  disabled?: boolean
+  loading?: boolean
 }
 
-export function SecuritySection({ onPasswordChange }: SecuritySectionProps) {
+export function SecuritySection({ onPasswordChange, disabled, loading }: SecuritySectionProps) {
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
 
@@ -42,7 +44,7 @@ export function SecuritySection({ onPasswordChange }: SecuritySectionProps) {
             required
           />
         </div>
-        <Button type="submit">Change Password</Button>
+        <LoadingButton type="submit" disabled={disabled} loading={loading} loadingText="Changing...">Change Password</LoadingButton>
       </form>
     </SettingsForm>
   )

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/utils/cn'
 import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 import { Loader2 } from 'lucide-react'
 import {
   LayoutDashboard,
@@ -117,12 +118,16 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName, 
     }
   }, [pathname])
 
+  const [signingOut, setSigningOut] = useState(false)
+
   const logout = async () => {
+    setSigningOut(true)
     try {
       await supabase.auth.signOut()
       router.push('/login')
     } catch (error) {
       console.error('Logout failed:', error)
+      setSigningOut(false)
     }
   }
 
@@ -193,10 +198,10 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName, 
 
       {/* Logout */}
       <div className="border-t p-3">
-        <Button variant="ghost" onClick={logout} className="w-full justify-start gap-3 text-muted-foreground">
+        <LoadingButton variant="ghost" onClick={logout} loading={signingOut} loadingText="Signing out..." className="w-full justify-start gap-3 text-muted-foreground">
           <LogOut className="h-4 w-4" />
           Sign Out
-        </Button>
+        </LoadingButton>
       </div>
     </aside>
   )

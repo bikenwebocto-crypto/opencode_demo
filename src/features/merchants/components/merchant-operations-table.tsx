@@ -45,6 +45,7 @@ interface MerchantOperationsTableProps {
   onToggleFeatured?: (id: string, value: boolean) => void
   onToggleHomepage?: (id: string, value: boolean) => void
   onChangePriority?: (id: string, value: number) => void
+  isActionProcessing?: boolean
 }
 
 // ---- Helpers ----------------------------------------------------------------
@@ -213,6 +214,7 @@ export function MerchantOperationsTable({
   onToggleFeatured,
   onToggleHomepage,
   onChangePriority,
+  isActionProcessing,
 }: MerchantOperationsTableProps) {
   if (isLoading) {
     return (
@@ -433,6 +435,7 @@ export function MerchantOperationsTable({
                     onToggleFeatured={onToggleFeatured}
                     onToggleHomepage={onToggleHomepage}
                     onChangePriority={onChangePriority}
+                    disabled={isActionProcessing}
                   />
                 </td>
               </tr>
@@ -534,6 +537,7 @@ export function MerchantOperationsTable({
                     onToggleFeatured={onToggleFeatured}
                     onToggleHomepage={onToggleHomepage}
                     onChangePriority={onChangePriority}
+                    disabled={isActionProcessing}
                   />
                 </td>
               </tr>
@@ -560,6 +564,7 @@ export function MerchantOperationsTable({
             onToggleFeatured={onToggleFeatured}
             onToggleHomepage={onToggleHomepage}
             onChangePriority={onChangePriority}
+            disabled={isActionProcessing}
           />
         ))}
       </div>
@@ -581,6 +586,7 @@ interface MerchantMobileCardProps {
   onToggleFeatured?: (id: string, value: boolean) => void
   onToggleHomepage?: (id: string, value: boolean) => void
   onChangePriority?: (id: string, value: number) => void
+  disabled?: boolean
 }
 
 function MerchantMobileCard({

@@ -55,6 +55,7 @@ interface MerchantActionsMenuProps {
   onToggleFeatured?: (id: string, value: boolean) => void
   onToggleHomepage?: (id: string, value: boolean) => void
   onChangePriority?: (id: string, value: number) => void
+  disabled?: boolean
 }
 
 const PRIORITY_PRESETS = [0, 5, 10, 25, 50, 100]
@@ -70,6 +71,7 @@ export function MerchantActionsMenu({
   onToggleFeatured,
   onToggleHomepage,
   onChangePriority,
+  disabled,
 }: MerchantActionsMenuProps) {
   const [suspendOpen, setSuspendOpen] = useState(false)
   const [suspendReason, setSuspendReason] = useState('')
@@ -109,8 +111,8 @@ export function MerchantActionsMenu({
   return (
     <>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-8 w-8">
+        <DropdownMenuTrigger asChild disabled={disabled}>
+          <Button variant="ghost" size="icon" className="h-8 w-8" disabled={disabled}>
             <MoreHorizontal className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>

@@ -3,6 +3,7 @@
 import { Bell, ChevronDown, LogOut, Menu } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
@@ -41,6 +42,7 @@ export function Navbar({
 }: NavbarProps) {
   const unreadCount = useNotificationStore((s) => s.unreadCount);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,12 +63,14 @@ export function Navbar({
   const initials = getInitials(displayName);
   const router = useRouter();
   const logout = async () => {
+    setSigningOut(true);
     try {
       const res = await supabase.auth.signOut();
       //  console.log('Logout response:', res)
       router.push("/login");
     } catch (error) {
       console.error("Logout failed:", error);
+      setSigningOut(false);
     }
   };
   return (
@@ -126,15 +130,10 @@ export function Navbar({
                 )}
               </div>
               <div className="border-t px-2 py-2">
-                <Button variant="ghost" onClick={logout}>
-                  <Link
-                    href="/login"
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/20 dark:text-red-400 dark:hover:text-red-300 transition-colors"
-                  >
-                    <LogOut className="h-4 w-4" />
-                    <span>Sign Out</span>
-                  </Link>
-                </Button>
+                <LoadingButton variant="ghost" onClick={logout} loading={signingOut} loadingText="Signing out..." className="w-full justify-start">
+                  <LogOut className="h-4 w-4" />
+                  <span>Sign Out</span>
+                </LoadingButton>
               </div>
             </div>
           )}

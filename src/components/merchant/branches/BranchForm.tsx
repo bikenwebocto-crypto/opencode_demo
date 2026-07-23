@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 import { GooglePlacesAutocomplete, type PlaceResult } from './GooglePlacesAutocomplete'
 
 import {
@@ -528,10 +529,10 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
         <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
           Cancel
         </Button>
-        <Button type="submit" disabled={submitting}>
+        <LoadingButton type="submit" loading={submitting} loadingText="Saving…">
           <Save className="mr-1 h-4 w-4" />
-          {submitting ? 'Saving…' : isEdit ? 'Save Changes' : 'Create Branch'}
-        </Button>
+          {isEdit ? 'Save Changes' : 'Create Branch'}
+        </LoadingButton>
       </div>
     </form>
   )

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 import { Input } from '@/components/ui/input'
 import { showToast } from '@/hooks/use-toast'
 import { X, Save } from 'lucide-react'
@@ -244,10 +245,10 @@ export function EmployeeEditModal({
             <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
+            <LoadingButton type="submit" loading={saving} loadingText="Saving...">
               <Save className="mr-1 h-4 w-4" />
-              {saving ? 'Saving...' : 'Save Changes'}
-            </Button>
+              Save Changes
+            </LoadingButton>
           </div>
         </form>
       </div>

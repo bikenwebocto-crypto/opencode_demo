@@ -2,6 +2,7 @@
 import type { ReactNode } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -45,9 +46,9 @@ export function ConfirmDialog({
         {children && <div className="mt-4">{children}</div>}
         <div className="mt-6 flex justify-end gap-3">
           <Button variant="outline" onClick={onCancel} disabled={loading}>{cancelLabel}</Button>
-          <Button variant={variant === 'destructive' ? 'destructive' : 'default'} onClick={onConfirm} disabled={loading}>
-            {loading ? 'Processing...' : confirmLabel}
-          </Button>
+          <LoadingButton variant={variant === 'destructive' ? 'destructive' : 'default'} onClick={onConfirm} loading={loading} loadingText="Processing...">
+            {confirmLabel}
+          </LoadingButton>
         </div>
       </div>
     </div>

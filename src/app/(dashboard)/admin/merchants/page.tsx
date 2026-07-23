@@ -410,6 +410,7 @@ export default function MerchantsPage() {
             onToggleFeatured={onToggleFeatured}
             onToggleHomepage={onToggleHomepage}
             onChangePriority={onChangePriority}
+            isActionProcessing={approveMutation.isPending || deleteMutation.isPending || suspendMutation.isPending || activateMutation.isPending || pauseMutation.isPending}
           />
 
           {/* ===== Pagination ===== */}

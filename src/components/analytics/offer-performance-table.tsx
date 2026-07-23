@@ -287,9 +287,9 @@ export function OfferPerformanceTable({
               variant="outline"
               size="icon"
               className="h-7 w-7"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              aria-label="Previous page"
+               disabled={isLoading || page <= 1}
+               onClick={() => setPage((p) => Math.max(1, p - 1))}
+               aria-label="Previous page"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
             </Button>
@@ -300,9 +300,9 @@ export function OfferPerformanceTable({
               variant="outline"
               size="icon"
               className="h-7 w-7"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              aria-label="Next page"
+               disabled={isLoading || page >= totalPages}
+               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+               aria-label="Next page"
             >
               <ChevronRight className="h-3.5 w-3.5" />
             </Button>

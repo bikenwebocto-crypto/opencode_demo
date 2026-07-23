@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmployeeLayout } from '@/components/employee/EmployeeLayout'
 import { showToast } from '@/hooks/use-toast'
@@ -88,10 +89,10 @@ export default function EmployeeSettingsPage() {
                 <span>{label}</span>
               </label>
             ))}
-            <Button onClick={() => save.mutate(values.preferences)} disabled={save.isPending}>
+            <LoadingButton onClick={() => save.mutate(values.preferences)} loading={save.isPending} loadingText="Saving…">
               <Save className="mr-1 h-4 w-4" />
-              {save.isPending ? 'Saving…' : 'Save Preferences'}
-            </Button>
+              Save Preferences
+            </LoadingButton>
           </CardContent>
         </Card>
 
