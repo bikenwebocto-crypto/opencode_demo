@@ -36,7 +36,7 @@ const MAX_LENGTHS: Record<string, number> = {
 export function validateLoginBranding(
   data: Record<string, unknown>,
 ): string | null {
-  console.log("Validating login branding data:", data);
+  // console.log("Validating login branding data:", data);
   for (const [key, value] of Object.entries(data)) {
     if (value === null || value === undefined || value === "") continue;
 

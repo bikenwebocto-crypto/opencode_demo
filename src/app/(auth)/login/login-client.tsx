@@ -15,8 +15,26 @@ interface LoginClientProps {
 export function LoginClient({ branding }: LoginClientProps) {
   const router = useRouter();
   const syncedRef = useRef(false);
+  const [view, setView] = useState<'sign_in' | 'update_password'>('sign_in');
+  const [mounted, setMounted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+
+    const hash = window.location.hash
+    if (!hash.includes('type=recovery')) return
+
+    const params = new URLSearchParams(hash.substring(1))
+    const access_token = params.get('access_token')
+    const refresh_token = params.get('refresh_token')
+    if (!access_token || !refresh_token) return
+    
+    supabase.auth.setSession({ access_token, refresh_token }).then(({ error }) => {
+      if (!error) setView('update_password')
+    })
+  }, []);
 
   const onAuth = useCallback(async () => {
     if (syncedRef.current || isSyncing) return;
@@ -26,7 +44,7 @@ export function LoginClient({ branding }: LoginClientProps) {
     } = await supabase.auth.getSession();
 
     if (!session?.access_token) return;
-    console.log("User signed in, syncing with backend...", session.access_token);
+    // console.log("User signed in, syncing with backend...", session.access_token);
     syncedRef.current = true;
     setIsSyncing(true);
 
@@ -65,6 +83,7 @@ export function LoginClient({ branding }: LoginClientProps) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") setView("update_password");
       if (event === "SIGNED_IN") onAuth();
     });
     return () => subscription.unsubscribe();
@@ -102,11 +121,15 @@ export function LoginClient({ branding }: LoginClientProps) {
         </div>
       )}
       <div className="w-full max-w-sm">
-        <Auth
-          supabaseClient={supabase}
-          appearance={{ theme: ThemeSupa }}
-          providers={[]}
-        />
+        {mounted && (
+          <Auth
+            supabaseClient={supabase}
+            appearance={{ theme: ThemeSupa }}
+            providers={[]}
+            redirectTo="/login"
+            view={view}
+          />
+        )}
       </div>
     </LoginLayoutRenderer>
   );
