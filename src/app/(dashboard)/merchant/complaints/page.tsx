@@ -1,5 +1,4 @@
 'use client'
-
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
@@ -117,7 +116,7 @@ export default function MerchantComplaintsPage() {
               <thead>
                 <tr className="border-b bg-muted/30 text-left text-xs font-medium uppercase text-muted-foreground">
                   <th className="px-4 py-3">Employee</th>
-                  <th className="px-4 py-3">Company</th>
+                  {/* <th className="px-4 py-3">Company</th> */}
                   <th className="px-4 py-3">Offer</th>
                   <th className="px-4 py-3">Type</th>
                   <th className="px-4 py-3">Status</th>
@@ -133,7 +132,7 @@ export default function MerchantComplaintsPage() {
                     onClick={() => window.location.href = `/merchant/complaints/${c.id}`}
                   >
                     <td className="px-4 py-3 font-medium">{c.employee?.firstName} {c.employee?.lastName}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{c.company?.name ?? '—'}</td>
+                    {/* <td className="px-4 py-3 text-muted-foreground">{c.company?.name ?? '—'}</td> */}
                     <td className="px-4 py-3">{c.offer?.title ?? '—'}</td>
                     <td className="px-4 py-3 capitalize">{c.complaintType?.replace(/_/g, ' ').toLowerCase()}</td>
                     <td className="px-4 py-3">

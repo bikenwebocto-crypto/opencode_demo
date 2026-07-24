@@ -38,6 +38,7 @@ interface DashboardData {
     activeViews: { value: number; change: number; trend: 'up' | 'down' }
     redemptionCount: { value: number; change: number; trend: 'up' | 'down' }
     monthlySavings: { value: string; change: number; trend: 'up' | 'down' }
+    activeBookings: { value: number }
   }
   redemptions: {
     code: string
@@ -61,6 +62,7 @@ const MOCK_DATA: DashboardData = {
     activeViews: { value: 5577, change: 12, trend: 'up' },
     redemptionCount: { value: 434, change: 8, trend: 'up' },
     monthlySavings: { value: '£3,240', change: 8, trend: 'up' },
+    activeBookings: { value: 2 },
   },
   redemptions: [
     { code: 'PRK-A1B2C3', employee: { name: 'Sarah Johnson', initials: 'SJ' }, discount: '£5.00', time: '2m ago', status: 'verified' },
@@ -83,6 +85,7 @@ const EMPTY_DATA: DashboardData = {
     activeViews: { value: 0, change: 0, trend: 'up' },
     redemptionCount: { value: 0, change: 0, trend: 'up' },
     monthlySavings: { value: '£0.00', change: 0, trend: 'up' },
+    activeBookings: { value: 0 },
   },
   redemptions: [],
   activities: [],
@@ -233,6 +236,13 @@ export default function MerchantDashboard() {
               icon={Banknote}
               accentClass="bg-amber-500"
             />
+            <DashboardStatCard
+              title="Active Bookings"
+              value={s.activeBookings.value}
+              href="/merchant/banners"
+              icon={Sparkles}
+              accentClass="bg-rose-500"
+            />
           </div>
         )}
       </section>
@@ -278,15 +288,15 @@ export default function MerchantDashboard() {
             </CardContent>
           </Card>
         </Link>
-        <Link href="/merchant/issues" className="block lg:col-span-1">
+        <Link href="/merchant/banners" className="block lg:col-span-1">
           <Card className="group cursor-pointer transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 h-full">
             <CardContent className="flex flex-col items-center justify-center gap-2 p-5 text-center h-full">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100">
-                <FileText className="h-5 w-5 text-amber-600" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-100">
+                <Sparkles className="h-5 w-5 text-rose-600" />
               </div>
               <div>
-                <p className="text-sm font-medium">Issues</p>
-                <p className="text-xs text-muted-foreground">Report a problem</p>
+                <p className="text-sm font-medium">Banner Bookings</p>
+                <p className="text-xs text-muted-foreground">Manage sponsored banners</p>
               </div>
             </CardContent>
           </Card>

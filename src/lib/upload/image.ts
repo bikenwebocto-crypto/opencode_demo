@@ -155,6 +155,6 @@ export const QR_OPTIONS: UploadImageOptions = {
 // ---------------------------------------------------------------------------
 
 export const BANNER_IMAGE_OPTIONS: UploadImageOptions = {
-  bucket: 'banner-images',
-  folder: 'banner-images',
+  bucket: 'offer-images',
+  folder: 'Brand_banner',
 }

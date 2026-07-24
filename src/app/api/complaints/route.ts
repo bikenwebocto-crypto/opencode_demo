@@ -1,9 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getEmployeeFromSession, unauthorized, companyInactive, notFound, badRequest, internalError } from "@/lib/employee-session";
+import {
+  getEmployeeFromSession,
+  unauthorized,
+  companyInactive,
+  notFound,
+  badRequest,
+  internalError,
+} from "@/lib/employee-session";
 import { createAuditLog } from "@/services/audit-log.service";
+import { getCurrentUser } from "@/lib/supabase/server";
 
-const VALID_TYPES = ["MISLEADING", "INVALID_TERMS", "NON_FUNCTIONAL", "POLICY_VIOLATION"] as const;
+const VALID_TYPES = [
+  "MISLEADING",
+  "INVALID_TERMS",
+  "NON_FUNCTIONAL",
+  "POLICY_VIOLATION",
+] as const;
 const VALID_PRIORITIES = ["LOW", "MEDIUM", "HIGH"] as const;
 
 export async function POST(request: NextRequest) {
@@ -13,23 +26,34 @@ export async function POST(request: NextRequest) {
     if ("inactive" in employee) return companyInactive(employee.companyStatus);
 
     const body = await request.json();
-    const { offerId, complaintType, description, evidenceUrls, priority } = body;
+    const { offerId, complaintType, description, evidenceUrls, priority } =
+      body;
 
     if (!offerId || !complaintType || !description) {
-      return badRequest("Missing required fields: offerId, complaintType, description");
+      return badRequest(
+        "Missing required fields: offerId, complaintType, description",
+      );
     }
 
     if (!VALID_TYPES.includes(complaintType)) {
-      return badRequest("Invalid complaintType. Must be one of: " + VALID_TYPES.join(", "));
+      return badRequest(
+        "Invalid complaintType. Must be one of: " + VALID_TYPES.join(", "),
+      );
     }
 
     if (priority && !VALID_PRIORITIES.includes(priority)) {
-      return badRequest("Invalid priority. Must be one of: " + VALID_PRIORITIES.join(", "));
+      return badRequest(
+        "Invalid priority. Must be one of: " + VALID_PRIORITIES.join(", "),
+      );
     }
 
     const offer = await prisma.merchantOffer.findUnique({
       where: { id: offerId },
-      select: { id: true, merchantId: true, merchant: { select: { id: true } } },
+      select: {
+        id: true,
+        merchantId: true,
+        merchant: { select: { id: true } },
+      },
     });
     if (!offer) return notFound("Offer not found");
 
@@ -69,7 +93,10 @@ export async function POST(request: NextRequest) {
       metadata: { complaintType, offerId },
     });
 
-    return NextResponse.json({ success: true, data: complaint }, { status: 201 });
+    return NextResponse.json(
+      { success: true, data: complaint },
+      { status: 201 },
+    );
   } catch (error) {
     return internalError(error);
   }
@@ -77,16 +104,43 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const employee = await getEmployeeFromSession();
-    if (!employee) return unauthorized();
-    if ("inactive" in employee) return companyInactive(employee.companyStatus);
+    const user = await getCurrentUser();
+    if (!user) return unauthorized();
+    // if ("inactive" in employee) return companyInactive(employee.companyStatus);
 
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
-    const pageSize = Math.min(50, Math.max(1, Number(searchParams.get("pageSize") ?? "20")));
+    const pageSize = Math.min(
+      50,
+      Math.max(1, Number(searchParams.get("pageSize") ?? "20")),
+    );
     const status = searchParams.get("status");
+    let where: any = {};
+    let include: any = {};
+    console.log("@@User role:", user.profileId, user.role); // Log the user role for debugging
+    switch (user?.role) {
+      case "EMPLOYEE":
+        console.log("Employee user:", user.role, user?.profileId);
+        where = { employeeId: user?.profileId };
+        include = {
+          offer: { select: { id: true, title: true } },
+          merchant: { select: { id: true, businessName: true, logoUrl: true } },
+          actions: { orderBy: { createdAt: "desc" }, take: 5 },
+        };
+        break;
+      case "MERCHANT":
+        console.log("Merchant user:", user.role , user?.profileId);
+        where = { merchantId: user?.profileId };
+        include = {
+          offer: { select: { id: true, title: true } },
+          employee: { select: { id: true, firstName: true, lastName: true } },
+          actions: { orderBy: { createdAt: "desc" }, take: 5 },
+        };
+        break;
+      case "ADMIN":
+        return unauthorized();
+    }
 
-    const where: any = { employeeId: employee.id };
     if (status) where.status = status;
 
     const [data, total] = await Promise.all([
@@ -95,11 +149,7 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: {
-          offer: { select: { id: true, title: true } },
-          merchant: { select: { id: true, businessName: true, logoUrl: true } },
-          actions: { orderBy: { createdAt: "desc" }, take: 5 },
-        },
+        include,
       }),
       prisma.complaint.count({ where }),
     ]);

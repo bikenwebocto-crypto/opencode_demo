@@ -13,6 +13,7 @@ import {
   findOfferInList,
 } from '@/components/employee/offers/employee-offer'
 import { Search } from 'lucide-react'
+import { BannerCarousel } from '@/components/employee/BannerCarousel'
 
 interface OffersResponse {
   data: EmployeeOffer[]
@@ -101,6 +102,8 @@ export default function EmployeeOffersPage() {
             className="pl-8"
           />
         </div>
+
+        <BannerCarousel />
 
         {isLoading ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
