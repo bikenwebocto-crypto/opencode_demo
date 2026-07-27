@@ -1,6 +1,8 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+const pageModuleLoad = performance.now()
+
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
@@ -10,6 +12,8 @@ import { StatusBadge } from '@/components/shared/status-badge'
 import { PageHeader } from '@/components/shared/page-header'
 import { useTablePagination } from '@/hooks/use-table-pagination'
 import { Plus, AlertTriangle } from 'lucide-react'
+
+console.log(`[RENDER] EmployeeComplaintsPage module loaded: ${(performance.now() - pageModuleLoad).toFixed(1)}ms`)
 
 interface Complaint {
   id: string
@@ -70,6 +74,15 @@ function PriorityBadge({ priority }: { priority: string }) {
 }
 
 export default function EmployeeComplaintsPage() {
+  const compStart = useRef(performance.now())
+  const hasLogged = useRef(false)
+  const queryFetchStart = useRef(0)
+
+  if (process.env.NODE_ENV === 'development' && !hasLogged.current) {
+    console.log(`[RENDER] EmployeeComplaintsPage component entered: ${(performance.now() - compStart.current).toFixed(1)}ms`);
+    hasLogged.current = true;
+  }
+
   const { page, setPage, pageSize, resetPage } = useTablePagination({ defaultPageSize: 10 })
   const [statusFilter, setStatusFilter] = useState('')
 
@@ -84,15 +97,29 @@ export default function EmployeeComplaintsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['employee-complaints', params.toString()],
     queryFn: async () => {
+      queryFetchStart.current = performance.now()
+      console.log(`[RENDER] EmployeeComplaintsPage before fetch: ${(performance.now() - compStart.current).toFixed(1)}ms`)
+      const tFetch = performance.now()
       const res = await fetch(`/api/complaints?${params.toString()}`)
+      console.log(`[RENDER] EmployeeComplaintsPage fetch done: ${(performance.now() - compStart.current).toFixed(1)}ms (fetch=${(performance.now() - tFetch).toFixed(1)}ms)`)
       const json = await res.json()
+      console.log(`[RENDER] EmployeeComplaintsPage json parsed: ${(performance.now() - compStart.current).toFixed(1)}ms`)
       if (!res.ok) throw new Error(json.error?.message ?? 'Failed to load')
       return json as ComplaintsResponse
     },
   })
 
+  useEffect(() => {
+    if (data) {
+      console.log(`[RENDER] EmployeeComplaintsPage data received: ${(performance.now() - compStart.current).toFixed(1)}ms`)
+    }
+  }, [data])
+
   const complaints = data?.data ?? []
   const meta = data?.meta
+
+  const renderEnd = useRef(0)
+  renderEnd.current = performance.now()
 
   return (
     <div className="space-y-6">

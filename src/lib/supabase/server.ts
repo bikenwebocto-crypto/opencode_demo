@@ -1,19 +1,21 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
+import type { PerfTimer } from '@/lib/perf';
 import type { Database } from './types';
 
-export async function createClient() {
+export async function createClient(timer?: PerfTimer) {
+  const tCookies = performance.now()
   const cookieStore = await cookies() 
+  timer?.point(`cookies(): ${(performance.now() - tCookies).toFixed(1)}ms`)
 
-  return createServerClient<Database>(
+  const tClient = performance.now()
+  const client = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
       cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
+        getAll() { return cookieStore.getAll() },
         setAll(cookiesToSet : { name: string; value: string; options?: any }[]) {
           cookiesToSet.forEach(({ name, value, options }) =>
             cookieStore.set(name, value, options)
@@ -22,6 +24,8 @@ export async function createClient() {
       },
     }
   )
+  timer?.point(`createServerClient: ${(performance.now() - tClient).toFixed(1)}ms`)
+  return client
 }
 
 export type UserProfile =
@@ -42,15 +46,22 @@ export interface CurrentUser {
   profile: Record<string, unknown> | null;
 }
 
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+export async function getCurrentUser(timer?: PerfTimer): Promise<CurrentUser | null> {
   try {
-    const supabase = await createClient()
+    const tClient = performance.now()
+    const supabase = await createClient(timer)
+    timer?.point(`createClient total: ${(performance.now() - tClient).toFixed(1)}ms`)
+
+    const tGetUser = performance.now()
     const { data: { user } } = await supabase.auth.getUser()
+    timer?.point(`supabase.auth.getUser(): ${(performance.now() - tGetUser).toFixed(1)}ms`)
     if (!user) return null
 
+    const tAccount = performance.now()
     const account = await prisma.account.findUnique({
       where: { email: user.email, },
     })
+    timer?.point(`prisma.account.findUnique: ${(performance.now() - tAccount).toFixed(1)}ms`)
     if (!account) return null
     if (account.status !== 'ACTIVE') return null
 
@@ -66,9 +77,11 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     let profileId: string | null = null
     let profile: Record<string, unknown> | null = null
 
+    const tProfile = performance.now()
     switch (account.profileType) {
       case 'ADMIN': {
         const p = await prisma.adminUser.findFirst({ where: { accountId: account.authUserId } })
+        timer?.point(`adminUser.findFirst: ${(performance.now() - tProfile).toFixed(1)}ms`)
         profile = p as Record<string, unknown> | null
         profileId = p?.id ?? null
         companyId = null
@@ -76,6 +89,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       }
       case 'MERCHANT': {
         const p = await prisma.merchant.findFirst({ where: { accountId: account.authUserId } })
+        timer?.point(`merchant.findFirst: ${(performance.now() - tProfile).toFixed(1)}ms`)
         profile = p as Record<string, unknown> | null
         profileId = p?.id ?? null
         companyId = null
@@ -86,6 +100,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
           where: { accountId: account.authUserId },
           include: { company: { select: { name: true } } }
         })
+        timer?.point(`companyAdmin.findFirst: ${(performance.now() - tProfile).toFixed(1)}ms`)
         profile = p as Record<string, unknown> | null
         profileId = p?.id ?? null
         companyId = p?.companyId ?? null
@@ -96,6 +111,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
           where: { accountId: account.authUserId },
           include: { company: { select: { name: true } } }
         })
+        timer?.point(`employee.findFirst: ${(performance.now() - tProfile).toFixed(1)}ms`)
         profile = p as Record<string, unknown> | null
         profileId = p?.id ?? null
         companyId = p?.companyId ?? null
@@ -103,6 +119,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       }
     }
 
+    timer?.point('assemble result')
     return {
       id: user.id,
       email: user.email!,

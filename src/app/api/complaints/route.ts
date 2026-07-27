@@ -10,6 +10,7 @@ import {
 } from "@/lib/employee-session";
 import { createAuditLog } from "@/services/audit-log.service";
 import { getCurrentUser } from "@/lib/supabase/server";
+import { createPerfTimer } from "@/lib/perf";
 
 const VALID_TYPES = [
   "MISLEADING",
@@ -103,24 +104,23 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const timer = createPerfTimer('GET /api/complaints')
+  timer.point('route entered')
   try {
-    const user = await getCurrentUser();
+    const tUser = performance.now()
+    const user = await getCurrentUser(timer)
+    timer.point(`getCurrentUser: ${(performance.now() - tUser).toFixed(1)}ms`)
     if (!user) return unauthorized();
-    // if ("inactive" in employee) return companyInactive(employee.companyStatus);
 
+    const tParams = performance.now()
     const { searchParams } = new URL(request.url);
     const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
-    const pageSize = Math.min(
-      50,
-      Math.max(1, Number(searchParams.get("pageSize") ?? "20")),
-    );
+    const pageSize = Math.min(50, Math.max(1, Number(searchParams.get("pageSize") ?? "20")));
     const status = searchParams.get("status");
     let where: any = {};
     let include: any = {};
-    console.log("@@User role:", user.profileId, user.role); // Log the user role for debugging
     switch (user?.role) {
       case "EMPLOYEE":
-        console.log("Employee user:", user.role, user?.profileId);
         where = { employeeId: user?.profileId };
         include = {
           offer: { select: { id: true, title: true } },
@@ -129,7 +129,6 @@ export async function GET(request: NextRequest) {
         };
         break;
       case "MERCHANT":
-        console.log("Merchant user:", user.role , user?.profileId);
         where = { merchantId: user?.profileId };
         include = {
           offer: { select: { id: true, title: true } },
@@ -140,26 +139,28 @@ export async function GET(request: NextRequest) {
       case "ADMIN":
         return unauthorized();
     }
-
     if (status) where.status = status;
+    timer.point(`param parse + switch: ${(performance.now() - tParams).toFixed(1)}ms`)
 
+    timer.section('Database Queries')
+    const tQuery = performance.now()
     const [data, total] = await Promise.all([
-      prisma.complaint.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include,
-      }),
+      prisma.complaint.findMany({ where, orderBy: { createdAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize, include }),
       prisma.complaint.count({ where }),
     ]);
+    timer.point(`complaint.findMany + count: ${(performance.now() - tQuery).toFixed(1)}ms`)
 
-    return NextResponse.json({
-      success: true,
-      data,
+    timer.section('Serialization')
+    const tJson = performance.now()
+    const response = NextResponse.json({
+      success: true, data,
       meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     });
+    timer.point(`NextResponse.json: ${(performance.now() - tJson).toFixed(1)}ms`)
+    timer.end()
+    return response
   } catch (error) {
+    timer.end()
     return internalError(error);
   }
 }

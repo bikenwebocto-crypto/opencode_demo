@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { getMerchantFromSession } from '@/lib/merchant-session'
 import { createAuditLog } from '@/services/audit-log.service'
+import { createPerfTimer } from '@/lib/perf'
 
 function unauthorized() {
   return NextResponse.json(
@@ -47,12 +48,18 @@ type ImmediateField = (typeof IMMEDIATE_FIELDS)[number]
 type ApprovalField = (typeof APPROVAL_FIELDS)[number]
 
 export async function GET() {
+  const timer = createPerfTimer('GET /api/merchant/profile')
+  timer.section('Authentication')
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUser(timer)
+    timer.point('getCurrentUser done, check role')
     if (!user || user.userType !== 'merchant') return unauthorized()
     const merchant = await getMerchantFromSession()
+    timer.point('getMerchantFromSession done')
     if (!merchant) return notFound()
 
+    timer.section('Database Queries')
+    timer.point('merchant.findUnique + include + _count')
     const profile = await prisma.merchant.findUnique({
       where: { id: merchant.id },
       include: {
@@ -62,33 +69,31 @@ export async function GET() {
     })
     if (!profile) return notFound()
 
+    timer.section('Serialization')
+    timer.point('NextResponse.json')
+    timer.end()
     return NextResponse.json({ success: true, data: profile })
   } catch (error) {
+    timer.end()
     return internalError(error)
   }
 }
 
 export async function PATCH(request: NextRequest) {
+  const timer = createPerfTimer('PATCH /api/merchant/profile')
+  timer.section('Authentication')
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUser(timer)
+    timer.point('getCurrentUser done, check role')
     if (!user || user.userType !== 'merchant') return unauthorized()
     const merchant = await getMerchantFromSession()
+    timer.point('getMerchantFromSession done')
     if (!merchant) return notFound()
 
     const body = await request.json()
     const {
-      businessName,
-      categoryId,
-      logoUrl,
-      contactName,
-      contactPhone,
-      description,
-      website,
-      coverImageUrl,
-      socialLinks,
-      businessHours,
-      tags,
-      changeReason,
+      businessName, categoryId, logoUrl, contactName, contactPhone,
+      description, website, coverImageUrl, socialLinks, businessHours, tags, changeReason,
     } = body
 
     const errors: Record<string, string> = {}
@@ -103,6 +108,8 @@ export async function PATCH(request: NextRequest) {
     }
     if (Object.keys(errors).length > 0) return badRequest('Validation failed', errors)
 
+    timer.section('Database Queries')
+    timer.point('merchant.findUnique (before snapshot)')
     const before = await prisma.merchant.findUnique({ where: { id: merchant.id } })
     if (!before) return notFound()
 
@@ -125,6 +132,7 @@ export async function PATCH(request: NextRequest) {
     const hasApprovalChanges = APPROVAL_FIELDS.some((f) => f in afterSnapshot)
 
     if (!hasImmediateChanges && !hasApprovalChanges) {
+      timer.end()
       return NextResponse.json({ success: true, data: before, message: 'No changes' })
     }
 
@@ -135,6 +143,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (hasImmediateChanges) {
+      timer.point('merchant.update (immediate fields)')
       const immediateUpdate: Record<string, unknown> = {}
       for (const f of IMMEDIATE_FIELDS) {
         if (f in afterSnapshot) immediateUpdate[f] = afterSnapshot[f]
@@ -142,6 +151,7 @@ export async function PATCH(request: NextRequest) {
       await prisma.merchant.update({ where: { id: merchant.id }, data: immediateUpdate })
     }
 
+    timer.point('createAuditLog (PROFILE_UPDATED)')
     await createAuditLog({
       actorType: 'merchant',
       actorId: merchant.id,
@@ -153,46 +163,36 @@ export async function PATCH(request: NextRequest) {
     })
 
     if (hasApprovalChanges) {
+      timer.point('actionQueueItem.findFirst')
       const existing = await prisma.actionQueueItem.findFirst({
-        where: {
-          referenceId: merchant.id,
-          referenceType: 'merchant',
-          type: 'PROFILE_EDIT_REQUEST',
-          status: 'PENDING',
-        },
+        where: { referenceId: merchant.id, referenceType: 'merchant', type: 'PROFILE_EDIT_REQUEST', status: 'PENDING' },
       })
       if (!existing) {
+        timer.point('actionQueueItem.create')
         await prisma.actionQueueItem.create({
           data: {
             type: 'PROFILE_EDIT_REQUEST',
             title: `Profile change request: ${merchant.businessName}`,
             description: `Merchant ${merchant.businessName} requested changes to: ${(APPROVAL_FIELDS as readonly string[]).filter((f) => f in afterSnapshot).join(', ')}. Reason: ${changeReason}`,
-            referenceId: merchant.id,
-            referenceType: 'merchant',
-            status: 'PENDING',
-            priority: 2,
+            referenceId: merchant.id, referenceType: 'merchant', status: 'PENDING', priority: 2,
             metadata: {
-              queueType: 'PROFILE_EDIT_REQUEST',
-              requestedFields: afterSnapshot,
-              originalValues: beforeSnapshot,
-              reason: changeReason,
-              approvalFields: (APPROVAL_FIELDS as readonly string[]).filter((f) => f in afterSnapshot),
+              queueType: 'PROFILE_EDIT_REQUEST', requestedFields: afterSnapshot, originalValues: beforeSnapshot,
+              reason: changeReason, approvalFields: (APPROVAL_FIELDS as readonly string[]).filter((f) => f in afterSnapshot),
             } as any,
           },
         })
 
+        timer.point('createAuditLog (PROFILE_CHANGE_REQUESTED)')
         await createAuditLog({
-          actorType: 'merchant',
-          actorId: merchant.id,
-          action: 'PROFILE_CHANGE_REQUESTED',
-          entityType: 'merchant',
-          entityId: merchant.id,
+          actorType: 'merchant', actorId: merchant.id, action: 'PROFILE_CHANGE_REQUESTED',
+          entityType: 'merchant', entityId: merchant.id,
           changes: { before: beforeSnapshot, after: afterSnapshot } as any,
           metadata: { changeReason },
         })
       }
     }
 
+    timer.point('merchant.findUnique (updated)')
     const updated = await prisma.merchant.findUnique({
       where: { id: merchant.id },
       include: {
@@ -201,15 +201,17 @@ export async function PATCH(request: NextRequest) {
       },
     })
 
+    timer.section('Serialization')
+    timer.point('NextResponse.json')
+    timer.end()
     return NextResponse.json({
-      success: true,
-      data: updated,
-      requiresApproval: hasApprovalChanges,
+      success: true, data: updated, requiresApproval: hasApprovalChanges,
       message: hasApprovalChanges
         ? 'Profile updated. Sensitive changes are pending admin approval.'
         : 'Profile updated successfully.',
     })
   } catch (error) {
+    timer.end()
     return internalError(error)
   }
 }
