@@ -4,14 +4,33 @@ import { internalError, notFound, badRequest } from "@/lib/employee-helpers";
 import { getAuthenticatedMobileEmployee } from "@/lib/mobile-auth";
 import { createAuditLog } from "@/services/audit-log.service";
 
-// GET /api/mobile/profile — current employee profile for the Profile tab.
+// GET /api/mobile/profile — lightweight employee profile for the mobile Profile tab.
 export async function GET(request: NextRequest) {
   try {
     const auth = await getAuthenticatedMobileEmployee(request);
-    // console.log("Authenticated mobile employee:", auth);
-
     if (!auth.ok) return auth.response;
-    return NextResponse.json({ success: true, data: auth });
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        id: auth.employee.id,
+        firstName: auth.employee.firstName,
+        lastName: auth.employee.lastName,
+        employeeId: auth.employee.employeeId,
+        avatarUrl: auth.employee.avatarUrl,
+        department: auth.employee.department,
+        jobTitle: auth.employee.jobTitle,
+        status: auth.employee.status,
+        company: {
+          id: auth.company.id,
+          name: auth.company.name,
+          logoUrl: auth.company.logoUrl,
+        },
+        account: {
+          email: auth.account.email,
+        },
+      },
+    });
   } catch (error) {
     return internalError(error);
   }
