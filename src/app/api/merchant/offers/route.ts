@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/supabase/server";
+import { getMerchantFromSession } from '@/lib/merchant-session'
 import { OfferStatus } from "@prisma/client";
 import {
   ReplacementValidationError,
@@ -44,14 +44,6 @@ function internalError(error: unknown) {
     },
     { status: 500 },
   );
-}
-
-async function getMerchantFromUser() {
-  const user = await getCurrentUser();
-  if (!user || user.userType !== "merchant") return null;
-  const account = await prisma.account.findUnique({ where: { email: user.email }, select: { authUserId: true } });
-  if (!account) return null;
-  return prisma.merchant.findFirst({ where: { accountId: account.authUserId } });
 }
 
 function runQualityChecks(body: any): {
@@ -176,7 +168,7 @@ async function checkDuplicateOffer(
 
 export async function GET(request: NextRequest) {
   try {
-    const merchant = await getMerchantFromUser();
+    const merchant = await getMerchantFromSession();
     // console.log("** Merchant offers GET - merchant running ");
     if (!merchant) return unauthorized();
 
@@ -294,7 +286,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const merchant = await getMerchantFromUser();
+    const merchant = await getMerchantFromSession();
     console.log("** Merchant offers POST - merchant:");
     if (!merchant) return unauthorized();
 
@@ -667,7 +659,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const merchant = await getMerchantFromUser();
+    const merchant = await getMerchantFromSession();
     if (!merchant) return unauthorized();
 
     const { searchParams } = new URL(request.url);

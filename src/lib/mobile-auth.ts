@@ -20,20 +20,10 @@
 
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
-import { createClient } from '@/lib/supabase/server'
+import { authenticateFromBearer, buildAuthContext } from '@/lib/auth'
 import type { User } from '@supabase/supabase-js'
 import type { Account, Company, Employee } from '@prisma/client'
 
-// ── Public types ─────────────────────────────────────────────────────────
-
-/**
- * Result of `getAuthenticatedMobileEmployee`. On success the helper
- * returns the four records needed to authorize a mobile request. On
- * failure it returns a ready-to-emit `NextResponse` with the proper
- * HTTP status and a consistent `{ success: false, error: { code, ... } }`
- * payload.
- */
 export type MobileAuthResult =
   | {
       ok: true
@@ -44,7 +34,6 @@ export type MobileAuthResult =
     }
   | { ok: false; response: NextResponse }
 
-/** Shape returned to the mobile app from a successful login. */
 export interface MobileAuthProfile {
   employeeId: string
   firstName: string
@@ -55,10 +44,6 @@ export interface MobileAuthProfile {
   role: 'EMPLOYEE'
 }
 
-// ── Error response helpers ───────────────────────────────────────────────
-// Local to this file so the contract is self-documenting. All mobile
-// endpoints emit the same envelope: `{ success: false, error: { code,
-// message, ... } }`.
 function authError(
   status: number,
   code: string,
@@ -71,56 +56,22 @@ function authError(
   )
 }
 
-// ── The helper ───────────────────────────────────────────────────────────
-
-/**
- * Validates a Supabase Bearer token and loads the full mobile employee
- * context. Returns `{ ok: true, user, account, employee, company }` on
- * success, or `{ ok: false, response }` containing a ready-to-emit
- * `NextResponse` on failure.
- *
- * Failure modes (status | code):
- *   401 UNAUTHORIZED            no token, invalid token, or Supabase error
- *   403 ACCOUNT_DISABLED        Account.status !== 'ACTIVE'
- *   403 ROLE_NOT_ALLOWED        Account.role !== 'EMPLOYEE'
- *   404 EMPLOYEE_NOT_FOUND      no Employee row linked to the Account
- *   403 EMPLOYEE_INACTIVE       Employee.status !== 'ACTIVE' or soft-deleted
- *   403 COMPANY_INACTIVE        Company is CANCELLED / PAUSED / SUSPENDED / deleted
- *   500 INTERNAL                unexpected exception
- */
 export async function getAuthenticatedMobileEmployee(
   request: NextRequest,
 ): Promise<MobileAuthResult> {
   try {
-    // 1. Read and validate the Bearer token.
-    const authHeader = request.headers.get('Authorization')
-    const token = authHeader?.startsWith('Bearer ')
-      ? authHeader.slice('Bearer '.length).trim()
-      : null
-
-    if (!token) {
+    const auth = await authenticateFromBearer(request)
+    if (!auth || !auth.user.email) {
       return {
         ok: false,
-        response: authError(401, 'UNAUTHORIZED', 'Missing Bearer token'),
+        response: authError(401, 'UNAUTHORIZED', 'Missing or invalid Bearer token'),
       }
     }
 
-    const supabase = await createClient()
-    const { data, error } = await supabase.auth.getUser(token)
-    const user = data?.user ?? null
-
-    if (error || !user || !user.email || !user.id) {
-      return {
-        ok: false,
-        response: authError(401, 'UNAUTHORIZED', 'Invalid or expired token'),
-      }
-    }
-
-    // 2. Find the application Account by Supabase user id.
-    const account = await prisma.account.findUnique({
-      where: { email: user.email },
-    })
-    if (!account) {
+    let ctx
+    try {
+      ctx = await buildAuthContext(auth)
+    } catch {
       return {
         ok: false,
         response: authError(
@@ -130,15 +81,15 @@ export async function getAuthenticatedMobileEmployee(
         ),
       }
     }
-    if (account.status !== 'ACTIVE') {
+
+    if (ctx.account.status !== 'ACTIVE') {
       return {
         ok: false,
         response: authError(403, 'ACCOUNT_DISABLED', 'Account is inactive or suspended.'),
       }
     }
 
-    // 3. Restrict to employee accounts.
-    if (account.role !== 'EMPLOYEE') {
+    if (ctx.role !== 'EMPLOYEE') {
       return {
         ok: false,
         response: authError(
@@ -149,10 +100,7 @@ export async function getAuthenticatedMobileEmployee(
       }
     }
 
-    // 4. Resolve the Employee via the canonical account relation.
-    const employee = await prisma.employee.findFirst({
-      where: { accountId: account.authUserId },
-    })
+    const employee = ctx.profile as Employee | null
     if (!employee) {
       return {
         ok: false,
@@ -175,10 +123,7 @@ export async function getAuthenticatedMobileEmployee(
       }
     }
 
-    // 5. Load and validate the company.
-    const company = await prisma.company.findUnique({
-      where: { id: employee.companyId },
-    })
+    const company = ctx.company
     if (
       !company ||
       company.deletedAt ||
@@ -197,7 +142,7 @@ export async function getAuthenticatedMobileEmployee(
       }
     }
 
-    return { ok: true, user, account, employee, company }
+    return { ok: true, user: ctx.user, account: ctx.account, employee, company }
   } catch (err) {
     console.error('getAuthenticatedMobileEmployee error:', err)
     return {

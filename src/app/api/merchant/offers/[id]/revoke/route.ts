@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/supabase/server";
+import { getMerchantFromSession } from '@/lib/merchant-session'
 import { createAuditLog } from '@/services/audit-log.service';
 
 function unauthorized() {
@@ -32,21 +33,13 @@ function internalError(error: unknown) {
   );
 }
 
-async function getMerchantFromUser() {
-  const user = await getCurrentUser();
-  if (!user || user.userType !== "merchant") return null;
-  const account = await prisma.account.findUnique({ where: { email: user.email }, select: { authUserId: true } });
-  if (!account) return null;
-  return prisma.merchant.findFirst({ where: { accountId: account.authUserId } });
-}
-
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const user = await getCurrentUser();
   try {
-    const merchant = await getMerchantFromUser();
+    const merchant = await getMerchantFromSession();
     if (!merchant) return unauthorized();
 
     const { id } = await params;

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getEmployeeFromSession, unauthorized as empUnauthorized, companyInactive, notFound as empNotFound, badRequest as empBadRequest, internalError as empInternalError } from "@/lib/employee-session";
 import { getCurrentUser } from "@/lib/supabase/server";
+import { getMerchantFromSession } from '@/lib/merchant-session'
 import { getCompanyAdmin, handleApiError } from "@/app/api/company/helpers";
 import { createAuditLog } from "@/services/audit-log.service";
 
@@ -22,14 +23,6 @@ function internalError(error: unknown) {
   return NextResponse.json({ success: false, error: { code: "INTERNAL", message: "Internal server error" } }, { status: 500 });
 }
 
-async function getMerchantFromUser() {
-  const user = await getCurrentUser();
-  if (!user || user.userType !== "merchant") return null;
-  const account = await prisma.account.findUnique({ where: { email: user.email }, select: { authUserId: true } });
-  if (!account) return null;
-  return prisma.merchant.findFirst({ where: { accountId: account.authUserId } });
-}
-
 async function resolveRequester() {
   // Try employee first
   const employee = await getEmployeeFromSession();
@@ -42,7 +35,7 @@ async function resolveRequester() {
   } catch { /* not company admin */ }
 
   // Try merchant
-  const merchant = await getMerchantFromUser();
+  const merchant = await getMerchantFromSession();
   if (merchant) return { role: "merchant" as const, id: merchant.id, merchantId: merchant.id, merchant };
 
   // Try super admin

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/supabase/server";
+import { getMerchantFromSession } from '@/lib/merchant-session'
 import { generateUniqueOfferCode } from '@/lib/offer-code';
 import { ensureOfferQRCode } from '@/lib/offer-qr';
 
@@ -61,14 +61,6 @@ function internalError(error: unknown) {
   );
 }
 
-async function getMerchantFromUser() {
-  const user = await getCurrentUser();
-  if (!user || user.userType !== "merchant") return null;
-  const account = await prisma.account.findUnique({ where: { email: user.email }, select: { authUserId: true } });
-  if (!account) return null;
-  return prisma.merchant.findFirst({ where: { accountId: account.authUserId } });
-}
-
 async function getOwnOffer(merchantId: string, offerId: string) {
   return prisma.merchantOffer.findFirst({
     where: { id: offerId, merchantId, deletedAt: null },
@@ -88,7 +80,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const merchant = await getMerchantFromUser();
+    const merchant = await getMerchantFromSession();
     if (!merchant) return unauthorized();
     const { id } = await params;
     const offer = await getOwnOffer(merchant.id, id);
@@ -120,8 +112,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await getCurrentUser();
-    const merchant = await getMerchantFromUser();
+    const merchant = await getMerchantFromSession();
     if (!merchant) return unauthorized();
     const { id } = await params;
     const existing = await getOwnOffer(merchant.id, id);
@@ -240,7 +231,7 @@ export async function PATCH(
             action: "OFFER_CODE_GENERATED",
             entityType: "MERCHANT_OFFER",
             entityId: id,
-            actorId: user?.id ?? null,
+            actorId: merchant?.accountId ?? null,
             metadata: { offerCode: newCode, redemptionType: 'ONLINE_CODE' },
           });
         }
@@ -254,7 +245,7 @@ export async function PATCH(
             action: "OFFER_CODE_REGENERATED",
             entityType: "MERCHANT_OFFER",
             entityId: id,
-            actorId: user?.id ?? null,
+            actorId: merchant?.accountId ?? null,
             metadata: { offerCode: newCode },
           });
         }
@@ -320,7 +311,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const merchant = await getMerchantFromUser();
+    const merchant = await getMerchantFromSession();
     if (!merchant) return unauthorized();
     const { id } = await params;
     const existing = await getOwnOffer(merchant.id, id);

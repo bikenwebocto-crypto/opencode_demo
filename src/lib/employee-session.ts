@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/supabase/server'
 
 export interface EmployeeSession {
@@ -28,45 +27,36 @@ export type EmployeeSessionResult = EmployeeSession | InactiveCompanySentinel | 
 export async function getEmployeeFromSession(): Promise<EmployeeSessionResult> {
   const user = await getCurrentUser()
   if (!user || user.userType !== 'employee' || !user.profileId) return null
-  const emp = await prisma.employee.findUnique({
-    where: { id: user.profileId },
-  })
-  if (!emp) return null
 
-  const acct = emp.accountId
-    ? await prisma.account.findUnique({ where: { authUserId: emp.accountId }, select: { email: true } })
-    : null
+  const profile = user.profile as Record<string, unknown> | null
+  if (!profile) return null
 
-  // Non-payment cascade: if the company is paused/suspended/cancelled,
-  // the employee loses platform access.
-  const company = await prisma.company.findUnique({
-    where: { id: emp.companyId },
-    select: { id: true, status: true, deletedAt: true },
-  })
-  if (!company || company.deletedAt || company.status === 'CANCELLED') {
+  const companyStatus = user.companyStatus
+
+  if (!companyStatus || companyStatus === 'CANCELLED') {
     return null
   }
-  if (company.status === 'PAUSED' || company.status === 'SUSPENDED') {
+  if (companyStatus === 'PAUSED' || companyStatus === 'SUSPENDED') {
     return {
       inactive: true,
-      companyStatus: company.status,
+      companyStatus,
       message: `Your company's access is currently inactive.`,
     }
   }
 
   return {
-    id: emp.id,
-    email: acct?.email ?? '',
-    firstName: emp.firstName,
-    lastName: emp.lastName,
-    companyId: emp.companyId,
-    status: emp.status,
-    jobTitle: emp.jobTitle,
-    department: emp.department,
-    avatarUrl: emp.avatarUrl,
-    phone: emp.phone,
-    employeeId: emp.employeeId,
-    companyStatus: company.status,
+    id: user.profileId,
+    email: user.email,
+    firstName: (profile.firstName as string) ?? '',
+    lastName: (profile.lastName as string) ?? '',
+    companyId: user.companyId ?? '',
+    status: (profile.status as string) ?? 'ACTIVE',
+    jobTitle: (profile.jobTitle as string) ?? null,
+    department: (profile.department as string) ?? null,
+    avatarUrl: (profile.avatarUrl as string) ?? null,
+    phone: (profile.phone as string) ?? null,
+    employeeId: (profile.employeeId as string) ?? null,
+    companyStatus,
   }
 }
 

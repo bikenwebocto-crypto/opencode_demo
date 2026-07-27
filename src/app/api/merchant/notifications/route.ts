@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getCurrentUser } from '@/lib/supabase/server';
+import { getMerchantFromSession } from '@/lib/merchant-session';
 
 function unauthorized() {
   return NextResponse.json(
@@ -19,12 +19,7 @@ function internalError(error: unknown) {
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getCurrentUser();
-    if (!user || user.userType !== 'merchant') return unauthorized();
-
-    const account = await prisma.account.findUnique({ where: { email: user.email }, select: { authUserId: true } });
-    if (!account) return unauthorized();
-    const merchant = await prisma.merchant.findFirst({ where: { accountId: account.authUserId } });
+    const merchant = await getMerchantFromSession();
     if (!merchant) return unauthorized();
 
     const { searchParams } = new URL(request.url);
@@ -66,12 +61,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST() {
   try {
-    const user = await getCurrentUser();
-    if (!user || user.userType !== 'merchant') return unauthorized();
-
-    const account = await prisma.account.findUnique({ where: { email: user.email }, select: { authUserId: true } });
-    if (!account) return unauthorized();
-    const merchant = await prisma.merchant.findFirst({ where: { accountId: account.authUserId } });
+    const merchant = await getMerchantFromSession();
     if (!merchant) return unauthorized();
 
     await prisma.notificationEvent.updateMany({

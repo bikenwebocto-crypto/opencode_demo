@@ -8,59 +8,10 @@ import { createAuditLog } from "@/services/audit-log.service";
 export async function GET(request: NextRequest) {
   try {
     const auth = await getAuthenticatedMobileEmployee(request);
+    // console.log("Authenticated mobile employee:", auth);
+
     if (!auth.ok) return auth.response;
-
-    // const full = await prisma.employee.findUnique({
-    //   where: { id: auth.employee.id },
-    //   include: {
-    //     company: { select: { id: true, name: true, approvedDomain: true } },
-    //   },
-    // });
-
-    const employeeData = await prisma.employee.findUnique({
-      where: {
-        id: auth.employee.id,
-      },
-      include: {
-        account: {
-          select: {
-            authUserId: true,
-            email: true,
-            status: true,
-          },
-        },
-
-        company: {
-          select: {
-            id: true,
-            name: true,
-            logoUrl: true,
-          },
-        },
-
-        redemptions: {
-          orderBy: {
-            redeemedAt: "desc",
-          },
-          include: {
-            offer: {
-              include: {
-                merchant: {
-                  select: {
-                    id: true,
-                    businessName: true,
-                    logoUrl: true,
-                    coverImageUrl: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
-    if (!employeeData) return notFound("Employee not found");
-    return NextResponse.json({ success: true, data: employeeData });
+    return NextResponse.json({ success: true, data: auth });
   } catch (error) {
     return internalError(error);
   }
