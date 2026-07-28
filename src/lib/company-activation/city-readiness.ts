@@ -14,8 +14,8 @@
 import { prisma } from '@/lib/prisma'
 
 export const CITY_READINESS_DEFAULTS = {
-  minActiveMerchants: 20,
-  minUniqueCategories: 6,
+  minActiveMerchants: 1,
+  minUniqueCategories: 1,
 } as const
 
 export interface CityReadinessResult {
