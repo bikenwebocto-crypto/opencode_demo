@@ -38,6 +38,7 @@ interface NavItem {
   href: string
   icon: React.ElementType
   badge?: string | number
+  exact?: boolean
 }
 
 interface SidebarProps {
@@ -52,7 +53,7 @@ interface SidebarProps {
 
 const navConfig: Record<string, NavItem[]> = {
   admin: [
-    { label: 'Overview', href: '/admin', icon: LayoutDashboard },
+    { label: 'Overview', href: '/admin', icon: LayoutDashboard, exact: true },
     { label: 'Action Queue', href: '/admin/action-queue', icon: Zap },
     { label: 'Replacement Reviews', href: '/admin/offers/replacements', icon: RefreshCw },
     { label: 'Recycle Bin', href: '/admin/offers/deleted', icon: Trash2 },
@@ -69,7 +70,7 @@ const navConfig: Record<string, NavItem[]> = {
     { label: 'Login Branding', href: '/admin/settings/login-branding', icon: Palette },
   ],
   merchant: [
-    { label: 'Overview', href: '/merchant', icon: LayoutDashboard },
+    { label: 'Overview', href: '/merchant', icon: LayoutDashboard, exact: true },
     { label: 'Offers', href: '/merchant/offers', icon: Gift },
     { label: 'Analytics', href: '/merchant/analytics', icon: BarChart3 },
     { label: 'Branches', href: '/merchant/branches', icon: MapPin },
@@ -81,7 +82,7 @@ const navConfig: Record<string, NavItem[]> = {
     { label: 'Settings', href: '/merchant/settings', icon: Settings },
   ],
   company_admin: [
-    { label: 'Overview', href: '/company', icon: LayoutDashboard },
+    { label: 'Overview', href: '/company', icon: LayoutDashboard, exact: true },
     { label: 'Employees', href: '/company/employees', icon: Users },
     { label: 'Complaints', href: '/company/complaints', icon: FileText },
     { label: 'Analytics', href: '/company/analytics', icon: BarChart3 },
@@ -89,7 +90,7 @@ const navConfig: Record<string, NavItem[]> = {
     { label: 'Settings', href: '/company/settings', icon: Settings },
   ],
   employee: [
-    { label: 'Home', href: '/employee', icon: LayoutDashboard },
+    { label: 'Home', href: '/employee', icon: LayoutDashboard, exact: true },
     { label: 'Offers', href: '/employee/offers', icon: Gift },
     { label: 'Saved', href: '/employee/saved', icon: Bookmark },
     { label: 'Complaints', href: '/employee/complaints', icon: FileText },
@@ -165,7 +166,7 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName, 
       <nav className="flex-1 overflow-y-auto p-3">
         <ul className="space-y-1">
           {navItems.map((item) => {
-            const isActive = pathname === item.href || (item.href !== '/merchant' && pathname.startsWith(item.href + '/'))
+            const isActive = item.exact ? pathname === item.href : (pathname === item.href || pathname.startsWith(item.href + '/'))
             const isLoading = navigatingTo === item.href
             return (
               <li key={item.href}>
