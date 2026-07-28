@@ -61,6 +61,8 @@ export default function MerchantBannersPage() {
   const [page, setPage] = useState(1)
   const [status, setStatus] = useState('')
   const [showBook, setShowBook] = useState(false)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+
   const [form, setForm] = useState({
     bannerId: '',
     startDate: '',
@@ -295,7 +297,7 @@ export default function MerchantBannersPage() {
                       <Calendar className="h-3 w-3" />
                       {new Date(b.startDate).toLocaleDateString()} - {new Date(b.endDate).toLocaleDateString()}
                       {b.content?.imageUrl && (
-                        <span className="inline-flex items-center gap-1"><Image className="h-3 w-3" /> Attached</span>
+                        <img src={b.content.imageUrl} alt={b.content.altText ?? ''} className="h-16 w-28 cursor-pointer rounded object-cover transition-opacity hover:opacity-80" onClick={() => setPreviewUrl(b.content!.imageUrl)} />
                       )}
                     </div>
                   </li>
@@ -315,6 +317,17 @@ export default function MerchantBannersPage() {
           )}
         </CardContent>
       </Card>
+
+      {previewUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={() => setPreviewUrl(null)}>
+          <div className="relative max-h-[90vh] max-w-[90vw]">
+            <img src={previewUrl} alt="" className="max-h-[90vh] max-w-[90vw] rounded object-contain" />
+            <button className="absolute -right-3 -top-3 flex h-8 w-8 items-center justify-center rounded-full bg-background shadow-md" onClick={() => setPreviewUrl(null)}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

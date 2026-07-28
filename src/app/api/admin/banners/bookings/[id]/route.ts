@@ -56,6 +56,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (status === 'APPROVED') {
       updates.approvedBy = user.id
       updates.approvedAt = new Date()
+      updates.paid = true
     }
 
     if (status === 'REJECTED' && rejectedReason) {

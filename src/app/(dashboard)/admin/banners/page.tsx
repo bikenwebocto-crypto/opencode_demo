@@ -62,6 +62,7 @@ export default function AdminBannersPage() {
   const [page, setPage] = useState(1)
   const [bookingsPage, setBookingsPage] = useState(1)
   const [bookingsStatus, setBookingsStatus] = useState('')
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
   const [showCreate, setShowCreate] = useState(false)
   const [createForm, setCreateForm] = useState({
@@ -452,6 +453,9 @@ export default function AdminBannersPage() {
                     <div className="mt-1 text-xs text-muted-foreground">
                       {new Date(b.startDate).toLocaleDateString()} - {new Date(b.endDate).toLocaleDateString()}
                     </div>
+                    {b.content?.imageUrl && (
+                      <img src={b.content.imageUrl} alt={b.content.altText ?? ''} className="mt-2 h-20 w-full cursor-pointer rounded object-cover transition-opacity hover:opacity-80" onClick={() => setPreviewUrl(b.content!.imageUrl)} />
+                    )}
                     {b.status === 'PENDING' && (
                       <div className="mt-2 flex gap-2">
                         <LoadingButton size="sm" loading={reviewMutation.isPending} onClick={() => handleApprove(b)}><Check className="mr-1 h-3 w-3" /> Approve</LoadingButton>
@@ -511,6 +515,17 @@ export default function AdminBannersPage() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {previewUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={() => setPreviewUrl(null)}>
+          <div className="relative max-h-[90vh] max-w-[90vw]">
+            <img src={previewUrl} alt="" className="max-h-[90vh] max-w-[90vw] rounded object-contain" />
+            <button className="absolute -right-3 -top-3 flex h-8 w-8 items-center justify-center rounded-full bg-background shadow-md" onClick={() => setPreviewUrl(null)}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )
