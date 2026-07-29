@@ -1,48 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getEmployeeFromSession, unauthorized, internalError, companyInactive, notFound, badRequest } from '@/lib/employee-session'
+import { getEmployeeFromSession, unauthorized, internalError, companyInactive } from '@/lib/employee-session'
 import { mapOfferRow } from '@/services/offer-mapper.service'
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const employee = await getEmployeeFromSession()
     if (!employee) return unauthorized()
     if ('inactive' in employee) return companyInactive(employee.companyStatus)
 
-    const { searchParams } = new URL(request.url)
-    const q = searchParams.get('q') ?? undefined
-    const categoryId = searchParams.get('categoryId') ?? undefined
-    const featured = searchParams.get('featured') === 'true'
-    const page = Math.max(1, Number(searchParams.get('page') ?? '1'))
-    const pageSize = Math.min(50, Math.max(1, Number(searchParams.get('pageSize') ?? '20')))
-
     const now = new Date()
-    const where: any = {
-      status: 'LIVE',
-      startDate: { lte: now },
-      endDate: { gt: now },
-      merchant: {
-        status: 'ACTIVE',
-        deletedAt: null,
-        branches: { some: { isActive: true, status: 'ACTIVE', deletedAt: null } },
-      },
-    }
-    if (categoryId) where.categoryId = categoryId
-    if (featured) where.isFeatured = true
-    if (q) {
-      where.OR = [
-        { title: { contains: q, mode: 'insensitive' } },
-        { content: { description: { contains: q, mode: 'insensitive' } } },
-        { merchant: { businessName: { contains: q, mode: 'insensitive' } } },
-      ]
-    }
 
-    const [rows, total] = await Promise.all([
+    const [bannerRows, categories, offerRows] = await Promise.all([
+      prisma.bannerBooking.findMany({
+        where: {
+          status: 'APPROVED',
+          paid: true,
+          startDate: { lte: now },
+          endDate: { gte: now },
+        },
+        include: {
+          content: true,
+          banner: { select: { name: true, position: true } },
+          merchant: { select: { businessName: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.category.findMany({
+        where: { isActive: true },
+        orderBy: { displayOrder: 'asc' },
+        select: { id: true, name: true, icon: true },
+      }),
       prisma.merchantOffer.findMany({
-        where,
+        where: {
+          status: 'LIVE',
+          startDate: { lte: now },
+          endDate: { gt: now },
+          merchant: {
+            status: 'ACTIVE',
+            deletedAt: null,
+            branches: { some: { isActive: true, status: 'ACTIVE', deletedAt: null } },
+          },
+        },
         orderBy: [{ isFeatured: 'desc' }, { createdAt: 'desc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
         select: {
           id: true,
           title: true,
@@ -62,9 +62,7 @@ export async function GET(request: NextRequest) {
             },
           },
           pricing: {
-            select: {
-              configuration: true,
-            },
+            select: { configuration: true },
           },
           redemption: {
             select: {
@@ -105,24 +103,8 @@ export async function GET(request: NextRequest) {
           },
         },
       }),
-      prisma.merchantOffer.count({ where }),
     ])
 
-    const offerIds = rows.map((o) => o.id)
-    const bannerRows = await prisma.bannerBooking.findMany({
-      where: {
-        status: 'APPROVED',
-        paid: true,
-        startDate: { lte: now },
-        endDate: { gte: now },
-      },
-      include: {
-        content: true,
-        banner: { select: { name: true, position: true } },
-        merchant: { select: { businessName: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
     const banners = bannerRows.map((row) => ({
       id: row.id,
       image_url: row.content?.imageUrl,
@@ -132,20 +114,22 @@ export async function GET(request: NextRequest) {
       banner_name: row.banner?.name,
       position: row.banner?.position,
     }))
+
+    const totalOfferIds = offerRows.map((o) => o.id)
     const [saved, redeemed] = await Promise.all([
-      offerIds.length
+      totalOfferIds.length
         ? prisma.notificationEvent.findMany({
             where: {
               employeeId: employee.id,
               referenceType: 'saved_offer',
-              referenceId: { in: offerIds },
+              referenceId: { in: totalOfferIds },
             },
             select: { referenceId: true },
           })
         : Promise.resolve([]),
-      offerIds.length
+      totalOfferIds.length
         ? prisma.redemption.findMany({
-            where: { employeeId: employee.id, offerId: { in: offerIds } },
+            where: { employeeId: employee.id, offerId: { in: totalOfferIds } },
             select: { offerId: true },
           })
         : Promise.resolve([]),
@@ -153,13 +137,29 @@ export async function GET(request: NextRequest) {
     const savedSet = new Set(saved.map((s) => s.referenceId).filter(Boolean) as string[])
     const redeemedSet = new Set(redeemed.map((r) => r.offerId).filter(Boolean) as string[])
 
-    const data = rows.map((o) => mapOfferRow(o as any, now, savedSet, redeemedSet))
+    const grouped = new Map<string, typeof offerRows>()
+    for (const offer of offerRows) {
+      const cat = offer.merchant.category
+      if (!cat) continue
+      if (!grouped.has(cat.id)) grouped.set(cat.id, [])
+      const list = grouped.get(cat.id)!
+      if (list.length < 6) list.push(offer)
+    }
+
+    const categorySection = categories
+      .filter((c) => grouped.has(c.id))
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        icon: c.icon,
+        offers: (grouped.get(c.id) ?? []).map((o) =>
+          mapOfferRow(o as any, now, savedSet, redeemedSet),
+        ),
+      }))
 
     return NextResponse.json({
       success: true,
-      data,
-      banners,
-      meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+      data: { banners, categories: categorySection },
     })
   } catch (error) {
     return internalError(error)

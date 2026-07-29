@@ -96,9 +96,6 @@ export function OfferCard({ offer, onRedeem, onOpen }: Props) {
     }
   };
 
-  // Open the details dialog when the user taps anywhere on the card,
-  // except for interactive children (save button, redeem button) which
-  // call `stopPropagation` themselves.
   const handleOpen = () => onOpen?.(offer);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -116,11 +113,11 @@ export function OfferCard({ offer, onRedeem, onOpen }: Props) {
       aria-label={onOpen ? `View details for ${offer.title}` : undefined}
       onClick={onOpen ? handleOpen : undefined}
       onKeyDown={onOpen ? handleKeyDown : undefined}
-      className={`relative overflow-hidden transition-shadow ${
-        onOpen ? "cursor-pointer hover:shadow-md" : ""
+      className={`group relative overflow-hidden transition-all duration-200 ${
+        onOpen ? "cursor-pointer hover:shadow-lg hover:-translate-y-0.5" : ""
       }`}
     >
-      {/* Image Section - Full width */}
+      {/* Image */}
       <div className="relative w-full aspect-[16/9] bg-gradient-to-br from-primary/10 to-primary/5">
         {bannerImage ? (
           <img
@@ -134,28 +131,27 @@ export function OfferCard({ offer, onRedeem, onOpen }: Props) {
           </div>
         )}
 
-        {/* Badges - Overlay on image */}
-        <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
+        {/* Featured/Exclusive badges */}
+        <div className="absolute left-2 top-2 flex flex-wrap gap-1">
           {(offer?.isFeatured || offer?.isExclusive) && (
             <>
               {offer.isFeatured && (
-                <Badge variant="default" className="text-[10px] shadow-md">
-                  <Star className="mr-0.5 h-3 w-3" /> Featured
+                <Badge variant="default" className="text-[10px] leading-none shadow-md px-1.5 py-0.5">
+                  <Star className="mr-0.5 h-2.5 w-2.5" /> Featured
                 </Badge>
               )}
               {offer.isExclusive && (
-                <Badge variant="secondary" className="text-[10px] shadow-md">
-                  <Sparkles className="mr-0.5 h-3 w-3" /> Exclusive
+                <Badge variant="secondary" className="text-[10px] leading-none shadow-md px-1.5 py-0.5">
+                  <Sparkles className="mr-0.5 h-2.5 w-2.5" /> Exclusive
                 </Badge>
               )}
             </>
           )}
         </div>
 
-        {/* Save Button - Top right. Stops propagation so it does NOT
-            open the details dialog when clicked. */}
+        {/* Save button */}
         <div
-          className="absolute right-3 top-3"
+          className="absolute right-2 top-2"
           onClick={(e) => e.stopPropagation()}
         >
           <SaveButton
@@ -165,12 +161,12 @@ export function OfferCard({ offer, onRedeem, onOpen }: Props) {
           />
         </div>
 
-        {/* Redemption Type Badge */}
+        {/* Redemption type badge */}
         {offer.redemptionType && (
-          <div className="absolute right-3 top-12">
+          <div className="absolute right-2 top-11">
             <Badge
               variant="secondary"
-              className="text-[10px] shadow-md bg-white/90 text-foreground"
+              className="text-[10px] leading-none shadow-md bg-white/90 text-foreground px-1.5 py-0.5"
             >
               {offer.redemptionType === "IN_STORE_QR"
                 ? "In-Store"
@@ -183,52 +179,52 @@ export function OfferCard({ offer, onRedeem, onOpen }: Props) {
           </div>
         )}
 
-        {/* Discount Badge - Bottom right */}
+        {/* Discount badge */}
         {discountLabel() && (
-          <div className="absolute bottom-3 right-3 rounded-lg bg-primary px-3 py-1.5 text-sm font-bold text-primary-foreground shadow-lg">
+          <div className="absolute bottom-2 right-2 rounded-lg bg-primary px-2.5 py-1 text-sm font-bold text-primary-foreground shadow-lg">
             {discountLabel()}
           </div>
         )}
 
-        {/* Offer Type Badge - Bottom left */}
-        <div className="absolute bottom-3 left-3">
+        {/* Offer type badge */}
+        <div className="absolute bottom-2 left-2">
           <Badge
             variant="secondary"
-            className={`text-[10px] shadow-md ${getBadgeColor(offer.offerType)}`}
+            className={`text-[10px] leading-none shadow-md px-1.5 py-0.5 ${getBadgeColor(offer.offerType)}`}
           >
             {TYPE_LABELS[offer.offerType] ?? offer.offerType}
           </Badge>
         </div>
       </div>
 
-      {/* Content Section */}
-      <CardContent className="p-4 space-y-3">
-        {/* Merchant Info */}
-        <div className="flex items-center gap-3">
+      {/* Content */}
+      <CardContent className="p-3 space-y-2">
+        {/* Merchant row */}
+        <div className="flex items-center gap-2">
           {offer.merchant?.logoUrl ? (
             <img
               src={offer.merchant.logoUrl}
               alt={offer.merchant.businessName}
-              className="h-10 w-10 rounded-full border object-cover flex-shrink-0"
+              className="h-7 w-7 rounded-full border object-cover flex-shrink-0"
             />
           ) : (
             <div
-              className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full ${getBadgeColor(offer.offerType)} text-sm font-bold`}
+              className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full ${getBadgeColor(offer.offerType)} text-[10px] font-bold`}
             >
-              {initials || <Store className="h-4 w-4" />}
+              {initials || <Store className="h-3 w-3" />}
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <p className="truncate font-semibold text-sm">
+            <p className="truncate text-xs font-semibold">
               {offer.merchant?.businessName ?? "—"}
             </p>
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+            <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Star className="h-2.5 w-2.5 fill-yellow-400 text-yellow-400" />
               <span>
                 {Number(offer.merchant?.averageRating ?? 0).toFixed(1)}
               </span>
-              <span className="ml-1">·</span>
-              <MapPin className="h-3 w-3 flex-shrink-0" />
+              <span>·</span>
+              <MapPin className="h-2.5 w-2.5 flex-shrink-0" />
               <span className="truncate">
                 {offer.merchant?.city ?? "—"}
                 {offer.merchant?.state ? `, ${offer.merchant.state}` : ""}
@@ -237,25 +233,25 @@ export function OfferCard({ offer, onRedeem, onOpen }: Props) {
           </div>
         </div>
 
-        {/* Title — no longer a link, but still styled to look tappable. */}
-        <p className="line-clamp-2 text-sm font-medium">
+        {/* Title */}
+        <p className="line-clamp-2 text-sm font-medium leading-snug">
           {offer.title}
         </p>
 
         {/* Description */}
         {offer.shortDescription && (
-          <p className="line-clamp-2 text-xs text-muted-foreground">
+          <p className="line-clamp-2 text-[11px] text-muted-foreground leading-relaxed">
             {offer.shortDescription}
           </p>
         )}
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t pt-3">
-          <span className="text-xs text-muted-foreground">
+        <div className="flex items-center justify-between border-t pt-2">
+          <span className="text-[11px] text-muted-foreground">
             Expires {new Date(offer.endDate).toLocaleDateString()}
           </span>
           {offer.isRedeemed ? (
-            <Button size="sm" variant="outline" disabled className="text-xs">
+            <Button size="sm" variant="outline" disabled className="h-7 text-[11px] px-2.5">
               Already Redeemed
             </Button>
           ) : onRedeem ? (
@@ -265,12 +261,12 @@ export function OfferCard({ offer, onRedeem, onOpen }: Props) {
                 e.stopPropagation()
                 onRedeem(offer)
               }}
-              className="text-xs"
+              className="h-7 text-[11px] px-2.5"
             >
-              <Tag className="mr-1 h-3 w-3" /> Redeem
+              <Tag className="mr-1 h-2.5 w-2.5" /> Redeem
             </Button>
           ) : (
-            <span className="text-xs text-primary">View details →</span>
+            <span className="text-[11px] text-primary font-medium">View details →</span>
           )}
         </div>
       </CardContent>

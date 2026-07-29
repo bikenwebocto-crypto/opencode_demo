@@ -1,6 +1,9 @@
+import path from "path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  outputFileTracingRoot: process.cwd(),
+
   // Enable React strict mode for development
   reactStrictMode: true,
 
