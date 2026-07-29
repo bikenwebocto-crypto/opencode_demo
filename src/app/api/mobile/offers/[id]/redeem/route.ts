@@ -94,6 +94,12 @@ export async function POST(
       data: { currentRedemptions: { increment: 1 } },
     })
 
+    await prisma.offerAnalytics.upsert({
+      where: { offerId },
+      create: { offerId, clickCount: 1 },
+      update: { clickCount: { increment: 1 } },
+    })
+
     void createAuditLog({
       actorType: 'employee',
       actorId: auth.employee.id,
