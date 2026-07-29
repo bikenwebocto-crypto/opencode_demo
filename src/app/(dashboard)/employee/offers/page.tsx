@@ -15,8 +15,19 @@ import {
 import { Search } from 'lucide-react'
 import { BannerCarousel } from '@/components/employee/BannerCarousel'
 
+interface Banner {
+  id: string
+  image_url: string
+  alt_text: string | null
+  redirect_url: string | null
+  business_name: string
+  banner_name: string
+  position: string
+}
+
 interface OffersResponse {
   data: EmployeeOffer[]
+  banners: Banner[]
   meta: { page: number; pageSize: number; total: number; totalPages: number }
 }
 
@@ -103,7 +114,7 @@ export default function EmployeeOffersPage() {
           />
         </div>
 
-        <BannerCarousel />
+        <BannerCarousel banners={data?.banners ?? []} />
 
         {isLoading ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -1,7 +1,7 @@
 // Mobile Employee Home service.
 //
 // Produces the JSON payload rendered by the mobile app's landing page after
-// successful employee login. The endpoint fans out seven sections, each of
+// successful employee login. The endpoint fans out nine sections, each of
 // which has its own ranking rules. All section queries are independent and
 // run in parallel via Promise.all.
 //
@@ -14,6 +14,14 @@
 //   - No N+1 queries: merchant and category relations are pre-fetched in
 //     the same query.
 //
+// Analytics metrics (offer_analytics table):
+//   - viewCount       → Employee viewed the offer details page.
+//   - clickCount      → Employee tapped the Redeem button (redemption intent).
+//   - saveCount       → Employee saved/bookmarked the offer.
+//
+// These represent distinct stages in the user journey and should not be
+// mixed when ranking sections.
+//
 // Extensibility notes:
 //   - The `Section` and item shapes are intentionally stable so future
 //     enhancements (sponsored slots, AI recommendations, location-aware
@@ -23,6 +31,7 @@
 //     breaking the wire format.
 
 import { prisma } from '@/lib/prisma'
+import { haversineKm, branchCoordinate } from '@/lib/distance'
 
 // Minimal employee shape required by this service. Decoupled from
 // `EmployeeSession` (from `@/lib/employee-session`) so the service can
@@ -85,7 +94,17 @@ export interface MobileHomeMerchant {
   offerCount: number
 }
 
-export type SectionType = 'hero' | 'merchant' | 'offer'
+export interface MobileHomeBanner {
+  id: string
+  imageUrl: string
+  altText: string | null
+  redirectUrl: string | null
+  businessName: string
+  bannerName: string
+  position: string
+}
+
+export type SectionType = 'hero' | 'merchant' | 'offer' | 'banner' | 'most_requested' | 'most_redeemed'
 
 export interface MobileHomeSection<T = unknown> {
   id: string
@@ -97,8 +116,10 @@ export interface MobileHomeSection<T = unknown> {
 export interface MobileHomeData {
   user: MobileHomeUser
   sections: [
+    MobileHomeSection<MobileHomeBanner>,
     MobileHomeSection<MobileHomeOffer>,
     MobileHomeSection<MobileHomeMerchant>,
+    MobileHomeSection<MobileHomeOffer>,
     MobileHomeSection<MobileHomeOffer>,
     MobileHomeSection<MobileHomeOffer>,
     MobileHomeSection<MobileHomeOffer>,
@@ -112,12 +133,14 @@ export interface MobileHomeData {
 // ---------------------------------------------------------------------------
 
 const SECTION_LIMITS = {
+  banner: 10,
   discover: 5,
   nearBrands: 10,
   forYou: 10,
   nearbyOffers: 10,
   newArrivals: 10,
-  popular: 10,
+  mostRequested: 10,
+  mostRedeemed: 10,
   today: 10,
 } as const
 
@@ -182,41 +205,6 @@ const offerSelect = {
 
 function toIso(d: Date): string {
   return d.toISOString()
-}
-
-// Haversine distance in kilometres between two lat/lng points.
-function haversineKm(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number {
-  const R = 6371
-  const toRad = (n: number) => (n * Math.PI) / 180
-  const dLat = toRad(lat2 - lat1)
-  const dLon = toRad(lon2 - lon1)
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-}
-
-// Resolves the best branch coordinate for a merchant. Prefers the primary
-// branch, otherwise the first branch with both lat/lng populated.
-function branchCoordinate(
-  branches: { isPrimary?: boolean; latitude: unknown; longitude: unknown }[],
-): { latitude: number; longitude: number } | null {
-  const candidates = branches.filter(
-    (b) => b.latitude != null && b.longitude != null,
-  ) as { isPrimary?: boolean; latitude: { toString(): string } | number; longitude: { toString(): string } | number }[]
-
-  if (candidates.length === 0) return null
-  const primary = candidates.find((b) => b.isPrimary)
-  const pick = primary ?? candidates[0]
-  return {
-    latitude: Number(pick!.latitude as { toString(): string } | number),
-    longitude: Number(pick!.longitude as { toString(): string } | number),
-  }
 }
 
 // Map a Prisma offer row (with `merchant` relation pre-included) to the
@@ -312,6 +300,33 @@ async function buildDiscover(now: Date): Promise<MobileHomeOffer[]> {
     select: offerSelect,
   })
   return rows.map((o) => mapOffer(o, null))
+}
+
+async function buildBanners(now: Date): Promise<MobileHomeBanner[]> {
+  const rows = await prisma.bannerBooking.findMany({
+    where: {
+      status: 'APPROVED',
+      paid: true,
+      startDate: { lte: now },
+      endDate: { gte: now },
+    },
+    include: {
+      content: true,
+      banner: { select: { name: true, position: true } },
+      merchant: { select: { businessName: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: SECTION_LIMITS.banner,
+  })
+  return rows.map((row) => ({
+    id: row.id,
+    imageUrl: row.content?.imageUrl ?? '',
+    altText: row.content?.altText ?? null,
+    redirectUrl: row.content?.redirectUrl ?? null,
+    businessName: row.merchant?.businessName ?? '',
+    bannerName: row.banner?.name ?? '',
+    position: row.banner?.position ?? '',
+  }))
 }
 
 async function buildBrandsNearYou(
@@ -511,15 +526,35 @@ async function buildNewArrivals(now: Date): Promise<MobileHomeOffer[]> {
   return rows.map((o) => mapOffer(o, null))
 }
 
-async function buildPopular(now: Date): Promise<MobileHomeOffer[]> {
+// Most Requested — ranked by tap on Redeem button (redemption intent).
+// Uses clickCount from offer_analytics to surface offers employees most
+// frequently attempt to redeem.
+async function buildMostRequested(now: Date): Promise<MobileHomeOffer[]> {
+  const rows = await prisma.merchantOffer.findMany({
+    where: liveOfferWhere(now),
+    orderBy: [
+      { analytics: { clickCount: 'desc' } },
+      { isFeatured: 'desc' },
+      { createdAt: 'desc' },
+    ],
+    take: SECTION_LIMITS.mostRequested,
+    select: offerSelect,
+  })
+  return rows.map((o) => mapOffer(o, null))
+}
+
+// Most Redeemed — ranked by completed redemption count.
+// Uses currentRedemptions from offer_redemptions (the cached counter that
+// increments on each successful Redemption record).
+async function buildMostRedeemed(now: Date): Promise<MobileHomeOffer[]> {
   const rows = await prisma.merchantOffer.findMany({
     where: liveOfferWhere(now),
     orderBy: [
       { redemption: { currentRedemptions: 'desc' } },
-      { analytics: { viewCount: 'desc' } },
-      { analytics: { saveCount: 'desc' } },
+      { isFeatured: 'desc' },
+      { createdAt: 'desc' },
     ],
-    take: SECTION_LIMITS.popular,
+    take: SECTION_LIMITS.mostRedeemed,
     select: offerSelect,
   })
   return rows.map((o) => mapOffer(o, null))
@@ -542,7 +577,7 @@ async function buildTodaysPicks(now: Date): Promise<MobileHomeOffer[]> {
   })
 
   if (todaysCounts.length === 0) {
-    return buildPopular(now)
+    return buildMostRequested(now)
   }
 
   const ids = todaysCounts.map((r) => r.offerId)
@@ -586,21 +621,23 @@ export interface GetMobileHomeInput {
 export async function getMobileHome({ employee, location }: GetMobileHomeInput): Promise<MobileHomeData> {
   const now = new Date()
 
-  // Run all seven sections AND the company-name lookup concurrently. The
+  // Run all nine sections AND the company-name lookup concurrently. The
   // company lookup is independent of the section builders, so it can sit
   // in the same Promise.all without serializing.
-  const [company, discover, nearBrands, forYou, nearbyOffers, newArrivals, popular, today] =
+  const [company, banner, discover, nearBrands, forYou, nearbyOffers, newArrivals, mostRequested, mostRedeemed, today] =
     await Promise.all([
       prisma.company.findUnique({
         where: { id: employee.companyId },
         select: { name: true },
       }),
+      buildBanners(now),
       buildDiscover(now),
       buildBrandsNearYou(location ?? null),
       buildForYou(employee.id, now),
       buildNearbyOffers(now, location ?? null),
       buildNewArrivals(now),
-      buildPopular(now),
+      buildMostRequested(now),
+      buildMostRedeemed(now),
       buildTodaysPicks(now),
     ])
 
@@ -615,12 +652,14 @@ export async function getMobileHome({ employee, location }: GetMobileHomeInput):
   return {
     user,
     sections: [
+      { id: 'banner', title: 'Sponsored', type: 'banner', items: banner },
       { id: 'discover', title: 'Discover Now', type: 'hero', items: discover },
       { id: 'nearBrands', title: 'Brands Near You', type: 'merchant', items: nearBrands },
       { id: 'forYou', title: 'Recommended For You', type: 'offer', items: forYou },
       { id: 'nearbyOffers', title: 'Nearby Offers', type: 'offer', items: nearbyOffers },
       { id: 'newArrivals', title: 'New Arrivals', type: 'offer', items: newArrivals },
-      { id: 'popular', title: 'Most Popular', type: 'offer', items: popular },
+      { id: 'mostRequested', title: 'Most Requested', type: 'most_requested', items: mostRequested },
+      { id: 'mostRedeemed', title: 'Most Redeemed', type: 'most_redeemed', items: mostRedeemed },
       { id: 'today', title: "Today's Hot Picks", type: 'offer', items: today },
     ],
   }

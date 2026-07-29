@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
 
     // 2. Authenticate + load Account / Employee / Company.
     const auth = await getAuthenticatedMobileEmployee(request)
+    console.log('auth result:', auth) // Debugging line
     if (!auth.ok) return auth.response
     const { account, employee, company } = auth
 
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
         loginSource: 'mobile',
       },
     })
-
+    console.log('Audit log created for employee:', employee.id) // Debugging line
     // 5. Return the mobile profile. No JWT, no redirect URL.
     return NextResponse.json({
       success: true,

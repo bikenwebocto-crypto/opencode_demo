@@ -26,7 +26,15 @@ export async function GET(
         pricing: { select: { configuration: true } },
         redemption: { select: { redemptionType: true, configuration: true } },
         merchant: {
-          include: {
+          select: {
+            id: true,
+            businessName: true,
+            logoUrl: true,
+            coverImageUrl: true,
+            website: true,
+            description: true,
+            averageRating: true,
+            totalRedemptions: true,
             category: { select: { id: true, name: true, icon: true } },
             branches: { where: { deletedAt: null, status: 'ACTIVE' } },
           },

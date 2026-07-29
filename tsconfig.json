@@ -24,6 +24,8 @@
     },
 
 
+    "ignoreDeprecations": "5.0",
+
     "forceConsistentCasingInFileNames": true,
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": false,

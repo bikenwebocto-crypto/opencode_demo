@@ -145,6 +145,29 @@ export async function GET(request: NextRequest) {
     ])
 
     const offerIds = rows.map((o) => o.id)
+    const bannerRows = await prisma.bannerBooking.findMany({
+      where: {
+        status: 'APPROVED',
+        paid: true,
+        startDate: { lte: now },
+        endDate: { gte: now },
+      },
+      include: {
+        content: true,
+        banner: { select: { name: true, position: true } },
+        merchant: { select: { businessName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+    const banners = bannerRows.map((row) => ({
+      id: row.id,
+      image_url: row.content?.imageUrl,
+      alt_text: row.content?.altText,
+      redirect_url: row.content?.redirectUrl,
+      business_name: row.merchant?.businessName,
+      banner_name: row.banner?.name,
+      position: row.banner?.position,
+    }))
     const [saved, redeemed] = await Promise.all([
       offerIds.length
         ? prisma.notificationEvent.findMany({
@@ -215,6 +238,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data,
+      banners,
       meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     })
   } catch (error) {

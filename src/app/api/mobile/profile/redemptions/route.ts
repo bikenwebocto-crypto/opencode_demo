@@ -61,8 +61,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      items,
-      pagination: {
+      data: items,
+      meta: {
         page,
         pageSize,
         total,

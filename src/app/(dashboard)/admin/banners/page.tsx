@@ -56,6 +56,21 @@ function statusBadge(s: string) {
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{s}</span>
 }
 
+function derivedBadges(booking: Booking) {
+  const now = new Date()
+  const end = new Date(booking.endDate)
+  const badges: React.ReactNode[] = []
+  if (booking.status === 'APPROVED') {
+    if (end < now) {
+      badges.push(<span key="expired" className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">Expired</span>)
+      // badges.push(<span key="renewal" className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">Renewal</span>)
+    } else {
+      badges.push(<span key="live" className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">Live</span>)
+    }
+  }
+  return badges
+}
+
 export default function AdminBannersPage() {
   const queryClient = useQueryClient()
   const [tab, setTab] = useState<'banners' | 'bookings'>('banners')
@@ -447,6 +462,7 @@ export default function AdminBannersPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         {statusBadge(b.status)}
+                        {derivedBadges(b)}
                         <span className="font-semibold">£{Number(b.totalPrice).toFixed(2)}</span>
                       </div>
                     </div>

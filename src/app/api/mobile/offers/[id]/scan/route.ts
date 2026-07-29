@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getAuthenticatedMobileEmployee } from '@/lib/mobile-auth'
 import { verifyOfferQRToken, checkRedemptionEligibility } from '@/lib/offer-visibility'
+import { encodeMethod } from '@/lib/redemption-status'
 import { createAuditLog } from '@/services/audit-log.service'
 
 export async function POST(
@@ -176,7 +177,7 @@ export async function POST(
           discountAmount: discountValue,
           spentAmount: null,
           savingsAmount: discountValue,
-          merchantNotes: 'QR_SCAN',
+          merchantNotes: encodeMethod('IN_STORE'),
           employeeNotes: null,
           isVerified: true,
           verifiedAt: new Date(),

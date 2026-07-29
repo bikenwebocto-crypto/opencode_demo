@@ -2,37 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { internalError } from '@/lib/employee-helpers'
 import { getAuthenticatedMobileEmployee } from '@/lib/mobile-auth'
+import { haversineKm, branchCoordinate as pickBranchCoordinate } from '@/lib/distance'
 
 interface Location {
   latitude: number
   longitude: number
-}
-
-// Haversine distance in kilometres.
-function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371
-  const toRad = (n: number) => (n * Math.PI) / 180
-  const dLat = toRad(lat2 - lat1)
-  const dLon = toRad(lon2 - lon1)
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-}
-
-function pickBranchCoordinate(
-  branches: { isPrimary?: boolean; latitude: unknown; longitude: unknown }[],
-): { latitude: number; longitude: number } | null {
-  const candidates = branches.filter(
-    (b) => b.latitude != null && b.longitude != null,
-  ) as { isPrimary?: boolean; latitude: { toString(): string } | number; longitude: { toString(): string } | number }[]
-  if (candidates.length === 0) return null
-  const primary = candidates.find((b) => b.isPrimary)
-  const pick = primary ?? candidates[0]
-  return {
-    latitude: Number(pick!.latitude as { toString(): string } | number),
-    longitude: Number(pick!.longitude as { toString(): string } | number),
-  }
 }
 
 // GET /api/mobile/brands
@@ -71,7 +45,8 @@ export async function GET(request: NextRequest) {
       where.businessName = { contains: q, mode: 'insensitive' }
     }
 
-    const rows = await prisma.merchant.findMany({
+    const [rows, total] = await Promise.all([
+      prisma.merchant.findMany({
       where,
       // Overscan 3× so we can re-sort by distance in memory when a
       // location is supplied.
@@ -105,9 +80,11 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-    })
+    }),
+    prisma.merchant.count({ where }),
+  ])
 
-    const enriched = rows.map((m) => {
+  const enriched = rows.map((m) => {
       const coord = pickBranchCoordinate(m.branches)
       const distance = location && coord
         ? haversineKm(location.latitude, location.longitude, coord.latitude, coord.longitude)
@@ -131,7 +108,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: page2,
-      meta: { page, pageSize },
+      meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     })
   } catch (error) {
     return internalError(error)

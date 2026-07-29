@@ -50,6 +50,22 @@ function statusBadge(s: string) {
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{s}</span>
 }
 
+function derivedBadges(booking: Booking) {
+  const now = new Date()
+  const end = new Date(booking.endDate)
+  const badges: React.ReactNode[] = []
+  if (booking.status === 'APPROVED') {
+    if (end < now) {
+      badges.push(<span key="expired" className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">Expired</span>)
+    } else if (!booking.paid) {
+      badges.push(<span key="not-visible" className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Not Visible</span>)
+    } else {
+      badges.push(<span key="visible" className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">Visible</span>)
+    }
+  }
+  return badges
+}
+
 const POSITION_LABELS: Record<string, string> = {
   HOME_TOP: 'Home Top',
   SIDEBAR: 'Sidebar',
@@ -290,6 +306,7 @@ export default function MerchantBannersPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         {statusBadge(b.status)}
+                        {derivedBadges(b)}
                         <span className="font-semibold">£{Number(b.totalPrice).toFixed(2)}</span>
                       </div>
                     </div>

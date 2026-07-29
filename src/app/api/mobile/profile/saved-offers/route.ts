@@ -73,8 +73,8 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      items,
-      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+      data: items,
+      meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     })
   } catch (error) {
     return internalError(error)
