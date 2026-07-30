@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/supabase/server'
+import { Prisma } from '@prisma/client'
 
 export interface EmployeeSession {
   id: string
@@ -96,6 +97,12 @@ export function companyInactive(companyStatus: string) {
 }
 
 export function internalError(error: unknown) {
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2023'
+  ) {
+    return notFound('Invalid resource identifier'); // Return 404 instead of 500
+  }      
   console.error('Employee API error:', error)
   return NextResponse.json(
     { success: false, error: { code: 'INTERNAL', message: 'Internal server error' } },

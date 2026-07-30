@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { LoadingButton } from '@/components/ui/loading-button'
 import { GooglePlacesAutocomplete, type PlaceResult } from './GooglePlacesAutocomplete'
+import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api'
 
 import {
   BRANCH_TYPE_OPTIONS,
@@ -325,7 +326,7 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              Coordinates are populated automatically when you select an address from the search above. They are read-only.
+              Click on the map to set a location, or search for an address above. Drag the marker to adjust the precise position.
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
@@ -350,6 +351,16 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
                 />
                 {errors.longitude && <p className="mt-1 text-xs text-destructive">{errors.longitude}</p>}
               </div>
+            </div>
+
+            <div className="pt-2">
+              <LocationMap
+                lat={values.latitude}
+                lng={values.longitude}
+                onCoordinateChange={(lat, lng) => {
+                  setValues((prev) => ({ ...prev, latitude: lat, longitude: lng }))
+                }}
+              />
             </div>
           </CardContent>
         </Card>
@@ -564,4 +575,77 @@ export function valuesToPayload(v: BranchFormValues) {
     description: v.description.trim() || null,
     status: v.status,
   }
+}
+
+const DEFAULT_MAP_CENTER = { lat: 51.5074, lng: -0.1278 }
+
+function LocationMap({
+  lat,
+  lng,
+  onCoordinateChange,
+}: {
+  lat?: number | null
+  lng?: number | null
+  onCoordinateChange: (lat: number, lng: number) => void
+}) {
+  const { isLoaded, loadError } = useJsApiLoader({
+    id: 'google-maps-branch-map',
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',
+  })
+
+  const hasLocation = lat != null && lng != null
+  const center = hasLocation ? { lat, lng } : DEFAULT_MAP_CENTER
+
+  const containerStyle = {
+    width: '100%',
+    height: '300px',
+    borderRadius: '0.5rem',
+  }
+
+  function handleMarkerDragEnd(e: google.maps.MapMouseEvent) {
+    if (!e.latLng) return
+    const newLat = Number(e.latLng.lat().toFixed(7))
+    const newLng = Number(e.latLng.lng().toFixed(7))
+    onCoordinateChange(newLat, newLng)
+  }
+
+  function handleMapClick(e: google.maps.MapMouseEvent) {
+    if (!e.latLng || hasLocation) return
+    const newLat = Number(e.latLng.lat().toFixed(7))
+    const newLng = Number(e.latLng.lng().toFixed(7))
+    onCoordinateChange(newLat, newLng)
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex items-center gap-2 rounded-md bg-destructive/10 p-2 text-xs text-destructive">
+        Map failed to load. Check your Google Maps API key.
+      </div>
+    )
+  }
+
+  if (!isLoaded) {
+    return (
+      <div className="flex h-[300px] items-center justify-center rounded-md bg-muted/30 text-sm text-muted-foreground">
+        Loading map…
+      </div>
+    )
+  }
+
+  return (
+    <GoogleMap
+      mapContainerStyle={containerStyle}
+      center={center}
+      zoom={hasLocation ? 15 : 3}
+      onClick={handleMapClick}
+    >
+      {hasLocation && (
+        <Marker
+          position={center}
+          draggable={true}
+          onDragEnd={handleMarkerDragEnd}
+        />
+      )}
+    </GoogleMap>
+  )
 }
