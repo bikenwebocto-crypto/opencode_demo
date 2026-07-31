@@ -63,32 +63,34 @@ export async function POST(request: NextRequest) {
 
     const totalPrice = Number(banner.pricePerDay) * days
 
-    const booking = await prisma.bannerBooking.create({
-      data: {
-        bannerId,
-        merchantId: merchant.id,
-        startDate: start,
-        endDate: end,
-        totalPrice,
-        status: 'PENDING',
-      },
-    })
+    const result = await prisma.$transaction(async (tx) => {
+      const booking = await tx.bannerBooking.create({
+        data: {
+          bannerId,
+          merchantId: merchant.id,
+          startDate: start,
+          endDate: end,
+          totalPrice,
+          status: 'PENDING',
+        },
+      })
 
-    await prisma.bannerContent.create({
-      data: {
-        bookingId: booking.id,
-        imageUrl,
-        altText,
-        redirectUrl,
-      },
-    })
+      await tx.bannerContent.create({
+        data: {
+          bookingId: booking.id,
+          imageUrl,
+          altText,
+          redirectUrl,
+        },
+      })
 
-    const result = await prisma.bannerBooking.findUnique({
-      where: { id: booking.id },
-      include: {
-        banner: { select: { id: true, name: true, position: true } },
-        content: true,
-      },
+      return tx.bannerBooking.findUnique({
+        where: { id: booking.id },
+        include: {
+          banner: { select: { id: true, name: true, position: true } },
+          content: true,
+        },
+      })
     })
 
     return NextResponse.json({ success: true, data: result }, { status: 201 })

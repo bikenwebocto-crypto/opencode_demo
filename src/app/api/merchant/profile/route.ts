@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/supabase/server'
 import { getMerchantFromSession } from '@/lib/merchant-session'
 import { createAuditLog } from '@/services/audit-log.service'
 import { createPerfTimer } from '@/lib/perf'
+import { deleteImage } from '@/lib/upload/image'
 
 function unauthorized() {
   return NextResponse.json(
@@ -142,54 +143,64 @@ export async function PATCH(request: NextRequest) {
       })
     }
 
-    if (hasImmediateChanges) {
-      timer.point('merchant.update (immediate fields)')
-      const immediateUpdate: Record<string, unknown> = {}
-      for (const f of IMMEDIATE_FIELDS) {
-        if (f in afterSnapshot) immediateUpdate[f] = afterSnapshot[f]
-      }
-      await prisma.merchant.update({ where: { id: merchant.id }, data: immediateUpdate })
-    }
+    // Track old cover image for cleanup after successful DB update
+    const oldCoverUrl = before.coverImageUrl
 
-    timer.point('createAuditLog (PROFILE_UPDATED)')
-    await createAuditLog({
-      actorType: 'merchant',
-      actorId: merchant.id,
-      action: 'PROFILE_UPDATED',
-      entityType: 'merchant',
-      entityId: merchant.id,
-      changes: { before: beforeSnapshot, after: afterSnapshot } as any,
-      metadata: { hasApprovalChanges },
+    await prisma.$transaction(async (tx) => {
+      if (hasImmediateChanges) {
+        timer.point('merchant.update (immediate fields)')
+        const immediateUpdate: Record<string, unknown> = {}
+        for (const f of IMMEDIATE_FIELDS) {
+          if (f in afterSnapshot) immediateUpdate[f] = afterSnapshot[f]
+        }
+        await tx.merchant.update({ where: { id: merchant.id }, data: immediateUpdate })
+      }
+
+      timer.point('createAuditLog (PROFILE_UPDATED)')
+      await createAuditLog({
+        actorType: 'merchant',
+        actorId: merchant.id,
+        action: 'PROFILE_UPDATED',
+        entityType: 'merchant',
+        entityId: merchant.id,
+        changes: { before: beforeSnapshot, after: afterSnapshot } as any,
+        metadata: { hasApprovalChanges },
+      })
+
+      if (hasApprovalChanges) {
+        timer.point('actionQueueItem.findFirst')
+        const existing = await tx.actionQueueItem.findFirst({
+          where: { referenceId: merchant.id, referenceType: 'merchant', type: 'PROFILE_EDIT_REQUEST', status: 'PENDING' },
+        })
+        if (!existing) {
+          timer.point('actionQueueItem.create')
+          await tx.actionQueueItem.create({
+            data: {
+              type: 'PROFILE_EDIT_REQUEST',
+              title: `Profile change request: ${merchant.businessName}`,
+              description: `Merchant ${merchant.businessName} requested changes to: ${(APPROVAL_FIELDS as readonly string[]).filter((f) => f in afterSnapshot).join(', ')}. Reason: ${changeReason}`,
+              referenceId: merchant.id, referenceType: 'merchant', status: 'PENDING', priority: 2,
+              metadata: {
+                queueType: 'PROFILE_EDIT_REQUEST', requestedFields: afterSnapshot, originalValues: beforeSnapshot,
+                reason: changeReason, approvalFields: (APPROVAL_FIELDS as readonly string[]).filter((f) => f in afterSnapshot),
+              } as any,
+            },
+          })
+
+          timer.point('createAuditLog (PROFILE_CHANGE_REQUESTED)')
+          await createAuditLog({
+            actorType: 'merchant', actorId: merchant.id, action: 'PROFILE_CHANGE_REQUESTED',
+            entityType: 'merchant', entityId: merchant.id,
+            changes: { before: beforeSnapshot, after: afterSnapshot } as any,
+            metadata: { changeReason },
+          })
+        }
+      }
     })
 
-    if (hasApprovalChanges) {
-      timer.point('actionQueueItem.findFirst')
-      const existing = await prisma.actionQueueItem.findFirst({
-        where: { referenceId: merchant.id, referenceType: 'merchant', type: 'PROFILE_EDIT_REQUEST', status: 'PENDING' },
-      })
-      if (!existing) {
-        timer.point('actionQueueItem.create')
-        await prisma.actionQueueItem.create({
-          data: {
-            type: 'PROFILE_EDIT_REQUEST',
-            title: `Profile change request: ${merchant.businessName}`,
-            description: `Merchant ${merchant.businessName} requested changes to: ${(APPROVAL_FIELDS as readonly string[]).filter((f) => f in afterSnapshot).join(', ')}. Reason: ${changeReason}`,
-            referenceId: merchant.id, referenceType: 'merchant', status: 'PENDING', priority: 2,
-            metadata: {
-              queueType: 'PROFILE_EDIT_REQUEST', requestedFields: afterSnapshot, originalValues: beforeSnapshot,
-              reason: changeReason, approvalFields: (APPROVAL_FIELDS as readonly string[]).filter((f) => f in afterSnapshot),
-            } as any,
-          },
-        })
-
-        timer.point('createAuditLog (PROFILE_CHANGE_REQUESTED)')
-        await createAuditLog({
-          actorType: 'merchant', actorId: merchant.id, action: 'PROFILE_CHANGE_REQUESTED',
-          entityType: 'merchant', entityId: merchant.id,
-          changes: { before: beforeSnapshot, after: afterSnapshot } as any,
-          metadata: { changeReason },
-        })
-      }
+    // Clean up old images after successful DB update (immediate fields only)
+    if (hasImmediateChanges && coverImageUrl !== undefined && oldCoverUrl && coverImageUrl !== oldCoverUrl) {
+      deleteImage(oldCoverUrl, { bucket: 'offer-images' }).catch(() => {})
     }
 
     timer.point('merchant.findUnique (updated)')

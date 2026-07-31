@@ -5,7 +5,7 @@ import { useJsApiLoader, Autocomplete } from '@react-google-maps/api'
 import { Input } from '@/components/ui/input'
 import { Loader2, AlertCircle } from 'lucide-react'
 
-const libraries: ('places')[] = ['places']
+const libraries: ('places' | 'marker')[] = ['places', 'marker']
 
 export interface PlaceResult {
   addressLine1: string

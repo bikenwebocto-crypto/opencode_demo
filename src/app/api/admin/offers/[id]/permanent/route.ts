@@ -55,7 +55,7 @@ export async function DELETE(
     if (qrCodeUrl) {
       try {
         const admin = getAdminClient();
-        const pathMatch = qrCodeUrl.match(/offer-qr\/[^?]+/);
+        const pathMatch = qrCodeUrl.match(/qr-code\/[^?]+/);
         if (pathMatch) {
           await admin.storage.from('offer-images').remove([pathMatch[0]]);
         }

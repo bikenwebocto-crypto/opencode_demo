@@ -16,11 +16,13 @@ import {
   OfferImageUploader,
   type PendingImage,
 } from "@/components/merchant/offers/OfferImageUploader";
+import type { DeferredFile } from "@/components/shared/ImageUploader";
 import { OfferImageGallery } from "@/components/merchant/offers/OfferImageGallery";
 import { OfferMobilePreview } from "@/components/merchant/offers/OfferMobilePreview";
 import { OfferBannerInfo } from "@/components/merchant/offers/OfferBannerInfo";
 import { showToast } from "@/hooks/use-toast";
 import { useCategories } from "@/hooks/queries/use-categories";
+import { uploadImage, OFFER_IMAGE_OPTIONS } from '@/lib/upload/image'
 import { deleteOfferImage } from "@/lib/upload-offer-image";
 
 interface FormData {
@@ -122,7 +124,6 @@ export function OfferForm({
   const submitOffer = useSubmitMerchantOffer();
   const [errors, setErrors] = useState<FormErrors>({});
   const [showStrength, setShowStrength] = useState(false);
-  const [uploadingCount, setUploadingCount] = useState(0);
   const { data: categories } = useCategories();
   const [lastEditedField, setLastEditedField] = useState<'discountValue' | 'minimumSpend' | 'discountMax' | 'discountPercent' | null>(null);
 
@@ -376,8 +377,6 @@ export function OfferForm({
     return Object.keys(errs).length === 0;
   };
 
-  const isUploading = uploadingCount > 0;
-  
   const buildBody = (saveAsDraft = false): Record<string, unknown> => ({
     title: form.title,
     description: form.description || null,
@@ -415,24 +414,49 @@ export function OfferForm({
       : {}),
   });
 
+  /** Upload any pending (not yet uploaded) images and return the complete image URL list. */
+  const resolveAllImageUrls = async (): Promise<string[] | null> => {
+    const existingUrls = [...form.imageUrls]
+    const pendingItems = pendingImages.filter((p) => p.status === 'pending' && p.file?.size > 0)
+
+    if (pendingItems.length === 0) return existingUrls
+
+    try {
+      const newUrls = await Promise.all(
+        pendingItems.map((item) => uploadImage(item.file, OFFER_IMAGE_OPTIONS))
+      )
+      // Mark pending images as done
+      setPendingImages((prev) =>
+        prev.map((p) =>
+          p.status === 'pending' ? { ...p, status: 'done' as const } : p
+        )
+      )
+      return [...existingUrls, ...newUrls]
+    } catch (err: any) {
+      showToast({
+        type: "error",
+        title: "Image upload failed",
+        description: err.message || "Failed to upload images. Changes not saved.",
+      })
+      return null
+    }
+  }
+
   const handleSaveDraft = async () => {
     if (!form.title.trim()) {
       showToast({ type: "error", title: "Title is required to save a draft" });
       return;
     }
-    if (isUploading) {
-      showToast({
-        type: "error",
-        title: "Please wait for image uploads to complete",
-      });
-      return;
-    }
+    const allUrls = await resolveAllImageUrls()
+    if (allUrls === null) return
+
     try {
+      const body = { ...buildBody(true), imageUrls: allUrls }
       if (isEdit) {
-        await updateOffer.mutateAsync({ id: offerId, ...buildBody(true) });
+        await updateOffer.mutateAsync({ id: offerId, ...body });
         showToast({ type: "success", title: "Draft saved" });
       } else {
-        await createOffer.mutateAsync(buildBody(true));
+        await createOffer.mutateAsync(body);
         showToast({ type: "success", title: "Draft saved" });
       }
       router.push("/merchant/offers");
@@ -448,19 +472,17 @@ export function OfferForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
-    if (isUploading) {
-      showToast({
-        type: "error",
-        title: "Please wait for image uploads to complete",
-      });
-      return;
-    }
+
+    const allUrls = await resolveAllImageUrls()
+    if (allUrls === null) return
+
+    const body = { ...buildBody(false), imageUrls: allUrls }
 
     if (isEdit) {
       try {
         const result = await submitOffer.mutateAsync({
           id: offerId,
-          ...buildBody(false),
+          ...body,
         });
         if (result.qualityCheck === "PASSED") {
           showToast({ type: "success", title: "Offer submitted for review" });
@@ -481,7 +503,7 @@ export function OfferForm({
       }
     } else {
       try {
-        const result = await createOffer.mutateAsync(buildBody(false));
+        const result = await createOffer.mutateAsync(body);
         if (result.qualityCheck === "PASSED") {
           showToast({
             type: "success",
@@ -510,48 +532,21 @@ export function OfferForm({
     }
   };
 
-  const handleImagesReady = (images: PendingImage[]) => {
-    setPendingImages((prev) => {
-      const merged = [...prev];
-      for (const img of images) {
-        const idx = merged.findIndex((p) => p.id === img.id);
-        if (idx >= 0) {
-          merged[idx] = img;
-        } else {
-          merged.push(img);
-        }
-      }
-      return merged;
-    });
-
-    const uploading = images.filter((i) => i.status === "uploading").length;
-    const done = images.filter((i) => i.status === "done").length;
-    const errors = images.filter((i) => i.status === "error").length;
-
-    if (uploading > 0) {
-      setUploadingCount((prev) => prev + uploading);
-    }
-    if (done > 0 || errors > 0) {
-      setUploadingCount((prev) => Math.max(0, prev - (done + errors)));
-    }
-
-    const completedUrls = images
-      .filter((i) => i.status === "done" && i.url)
-      .map((i) => i.url!);
-    if (completedUrls.length > 0) {
-      setForm((prev) => {
-        const existing = new Set(prev.imageUrls);
-        const toAdd = completedUrls.filter((u) => !existing.has(u));
-        if (toAdd.length === 0) return prev;
-        return { ...prev, imageUrls: [...prev.imageUrls, ...toAdd] };
-      });
-    }
+  const handleFilesSelected = (files: DeferredFile[]) => {
+    const newImages: PendingImage[] = files.map((f) => ({
+      id: `pending-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+      file: f.file,
+      previewUrl: f.previewUrl,
+      status: 'pending' as const,
+    }))
+    setPendingImages((prev) => [...prev, ...newImages])
   };
 
   const handleRemoveImage = (id: string) => {
     setPendingImages((prev) => {
       const img = prev.find((p) => p.id === id);
       if (img?.url) {
+        // Existing uploaded image — clean up from storage
         deleteOfferImage(img.url);
       }
       return prev.filter((p) => p.id !== id);
@@ -1184,8 +1179,9 @@ export function OfferForm({
               </CardHeader>
               <CardContent className="space-y-4">
                 <OfferImageUploader
-                  onImagesReady={handleImagesReady}
-                  disabled={isUploading}
+                  uploadMode="deferred"
+                  onFilesSelected={handleFilesSelected}
+                  disabled={false}
                   currentCount={pendingImages.length}
                 />
 
@@ -1251,8 +1247,7 @@ export function OfferForm({
                     variant="outline"
                     onClick={handleSaveDraft}
                     disabled={
-                      isUploading ||
-                      createOffer.isPending ||
+                                            createOffer.isPending ||
                       updateOffer.isPending
                     }
                   >
@@ -1266,8 +1261,7 @@ export function OfferForm({
                   <Button
                     type="submit"
                     disabled={
-                      isUploading ||
-                      createOffer.isPending ||
+                                            createOffer.isPending ||
                       submitOffer.isPending
                     }
                   >
@@ -1288,8 +1282,7 @@ export function OfferForm({
                   <Button
                     type="submit"
                     disabled={
-                      isUploading ||
-                      updateOffer.isPending ||
+                                            updateOffer.isPending ||
                       submitOffer.isPending
                     }
               

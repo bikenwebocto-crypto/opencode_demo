@@ -8,7 +8,9 @@ import { Button } from '@/components/ui/button'
 import { LoadingButton } from '@/components/ui/loading-button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/page-header'
-import { ImageUpload } from '@/components/ui/image-upload'
+import { ImageUpload, uploadDeferredImage } from '@/components/ui/image-upload'
+import type { DeferredFile } from '@/components/shared/ImageUploader'
+import { BANNER_IMAGE_OPTIONS } from '@/lib/upload/image'
 import { showToast } from '@/hooks/use-toast'
 import { Plus, X, Calendar, Image } from 'lucide-react'
 
@@ -78,6 +80,7 @@ export default function MerchantBannersPage() {
   const [status, setStatus] = useState('')
   const [showBook, setShowBook] = useState(false)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [pendingBannerFile, setPendingBannerFile] = useState<DeferredFile | null>(null)
 
   const [form, setForm] = useState({
     bannerId: '',
@@ -143,15 +146,26 @@ export default function MerchantBannersPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['merchant-banners'] })
       setShowBook(false)
+      setPendingBannerFile(null)
       setForm({ bannerId: '', startDate: '', endDate: '', imageUrl: '', altText: '', redirectUrl: '' })
       showToast({ type: 'success', title: 'Booking submitted', description: 'Your banner booking is pending approval.' })
     },
     onError: (e: any) => showToast({ type: 'error', title: 'Failed', description: e?.message }),
   })
 
-  function handleBook(e: React.FormEvent) {
+  async function handleBook(e: React.FormEvent) {
     e.preventDefault()
-    bookMutation.mutate(form)
+    // Upload deferred image before submitting
+    let imageUrl = form.imageUrl
+    if (pendingBannerFile) {
+      try {
+        imageUrl = await uploadDeferredImage(pendingBannerFile, BANNER_IMAGE_OPTIONS) ?? ''
+      } catch (err: any) {
+        showToast({ type: 'error', title: 'Image upload failed', description: err?.message })
+        return
+      }
+    }
+    bookMutation.mutate({ ...form, imageUrl })
   }
 
   const bookings = data?.data ?? []
@@ -228,6 +242,8 @@ export default function MerchantBannersPage() {
                 <ImageUpload
                   value={form.imageUrl}
                   onChange={(url) => setForm((f) => ({ ...f, imageUrl: url }))}
+                  onDeferredFile={(file) => setPendingBannerFile(file)}
+                  uploadMode="deferred"
                   label="Banner Image *"
                   helperText="Recommended size: 1200×400 px, max 5 MB, PNG/JPG/WEBP"
                 />

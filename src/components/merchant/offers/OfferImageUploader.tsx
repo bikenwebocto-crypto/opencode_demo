@@ -1,39 +1,30 @@
 'use client'
-// Thin wrapper around the generic `ImageUploader`. Preserves the
-// original export names (`OfferImageUploader`, `PendingImage`) so
-// `offer-form.tsx` and any other existing consumers require zero
-// changes.
-//
-// Offer-banner defaults are baked in here:
-//   - bucket:  offer-images
-//   - types:   JPEG, PNG, SVG, WEBP, GIF
-//   - max:     5 MB per file
-//   - limit:   5 images
-
 import { ImageUploader } from '@/components/shared/ImageUploader'
-import type { ImageUploaderProps, PendingImage } from '@/components/shared/ImageUploader'
+import type { PendingImage, DeferredFile } from '@/components/shared/ImageUploader'
 import { OFFER_IMAGE_OPTIONS } from '@/lib/upload/image'
 
-// Re-export PendingImage so existing `import type { PendingImage } from
-// './OfferImageUploader'` continues to work.
 export type { PendingImage }
 
-// The wrapper accepts the same props as before (subset of the generic
-// component's props).
 interface OfferImageUploaderProps {
-  onImagesReady: (images: PendingImage[]) => void
+  onImagesReady?: (images: PendingImage[]) => void
+  onFilesSelected?: (files: DeferredFile[]) => void
   disabled?: boolean
   currentCount: number
+  uploadMode?: 'immediate' | 'deferred'
 }
 
 export function OfferImageUploader({
   onImagesReady,
+  onFilesSelected,
   disabled,
   currentCount,
+  uploadMode = 'immediate',
 }: OfferImageUploaderProps) {
   return (
     <ImageUploader
-      onImagesReady={onImagesReady}
+      onImagesReady={uploadMode === 'immediate' ? onImagesReady : undefined}
+      onFilesSelected={uploadMode === 'deferred' ? onFilesSelected : undefined}
+      uploadMode={uploadMode}
       disabled={disabled}
       currentCount={currentCount}
       uploadOptions={OFFER_IMAGE_OPTIONS}

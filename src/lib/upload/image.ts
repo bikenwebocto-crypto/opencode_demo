@@ -160,6 +160,6 @@ export const BANNER_IMAGE_OPTIONS: UploadImageOptions = {
 }
 
 export const EMPLOYEE_AVATAR_OPTIONS: UploadImageOptions = {
-  bucket: 'employee-avatars',
+  bucket: 'offer-images',
   folder: 'employee-avatars',
 }

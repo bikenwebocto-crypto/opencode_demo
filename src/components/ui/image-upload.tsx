@@ -2,10 +2,11 @@
 
 import { useState } from 'react'
 import { ImageUploader } from '@/components/shared/ImageUploader'
+import type { DeferredFile } from '@/components/shared/ImageUploader'
 import { Button } from '@/components/ui/button'
 import { X, AlertCircle } from 'lucide-react'
 import type { UploadImageOptions } from '@/lib/upload/image'
-import { BANNER_IMAGE_OPTIONS } from '@/lib/upload/image'
+import { uploadImage, BANNER_IMAGE_OPTIONS } from '@/lib/upload/image'
 
 interface ImageUploadProps {
   value: string
@@ -19,6 +20,9 @@ interface ImageUploadProps {
   minWidth?: number
   minHeight?: number
   aspectRatio?: number
+  uploadMode?: 'immediate' | 'deferred'
+  /** In deferred mode, parent must call this to get the uploaded URL */
+  onDeferredFile?: (file: DeferredFile | null) => void
 }
 
 export function ImageUpload({
@@ -33,6 +37,8 @@ export function ImageUpload({
   minWidth,
   minHeight,
   aspectRatio,
+  uploadMode = 'immediate',
+  onDeferredFile,
 }: ImageUploadProps) {
   const [internalUrl, setInternalUrl] = useState(value)
 
@@ -46,9 +52,16 @@ export function ImageUpload({
     }
   }
 
+  function handleFilesSelected(files: DeferredFile[]) {
+    const file = files[0]
+    if (!file) return
+    onDeferredFile?.(file)
+  }
+
   function handleClear() {
     setInternalUrl('')
     onChange('')
+    onDeferredFile?.(null)
   }
 
   return (
@@ -81,7 +94,7 @@ export function ImageUpload({
         </div>
       ) : (
         <ImageUploader
-          uploadMode="immediate"
+          uploadMode={uploadMode}
           uploadOptions={uploadOptions}
           currentCount={0}
           maxFiles={1}
@@ -91,7 +104,8 @@ export function ImageUpload({
           minWidth={minWidth}
           minHeight={minHeight}
           aspectRatio={aspectRatio}
-          onImagesReady={handleImagesReady}
+          onImagesReady={uploadMode === 'immediate' ? handleImagesReady : undefined}
+          onFilesSelected={uploadMode === 'deferred' ? handleFilesSelected : undefined}
         />
       )}
 
@@ -103,4 +117,13 @@ export function ImageUpload({
       )}
     </div>
   )
+}
+
+/** Helper to upload a deferred file and return the URL. Used by parent forms. */
+export async function uploadDeferredImage(
+  deferredFile: DeferredFile | null,
+  options: UploadImageOptions,
+): Promise<string | null> {
+  if (!deferredFile) return null
+  return uploadImage(deferredFile.file, options)
 }

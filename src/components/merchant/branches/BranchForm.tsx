@@ -1,22 +1,24 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { LoadingButton } from '@/components/ui/loading-button'
 import { GooglePlacesAutocomplete, type PlaceResult } from './GooglePlacesAutocomplete'
-import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api'
+import { GoogleMap, useJsApiLoader } from '@react-google-maps/api'
 
 import {
   BRANCH_TYPE_OPTIONS,
   BRANCH_STATUS_OPTIONS,
   DAYS_OF_WEEK,
   DEFAULT_OPENING_HOURS,
+  normalizeOpeningHours,
   type BranchOpeningHour,
 } from '@/lib/branch-helpers'
 import type { BranchStatus, BranchType } from '@/types'
-import { Building2, Globe, Save, MapPin, Clock, Accessibility, ImageIcon, Info, ExternalLink } from 'lucide-react'
+import { showToast } from '@/hooks/use-toast'
+import { Building2, Globe, Save, MapPin, Clock, Accessibility, ImageIcon, Info, ExternalLink, Loader2 } from 'lucide-react'
 export interface BranchFormValues {
   name: string
   addressLine1: string
@@ -68,7 +70,6 @@ export const EMPTY_BRANCH: BranchFormValues = {
   description: '',
   status: 'ACTIVE',
 }
-
 interface BranchFormProps {
   initialValues?: Partial<BranchFormValues>
   errors?: Record<string, string>
@@ -90,7 +91,7 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
   const [values, setValues] = useState<BranchFormValues>({
     ...EMPTY_BRANCH,
     ...initialValues,
-    openingHours: initialValues?.openingHours ?? DEFAULT_OPENING_HOURS,
+    openingHours: normalizeOpeningHours(initialValues?.openingHours),
   })
 
   useEffect(() => {
@@ -98,7 +99,7 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
       setValues((prev) => ({
         ...prev,
         ...initialValues,
-        openingHours: initialValues.openingHours ?? prev.openingHours,
+        openingHours: normalizeOpeningHours(initialValues.openingHours),
       }))
     }
   }, [initialValues])
@@ -116,7 +117,11 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
   const isDelivery = isOnline && (values.isNationwide || (values.deliveryRadiusKm ?? 0) > 0)
   const needsAddress = !isOnline || isDelivery
 
+  const [isLocating, setIsLocating] = useState(false)
+  const [mapZoom, setMapZoom] = useState<number | null>(null)
+
   function handlePlaceSelected(place: PlaceResult) {
+    setMapZoom(null)
     setValues((prev) => ({
       ...prev,
       addressLine1: place.addressLine1,
@@ -127,6 +132,42 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
       latitude: place.latitude,
       longitude: place.longitude,
     }))
+  }
+
+  function handleUseCurrentLocation() {
+    if (!navigator.geolocation) {
+      showToast({
+        type: 'error',
+        title: 'Geolocation not supported',
+        description: 'Your browser does not support location services.',
+      })
+      return
+    }
+    if (isLocating) return
+    setIsLocating(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = Number(pos.coords.latitude.toFixed(7))
+        const lng = Number(pos.coords.longitude.toFixed(7))
+        setValues((prev) => ({ ...prev, latitude: lat, longitude: lng }))
+        setMapZoom(17)
+        setIsLocating(false)
+      },
+      (err) => {
+        setIsLocating(false)
+        const messages: Record<number, string> = {
+          [err.PERMISSION_DENIED]: 'Location permission was denied. Enable location access to use this feature.',
+          [err.POSITION_UNAVAILABLE]: 'Your current location could not be determined.',
+          [err.TIMEOUT]: 'Location request timed out. Please try again.',
+        }
+        showToast({
+          type: 'error',
+          title: 'Could not get your location',
+          description: messages[err.code] ?? 'An unknown error occurred while fetching your location.',
+        })
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+    )
   }
 
   return (
@@ -254,6 +295,20 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
                 <p className="text-xs text-muted-foreground">
                   Search for a location to auto-fill the fields below.
                 </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleUseCurrentLocation}
+                  disabled={submitting || isLocating}
+                >
+                  {isLocating ? (
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  ) : (
+                    <MapPin className="mr-1 h-4 w-4" />
+                  )}
+                  {isLocating ? 'Locating...' : 'Use Current Location'}
+                </Button>
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">Address Line 1 *</label>
@@ -357,6 +412,7 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
               <LocationMap
                 lat={values.latitude}
                 lng={values.longitude}
+                zoom={mapZoom ?? undefined}
                 onCoordinateChange={(lat, lng) => {
                   setValues((prev) => ({ ...prev, latitude: lat, longitude: lng }))
                 }}
@@ -373,7 +429,8 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {values.openingHours.map((h) => (
+          
+          {(normalizeOpeningHours(values.openingHours)).map((h) => (
             <div key={h.day} className="grid grid-cols-[100px_1fr_1fr_auto] items-center gap-2 text-sm">
               <span className="font-medium">{h.day.charAt(0) + h.day.slice(1).toLowerCase()}</span>
               <Input
@@ -579,22 +636,32 @@ export function valuesToPayload(v: BranchFormValues) {
 
 const DEFAULT_MAP_CENTER = { lat: 51.5074, lng: -0.1278 }
 
+// Static module-level const — required by useJsApiLoader to avoid "LoadScript
+// reloaded unintentionally" warnings and loader-option conflicts.
+const MAP_LIBRARIES: ('places' | 'marker')[] = ['places', 'marker']
+
 function LocationMap({
   lat,
   lng,
+  zoom,
   onCoordinateChange,
 }: {
   lat?: number | null
   lng?: number | null
+  zoom?: number
   onCoordinateChange: (lat: number, lng: number) => void
 }) {
   const { isLoaded, loadError } = useJsApiLoader({
-    id: 'google-maps-branch-map',
+    id: 'google-maps-places',
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',
+    libraries: MAP_LIBRARIES,
   })
+  const mapRef = useRef<google.maps.Map | null>(null)
+  const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null)
 
   const hasLocation = lat != null && lng != null
   const center = hasLocation ? { lat, lng } : DEFAULT_MAP_CENTER
+  const mapZoom = zoom ?? (hasLocation ? 15 : 3)
 
   const containerStyle = {
     width: '100%',
@@ -602,11 +669,68 @@ function LocationMap({
     borderRadius: '0.5rem',
   }
 
-  function handleMarkerDragEnd(e: google.maps.MapMouseEvent) {
-    if (!e.latLng) return
-    const newLat = Number(e.latLng.lat().toFixed(7))
-    const newLng = Number(e.latLng.lng().toFixed(7))
-    onCoordinateChange(newLat, newLng)
+  function panAndZoom() {
+    const map = mapRef.current
+    if (!map || lat == null || lng == null) return
+    map.panTo({ lat, lng })
+    if (zoom != null) map.setZoom(zoom)
+  }
+
+  useEffect(() => {
+    panAndZoom()
+  }, [lat, lng, zoom])
+
+  const onCoordinateChangeRef = useRef(onCoordinateChange)
+  onCoordinateChangeRef.current = onCoordinateChange
+
+  // Keep the advanced marker in sync with the current coordinates.
+  function syncMarker() {
+    const map = mapRef.current
+    if (!map || !isLoaded) return
+
+    if (!hasLocation) {
+      if (markerRef.current) {
+        markerRef.current.map = null
+        markerRef.current = null
+      }
+      return
+    }
+
+    if (!markerRef.current) {
+      const marker = new google.maps.marker.AdvancedMarkerElement({
+        map,
+        position: { lat, lng },
+        gmpDraggable: true,
+      })
+      marker.addListener('dragend', (e: google.maps.MapMouseEvent) => {
+        if (!e.latLng) return
+        const newLat = Number(e.latLng.lat().toFixed(7))
+        const newLng = Number(e.latLng.lng().toFixed(7))
+        onCoordinateChangeRef.current(newLat, newLng)
+      })
+      markerRef.current = marker
+    } else {
+      markerRef.current.position = { lat, lng }
+    }
+  }
+
+  useEffect(() => {
+    syncMarker()
+  }, [lat, lng, isLoaded, hasLocation])
+
+  useEffect(() => {
+    return () => {
+      if (markerRef.current) {
+        markerRef.current.map = null
+        markerRef.current = null
+      }
+    }
+  }, [])
+
+  function handleMapLoad(map: google.maps.Map) {
+    mapRef.current = map
+    panAndZoom()
+    syncMarker()
   }
 
   function handleMapClick(e: google.maps.MapMouseEvent) {
@@ -636,16 +760,12 @@ function LocationMap({
     <GoogleMap
       mapContainerStyle={containerStyle}
       center={center}
-      zoom={hasLocation ? 15 : 3}
+       options={{
+    mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID,
+  }}
+      zoom={mapZoom}
+      onLoad={handleMapLoad}
       onClick={handleMapClick}
-    >
-      {hasLocation && (
-        <Marker
-          position={center}
-          draggable={true}
-          onDragEnd={handleMarkerDragEnd}
-        />
-      )}
-    </GoogleMap>
+    />
   )
 }

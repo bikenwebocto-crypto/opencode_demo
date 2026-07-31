@@ -107,10 +107,19 @@ export async function ensureOfferQRCode(
 
     const updatedConfig = { ...redemptionConfig, qrCodeUrl: qrUrl, qrToken }
 
-    await prisma.offerRedemption.update({
-      where: { offerId: offer.id },
-      data: { configuration: updatedConfig },
-    })
+    try {
+      await prisma.offerRedemption.update({
+        where: { offerId: offer.id },
+        data: { configuration: updatedConfig },
+      })
+    } catch (dbError) {
+      // Rollback: delete the uploaded QR image since DB update failed
+    try {
+      const { deleteImage } = await import('@/lib/upload/image')
+      await deleteImage(qrUrl, { bucket: 'offer-images' })
+    } catch { /* non-blocking cleanup */ }
+      throw dbError
+    }
 
     console.log('OfferRedemption Updated: true')
     console.log('---------------------------------')

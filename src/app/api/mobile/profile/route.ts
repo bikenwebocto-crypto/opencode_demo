@@ -4,7 +4,6 @@ import { internalError, notFound, badRequest } from "@/lib/employee-helpers";
 import { getAuthenticatedMobileEmployee } from "@/lib/mobile-auth";
 import { createAuditLog } from "@/services/audit-log.service";
 import { uploadImage, EMPLOYEE_AVATAR_OPTIONS } from '@/lib/upload/image'
-import { getAdminClient } from '@/lib/supabase/admin'
 
 // GET /api/mobile/profile — lightweight employee profile for the mobile Profile tab.
 export async function GET(request: NextRequest) {
@@ -64,11 +63,7 @@ export async function PATCH(request: NextRequest) {
 
     const avatarFile = form.get("avatar");
     if (avatarFile && avatarFile instanceof File && avatarFile.size > 0) {
-      const supabase = getAdminClient();
-      const url = await uploadImage(avatarFile, {
-        ...EMPLOYEE_AVATAR_OPTIONS,
-        supabase,
-      });
+      const url = await uploadImage(avatarFile, EMPLOYEE_AVATAR_OPTIONS);
       update.avatarUrl = url;
     }
 

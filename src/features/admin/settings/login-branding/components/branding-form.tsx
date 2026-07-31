@@ -6,6 +6,9 @@ import { BrandingPreview } from './branding-preview'
 import { ColorPicker } from './color-picker'
 import { BrandingImageUpload } from './image-upload'
 import type { LoginBrandingData } from '../schemas/login-branding.schema'
+import type { DeferredFile } from '@/components/shared/ImageUploader'
+import { uploadImage, BANNER_IMAGE_OPTIONS } from '@/lib/upload/image'
+import { showToast } from '@/hooks/use-toast'
 import { PageHeader } from '@/components/shared/page-header'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -40,6 +43,8 @@ export function BrandingForm() {
   const { branding, isLoading, saveBranding, isSaving } = useLoginBranding()
   const [formData, setFormData] = useState<LoginBrandingData>(DEFAULT_DATA)
   const [showPreview, setShowPreview] = useState(true)
+  const [pendingLogoFile, setPendingLogoFile] = useState<DeferredFile | null>(null)
+  const [pendingBgFile, setPendingBgFile] = useState<DeferredFile | null>(null)
 
   useEffect(() => {
     console.log('Branding data from useLoginBranding hook:', branding?.backgroundImageUrl, branding?.logoUrl, branding?.bannerUrl)
@@ -75,7 +80,27 @@ export function BrandingForm() {
   }
 
   const handleSave = async () => {
-    await saveBranding(formData)
+    const payload = { ...formData }
+    // Upload pending files before saving
+    if (pendingLogoFile) {
+      try {
+        payload.logoUrl = await uploadImage(pendingLogoFile.file, BANNER_IMAGE_OPTIONS)
+        setPendingLogoFile(null)
+      } catch (err: any) {
+        showToast({ type: 'error', title: 'Logo upload failed', description: err?.message })
+        return
+      }
+    }
+    if (pendingBgFile) {
+      try {
+        payload.backgroundImageUrl = await uploadImage(pendingBgFile.file, BANNER_IMAGE_OPTIONS)
+        setPendingBgFile(null)
+      } catch (err: any) {
+        showToast({ type: 'error', title: 'Background upload failed', description: err?.message })
+        return
+      }
+    }
+    await saveBranding(payload)
   }
 
   if (isLoading) {
@@ -147,6 +172,7 @@ export function BrandingForm() {
                 hint="Recommended: 200x200px"
                 value={formData.logoUrl}
                 onChange={(url) => updateField('logoUrl', url)}
+                onDeferredFile={(file) => setPendingLogoFile(file)}
               />
               {/* <BrandingImageUpload
                 label="Banner / Hero Image"
@@ -159,6 +185,7 @@ export function BrandingForm() {
                 hint="Full-screen background image"
                 value={formData.backgroundImageUrl}
                 onChange={(url) => updateField('backgroundImageUrl', url)}
+                onDeferredFile={(file) => setPendingBgFile(file)}
               />
             </CardContent>
           </Card>
