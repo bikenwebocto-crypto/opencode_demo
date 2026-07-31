@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useState } from 'react'
+import { use, useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -28,7 +28,80 @@ import {
   getBranchDisplayType,
   formatOpeningHours,
 } from '@/lib/branch-helpers'
+import { GoogleMap, useJsApiLoader } from '@react-google-maps/api'
 import type { BranchStatus } from '@/types'
+
+const MAP_LIBRARIES: ('places' | 'marker')[] = ['places', 'marker']
+
+function BranchLocationMap({ lat, lng }: { lat: number; lng: number }) {
+  const { isLoaded, loadError } = useJsApiLoader({
+    id: 'google-maps-places',
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',
+    libraries: MAP_LIBRARIES,
+  })
+  const mapRef = useRef<google.maps.Map | null>(null)
+  const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null)
+
+  function syncMarker() {
+    const map = mapRef.current
+    if (!map || !isLoaded) return
+    if (!markerRef.current) {
+      const marker = new google.maps.marker.AdvancedMarkerElement({
+        map,
+        position: { lat, lng },
+      })
+      markerRef.current = marker
+    } else {
+      markerRef.current.position = { lat, lng }
+    }
+  }
+
+  useEffect(() => {
+    syncMarker()
+  }, [lat, lng, isLoaded])
+
+  useEffect(() => {
+    return () => {
+      if (markerRef.current) {
+        markerRef.current.map = null
+        markerRef.current = null
+      }
+    }
+  }, [])
+
+  function handleMapLoad(map: google.maps.Map) {
+    mapRef.current = map
+    map.panTo({ lat, lng })
+    map.setZoom(15)
+    syncMarker()
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex h-[250px] items-center justify-center rounded-md bg-muted/30 text-xs text-muted-foreground">
+        Map failed to load.
+      </div>
+    )
+  }
+
+  if (!isLoaded) {
+    return (
+      <div className="flex h-[250px] items-center justify-center rounded-md bg-muted/30 text-xs text-muted-foreground">
+        Loading map…
+      </div>
+    )
+  }
+
+  return (
+    <GoogleMap
+      mapContainerStyle={{ width: '100%', height: '250px', borderRadius: '0.5rem' }}
+      center={{ lat, lng }}
+      zoom={15}
+      onLoad={handleMapLoad}
+      options={{ mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }}
+    />
+  )
+}
 
 export default function BranchDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -282,22 +355,28 @@ export default function BranchDetailPage({ params }: { params: Promise<{ id: str
               <MapPin className="h-4 w-4" /> Location
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="rounded-md bg-muted/30 p-3">
-              <p className="text-xs text-muted-foreground">Coordinates</p>
-              <p className="font-mono text-sm">
-                {Number(branch.latitude).toFixed(6)}, {Number(branch.longitude).toFixed(6)}
-              </p>
+          <CardContent className="space-y-3">
+            <BranchLocationMap
+              lat={Number(branch.latitude)}
+              lng={Number(branch.longitude)}
+            />
+            <div className="flex items-center justify-between rounded-md bg-muted/30 p-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Coordinates</p>
+                <p className="font-mono text-sm">
+                  {Number(branch.latitude).toFixed(6)}, {Number(branch.longitude).toFixed(6)}
+                </p>
+              </div>
+              <Link
+                href={`https://www.google.com/maps/search/?api=1&query=${branch.latitude},${branch.longitude}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Open in Maps
+              </Link>
             </div>
-            <Link
-              href={`https://www.google.com/maps/search/?api=1&query=${branch.latitude},${branch.longitude}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-            >
-              <ExternalLink className="h-3 w-3" />
-              Open In Google Maps
-            </Link>
           </CardContent>
         </Card>
       )}

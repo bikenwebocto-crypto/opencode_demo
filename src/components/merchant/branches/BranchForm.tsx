@@ -87,6 +87,19 @@ function updateOpeningHour(
   return hours.map((h) => (h.day === day ? { ...h, ...patch } : h))
 }
 
+function parseGeocoderResult(result: google.maps.GeocoderResult) {
+  const find = (...types: string[]) =>
+    result.address_components.find((c) => types.some((t) => c.types.includes(t)))?.long_name ?? ''
+  return {
+    addressLine1: [find('street_number'), find('route')].filter(Boolean).join(' '),
+    addressLine2: find('sublocality_level_1') || find('sublocality') || find('neighborhood'),
+    city: find('locality') || find('administrative_area_level_2'),
+    state: find('administrative_area_level_1'),
+    postalCode: find('postal_code'),
+    country: find('country'),
+  }
+}
+
 export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onSubmit, onCancel }: BranchFormProps) {
   const [values, setValues] = useState<BranchFormValues>({
     ...EMPTY_BRANCH,
@@ -119,6 +132,7 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
 
   const [isLocating, setIsLocating] = useState(false)
   const [mapZoom, setMapZoom] = useState<number | null>(null)
+  const geocodeRequestIdRef = useRef(0)
 
   function handlePlaceSelected(place: PlaceResult) {
     setMapZoom(null)
@@ -152,6 +166,7 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
         setValues((prev) => ({ ...prev, latitude: lat, longitude: lng }))
         setMapZoom(17)
         setIsLocating(false)
+        triggerReverseGeocode(lat, lng)
       },
       (err) => {
         setIsLocating(false)
@@ -168,6 +183,24 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
     )
+  }
+
+  function triggerReverseGeocode(lat: number, lng: number) {
+    const requestId = ++geocodeRequestIdRef.current
+    const geocoder = new google.maps.Geocoder()
+    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      if (requestId !== geocodeRequestIdRef.current) return
+      if (status !== 'OK' || !results?.length) {
+        showToast({
+          type: 'info',
+          title: 'Address lookup unavailable',
+          description: 'Coordinates updated. You can enter the address manually.',
+        })
+        return
+      }
+      const parsed = parseGeocoderResult(results[0]!)
+      setValues((prev) => ({ ...prev, ...parsed }))
+    })
   }
 
   return (
@@ -415,6 +448,7 @@ export function BranchForm({ initialValues, errors = {}, submitting, isEdit, onS
                 zoom={mapZoom ?? undefined}
                 onCoordinateChange={(lat, lng) => {
                   setValues((prev) => ({ ...prev, latitude: lat, longitude: lng }))
+                  triggerReverseGeocode(lat, lng)
                 }}
               />
             </div>
