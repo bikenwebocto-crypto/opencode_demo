@@ -2,21 +2,32 @@
 import { use, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Package, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, Package, Pencil, Trash2, MapPin, BarChart3 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { DataTable } from '@/components/shared/data-table'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { StoreMap } from '@/components/shared/store-map'
 import { useMerchantById, useMerchantOffers, useDeleteMerchant } from '@/hooks/queries/use-merchants'
+import { useAdminMerchantStoreMap } from '@/hooks/queries/use-store-map'
 import { showToast } from '@/hooks/use-toast'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
 import type { ColumnDef } from '@/types'
 
+type Tab = 'overview' | 'offers' | 'store-map'
+
+const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
+  { key: 'overview', label: 'Overview', icon: BarChart3 },
+  { key: 'offers', label: 'Offers', icon: Package },
+  { key: 'store-map', label: 'Store Map', icon: MapPin },
+]
+
 export default function MerchantDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
+  const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [selectedOffer, setSelectedOffer] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const deleteMerchant = useDeleteMerchant()
@@ -42,6 +53,8 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
     isLoading: offersLoading,
     error: offersError,
   } = useMerchantOffers(id)
+
+  const { data: storeBranches = [], isLoading: storeLoading } = useAdminMerchantStoreMap(id)
 
   if (merchantLoading) {
     return (
@@ -157,50 +170,87 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-4">
-        {cardData.map((d) => (
-          <Card key={d.label}>
-            <CardContent className="p-4 text-center">
-              <p className="text-2xl font-bold">{d.value}</p>
-              <p className="text-xs text-muted-foreground">{d.label}</p>
-            </CardContent>
-          </Card>
+      <div className="flex gap-1 rounded-lg border bg-muted/30 p-1">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              activeTab === tab.key
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <tab.icon className="h-4 w-4" />
+            {tab.label}
+          </button>
         ))}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Package className="h-5 w-5" /> Offers ({offers.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {offersLoading ? (
-            <div className="space-y-3">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
-          ) : offersError ? (
-            <div className="py-8 text-center">
-              <p className="text-sm text-destructive">Failed to load offers</p>
-              <p className="text-xs text-muted-foreground mt-1">{offersError.message}</p>
-            </div>
-          ) : offers.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              <Package className="mb-2 h-8 w-8 text-muted-foreground/50" />
-              <p className="text-sm text-muted-foreground">No offers yet</p>
-            </div>
-          ) : (
-            <DataTable
-              columns={offerColumns}
-              data={offers}
-              keyExtractor={(o: any) => o.id}
-              emptyMessage="No offers found"
-              onRowClick={(o: any) => {
-                setSelectedOffer(o.id)
-                showToast({ type: 'info', title: o.title, description: `Status: ${o.status}` })
-              }}
-            />
-          )}
-        </CardContent>
-      </Card>
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          <div className="grid gap-4 lg:grid-cols-4">
+            {cardData.map((d) => (
+              <Card key={d.label}>
+                <CardContent className="p-4 text-center">
+                  <p className="text-2xl font-bold">{d.value}</p>
+                  <p className="text-xs text-muted-foreground">{d.label}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'offers' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Package className="h-5 w-5" /> Offers ({offers.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {offersLoading ? (
+              <div className="space-y-3">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+            ) : offersError ? (
+              <div className="py-8 text-center">
+                <p className="text-sm text-destructive">Failed to load offers</p>
+                <p className="mt-1 text-xs text-muted-foreground">{offersError.message}</p>
+              </div>
+            ) : offers.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <Package className="mb-2 h-8 w-8 text-muted-foreground/50" />
+                <p className="text-sm text-muted-foreground">No offers yet</p>
+              </div>
+            ) : (
+              <DataTable
+                columns={offerColumns}
+                data={offers}
+                keyExtractor={(o: any) => o.id}
+                emptyMessage="No offers found"
+                onRowClick={(o: any) => {
+                  setSelectedOffer(o.id)
+                  showToast({ type: 'info', title: o.title, description: `Status: ${o.status}` })
+                }}
+              />
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === 'store-map' && (
+        <StoreMap
+          branches={storeBranches}
+          loading={storeLoading}
+          role="admin"
+          showSearch
+          showFilters={false}
+          showDistance={false}
+          showCurrentLocation={false}
+          showEditLink
+          editBasePath="/admin/merchants"
+        />
+      )}
 
       <ConfirmDialog
         open={confirmDelete}

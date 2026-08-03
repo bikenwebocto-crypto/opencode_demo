@@ -1,0 +1,90 @@
+import { useQuery } from '@tanstack/react-query'
+
+export interface StoreBranch {
+  id: string
+  merchantId: string
+  merchantName: string
+  branchName: string
+  address: {
+    line1: string
+    line2: string | null
+    city: string
+    state: string | null
+    postalCode: string
+    country: string
+  }
+  latitude: number | null
+  longitude: number | null
+  phone: string | null
+  email: string | null
+  category: string | null
+  logo: string | null
+  distanceKm: number | null
+  isOpen: boolean
+  openingHours: unknown
+  googleMapsUrl: string | null
+  isPrimary: boolean
+  status: string
+  createdAt: string
+}
+
+export interface NearbyFilters {
+  lat?: number | null
+  lng?: number | null
+  category?: string | null
+  maxDistance?: number | null
+  openNow?: boolean
+}
+
+export const storeMapKeys = {
+  all: ['store-map'] as const,
+  nearby: (role: string, filters: NearbyFilters) => [...storeMapKeys.all, role, filters] as const,
+  merchant: (merchantId: string) => [...storeMapKeys.all, 'merchant', merchantId] as const,
+}
+
+export function useNearbyStores(role: 'employee' | 'company', filters: NearbyFilters = {}) {
+  const params = new URLSearchParams()
+  if (filters.lat != null) params.set('lat', String(filters.lat))
+  if (filters.lng != null) params.set('lng', String(filters.lng))
+  if (filters.category) params.set('category', filters.category)
+  if (filters.maxDistance != null) params.set('maxDistance', String(filters.maxDistance))
+  if (filters.openNow) params.set('openNow', 'true')
+
+  const qs = params.toString()
+  const url = role === 'employee' ? `/api/employee/near-stores${qs ? `?${qs}` : ''}` : `/api/company/near-stores${qs ? `?${qs}` : ''}`
+
+  return useQuery<StoreBranch[]>({
+    queryKey: storeMapKeys.nearby(role, filters),
+    queryFn: async () => {
+      const res = await fetch(url)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error?.message ?? 'Failed to fetch stores')
+      return json.data
+    },
+  })
+}
+
+export function useMerchantStoreMap() {
+  return useQuery<StoreBranch[]>({
+    queryKey: storeMapKeys.merchant('self'),
+    queryFn: async () => {
+      const res = await fetch('/api/merchant/store-map')
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error?.message ?? 'Failed to fetch branches')
+      return json.data
+    },
+  })
+}
+
+export function useAdminMerchantStoreMap(merchantId: string) {
+  return useQuery<StoreBranch[]>({
+    queryKey: storeMapKeys.merchant(merchantId),
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/merchants/${merchantId}/store-map`)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error?.message ?? 'Failed to fetch branches')
+      return json.data
+    },
+    enabled: !!merchantId,
+  })
+}
