@@ -59,6 +59,7 @@ const navConfig: Record<string, NavItem[]> = {
     { label: 'Recycle Bin', href: '/admin/offers/deleted', icon: Trash2 },
     { label: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
     { label: 'Merchants', href: '/admin/merchants', icon: Store },
+    { label: 'Stores', href: '/admin/stores', icon: MapPin },
     { label: 'Companies', href: '/admin/companies', icon: Building2 },
     { label: 'Employees', href: '/admin/employees', icon: Users },
     { label: 'CSV Uploads', href: '/admin/csv-uploads', icon: Upload },
