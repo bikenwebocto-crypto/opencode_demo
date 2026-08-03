@@ -248,7 +248,7 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
           showDistance={false}
           showCurrentLocation={false}
           showEditLink
-          editBasePath="/admin/merchants"
+    
         />
       )}
 

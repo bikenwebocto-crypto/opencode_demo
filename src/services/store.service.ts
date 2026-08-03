@@ -86,7 +86,12 @@ export async function fetchAdminStores(
   }
 
   const branches = await prisma.merchantBranch.findMany({
-    where,
+    where: {
+      ...where,                         // keep your existing filters
+      merchant: {
+        status: 'ACTIVE',               // only include branches of active merchants
+      },
+    },
     include: {
       merchant: {
         select: {
