@@ -69,6 +69,7 @@ const navConfig: Record<string, NavItem[]> = {
     { label: 'Banners', href: '/admin/banners', icon: Palette },
     { label: 'Settings', href: '/admin/settings', icon: Settings },
     { label: 'Login Branding', href: '/admin/settings/login-branding', icon: Palette },
+    { label: 'Theme Customizer', href: '/admin/themes/customize', icon: Palette },
   ],
   merchant: [
     { label: 'Overview', href: '/merchant', icon: LayoutDashboard, exact: true },
@@ -137,9 +138,12 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName, 
   }
 
   return (
-    <aside className="sticky fixed left-0 top-0 z-40 flex h-dvh w-64 flex-col border-r bg-card">
+    <aside
+      className="sticky fixed left-0 top-0 z-40 flex h-dvh w-64 flex-col border-r"
+      style={{ backgroundColor: `hsl(var(--sidebar-bg) / var(--sidebar-bg-opacity, 1))`, borderColor: `hsl(var(--sidebar-border))` }}
+    >
       {/* Logo */}
-      <div className="relative flex h-14 items-center gap-2 border-b px-6">
+      <div className="relative flex h-14 items-center gap-2 border-b px-6" style={{ borderColor: `hsl(var(--sidebar-border))` }}>
         <img
           src={branding?.logoUrl ?? '/logo.png'}
           alt=""
@@ -148,18 +152,24 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName, 
       </div>
 
       {/* User info */}
-      <div className="flex items-center gap-3 border-b px-6 py-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-medium text-primary">
+      <div className="flex items-center gap-3 border-b px-6 py-3" style={{ borderColor: `hsl(var(--sidebar-border))` }}>
+        <div
+          className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium"
+          style={{ backgroundColor: `hsl(var(--sidebar-active-bg) / 0.1)`, color: `hsl(var(--sidebar-active-text))` }}
+        >
           {initials}
         </div>
         <div className="flex-1 overflow-hidden">
-          <p className="truncate text-sm font-medium">{displayName ?? 'NA'}</p>
-          <p className="truncate text-xs text-muted-foreground">{userEmail ?? 'NA'}</p>
+          <p className="truncate text-sm font-medium" style={{ color: `hsl(var(--sidebar-text))` }}>{displayName ?? 'NA'}</p>
+          <p className="truncate text-xs" style={{ color: `hsl(var(--sidebar-text-muted))` }}>{userEmail ?? 'NA'}</p>
           {companyName && (
-            <p className="truncate text-xs text-muted-foreground">{companyName}</p>
+            <p className="truncate text-xs" style={{ color: `hsl(var(--sidebar-text-muted))` }}>{companyName}</p>
           )}
           {userRole && (
-            <span className="mt-0.5 inline-block rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+            <span
+              className="mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium"
+              style={{ backgroundColor: `hsl(var(--sidebar-active-bg) / 0.1)`, color: `hsl(var(--sidebar-active-text))` }}
+            >
               {userRole.replace(/_/g, ' ')}
             </span>
           )}
@@ -179,18 +189,34 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName, 
                   onClick={() => handleNavClick(item.href)}
                   className={cn(
                     'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                    isActive
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                   )}
+                  style={isActive
+                    ? { backgroundColor: `hsl(var(--sidebar-active-bg) / 0.1)`, color: `hsl(var(--sidebar-active-text))` }
+                    : { color: `hsl(var(--sidebar-text-muted))` }
+                  }
+                  onMouseEnter={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.backgroundColor = `hsl(var(--sidebar-hover-bg))`
+                      e.currentTarget.style.color = `hsl(var(--sidebar-hover-text))`
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) {
+                      e.currentTarget.style.backgroundColor = ''
+                      e.currentTarget.style.color = `hsl(var(--sidebar-text-muted))`
+                    }
+                  }}
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
                   <span className="flex-1 truncate">{item.label}</span>
                   {isLoading && (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: `hsl(var(--sidebar-active-text))` }} />
                   )}
                   {!isLoading && item.badge && (
-                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-medium text-primary-foreground">
+                    <span
+                      className="flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-medium"
+                      style={{ backgroundColor: `hsl(var(--sidebar-badge-bg))`, color: `hsl(var(--sidebar-badge-text))` }}
+                    >
                       {item.badge}
                     </span>
                   )}
@@ -202,8 +228,8 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName, 
       </nav>
 
       {/* Logout */}
-      <div className="border-t p-3">
-        <LoadingButton variant="ghost" onClick={logout} loading={signingOut} loadingText="Signing out..." className="w-full justify-start gap-3 text-muted-foreground">
+      <div className="border-t p-3" style={{ borderColor: `hsl(var(--sidebar-border))` }}>
+        <LoadingButton variant="ghost" onClick={logout} loading={signingOut} loadingText="Signing out..." className="w-full justify-start gap-3" style={{ color: `hsl(var(--sidebar-text-muted))` }}>
           <LogOut className="h-4 w-4" />
           Sign Out
         </LoadingButton>

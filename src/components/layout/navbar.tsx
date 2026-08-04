@@ -74,7 +74,10 @@ export function Navbar({
     }
   };
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-6">
+    <header
+      className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b px-6"
+      style={{ backgroundColor: `hsl(var(--navbar-bg) / var(--navbar-bg-opacity, 1))`, borderColor: `hsl(var(--navbar-border))` }}
+    >
       <Button
         variant="ghost"
         size="icon"
@@ -84,12 +87,15 @@ export function Navbar({
         <Menu className="h-5 w-5" />
       </Button>
 
-      <h1 className="flex-1 text-lg font-semibold">{title}</h1>
+      <h1 className="flex-1 text-lg font-semibold" style={{ color: `hsl(var(--navbar-text))` }}>{title}</h1>
 
       <div className="flex items-center gap-2">
         {/* Realtime indicator */}
-        <div className="flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-0.5 text-xs text-green-700 dark:bg-green-900/20 dark:text-green-400">
-          <span className="realtime-dot h-1.5 w-1.5 rounded-full bg-green-500" />
+        <div
+          className="flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs"
+          style={{ backgroundColor: `hsl(var(--live-indicator-bg))`, color: `hsl(var(--live-indicator-text))` }}
+        >
+          <span className="realtime-dot h-1.5 w-1.5 rounded-full" style={{ backgroundColor: `hsl(var(--live-dot-color))` }} />
           Live
         </div>
 
@@ -119,8 +125,11 @@ export function Navbar({
           </button>
 
           {dropdownOpen && (
-            <div className="absolute right-0 top-full mt-2 w-64 rounded-lg border shadow-lg bg-background z-50">
-              <div className="border-b px-2 pb-2">
+            <div
+              className="absolute right-0 top-full mt-2 w-64 rounded-lg border shadow-lg z-50"
+              style={{ backgroundColor: `hsl(var(--navbar-dropdown-bg))`, borderColor: `hsl(var(--navbar-border))` }}
+            >
+              <div className="border-b px-2 pb-2" style={{ borderColor: `hsl(var(--navbar-border))` }}>
                 <p className="text-sm font-medium">{displayName}</p>
                 <p className="text-xs text-muted-foreground">{displayEmail}</p>
                 {userRole && (
@@ -129,7 +138,7 @@ export function Navbar({
                   </Badge>
                 )}
               </div>
-              <div className="border-t px-2 py-2">
+              <div className="border-t px-2 py-2" style={{ borderColor: `hsl(var(--navbar-border))` }}>
                 <LoadingButton variant="ghost" onClick={logout} loading={signingOut} loadingText="Signing out..." className="w-full justify-start">
                   <LogOut className="h-4 w-4" />
                   <span>Sign Out</span>

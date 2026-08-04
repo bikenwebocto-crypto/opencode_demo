@@ -21,6 +21,7 @@ const pageTitles: Record<string, string> = {
   '/admin/billing': 'Billing',
   '/admin/settings': 'Settings',
   '/admin/settings/login-branding': 'Login Branding',
+  '/admin/themes/customize': 'Theme Customizer',
   '/admin/analytics': 'Platform Analytics',
   '/merchant': 'Merchant Overview',
   '/merchant/offers': 'My Offers',
@@ -67,7 +68,8 @@ export function DashboardShell({ children, branding }: DashboardShellProps) {
     <div className="flex min-h-screen">
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+          className="fixed inset-0 z-30 md:hidden"
+          style={{ backgroundColor: `hsl(var(--overlay-bg) / 0.5)` }}
           onClick={() => setSidebarOpen(false)}
         />
       )}

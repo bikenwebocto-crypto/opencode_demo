@@ -28,6 +28,34 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 221.2 83.2% 53.3%;
     --radius: 0.5rem;
+
+    /* Sidebar theme variables */
+    --sidebar-bg: 0 0% 100%;
+    --sidebar-bg-opacity: 1;
+    --sidebar-text: 222.2 84% 4.9%;
+    --sidebar-text-muted: 215.4 16.3% 46.9%;
+    --sidebar-active-bg: 221.2 83.2% 53.3%;
+    --sidebar-active-text: 221.2 83.2% 53.3%;
+    --sidebar-hover-bg: 210 40% 96.1%;
+    --sidebar-hover-text: 222.2 84% 4.9%;
+    --sidebar-border: 214.3 31.8% 91.4%;
+    --sidebar-badge-bg: 221.2 83.2% 53.3%;
+    --sidebar-badge-text: 210 40% 98%;
+
+    /* Navbar theme variables */
+    --navbar-bg: 0 0% 100%;
+    --navbar-bg-opacity: 1;
+    --navbar-text: 222.2 84% 4.9%;
+    --navbar-border: 214.3 31.8% 91.4%;
+    --navbar-dropdown-bg: 0 0% 100%;
+
+    /* Live indicator */
+    --live-indicator-bg: 142 76% 94%;
+    --live-indicator-text: 142 72% 29%;
+    --live-dot-color: 142 71% 45%;
+
+    /* Overlay */
+    --overlay-bg: 0 0% 0%;
   }
 
   .dark {
@@ -35,6 +63,8 @@
     --foreground: 210 40% 98%;
     --card: 222.2 84% 4.9%;
     --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
     --primary: 217.2 91.2% 59.8%;
     --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 217.2 32.6% 17.5%;
@@ -44,10 +74,36 @@
     --accent: 217.2 32.6% 17.5%;
     --accent-foreground: 210 40% 98%;
     --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
     --success: 142.1 70.6% 45.3%;
+    --success-foreground: 210 40% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 48 96% 89%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 224.3 76.3% 48%;
+
+    /* Sidebar dark overrides */
+    --sidebar-bg: 222.2 84% 4.9%;
+    --sidebar-text: 210 40% 98%;
+    --sidebar-text-muted: 215 20.2% 65.1%;
+    --sidebar-active-bg: 217.2 91.2% 59.8%;
+    --sidebar-active-text: 217.2 91.2% 59.8%;
+    --sidebar-hover-bg: 217.2 32.6% 17.5%;
+    --sidebar-hover-text: 210 40% 98%;
+    --sidebar-border: 217.2 32.6% 17.5%;
+    --sidebar-badge-bg: 217.2 91.2% 59.8%;
+    --sidebar-badge-text: 222.2 47.4% 11.2%;
+
+    /* Navbar dark overrides */
+    --navbar-bg: 222.2 84% 4.9%;
+    --navbar-text: 210 40% 98%;
+    --navbar-border: 217.2 32.6% 17.5%;
+    --navbar-dropdown-bg: 222.2 84% 4.9%;
+
+    /* Live indicator dark */
+    --live-indicator-bg: 142 70% 45%;
+    --live-indicator-text: 142 76% 94%;
   }
 }
 

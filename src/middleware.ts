@@ -20,6 +20,14 @@ const CACHE_TTL = 5 * 60 * 1000;
 
 const SESSION_API = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/auth/session`;
 
+const PUBLIC_API_ROUTES = [
+  "/api/auth/sync-admin",
+  "/api/auth/logout",
+  "/api/auth/session",
+  "/api/webhooks",
+  "/api/health",
+];
+
 async function fetchRole(supabase: ReturnType<typeof createServerClient>, email: string): Promise<string | null> {
   const cached = roleCache.get(email);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -60,14 +68,18 @@ export async function middleware(request: NextRequest) {
   if (pathname === "/login" || pathname === "/auth/callback") {
     return NextResponse.next()
   }
-  if (pathname.startsWith("/api")) {
-    return NextResponse.next()
-  }
 
   const isProtected = ["/admin", "/merchant", "/company", "/employee"].some((p) =>
     pathname.startsWith(p),
   )
-  if (!isProtected) {
+  const isApiRoute = pathname.startsWith("/api")
+
+  if (!isProtected && !isApiRoute) {
+    return NextResponse.next()
+  }
+
+  const isPublicApi = isApiRoute && PUBLIC_API_ROUTES.some((p) => pathname.startsWith(p))
+  if (isPublicApi) {
     return NextResponse.next()
   }
 
@@ -85,7 +97,7 @@ export async function middleware(request: NextRequest) {
         getAll() { return request.cookies.getAll() },
         setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
           cookiesToSet.forEach(({ name, value, options }) => {
-            response.cookies.set(name, value!, options)
+            response.cookies.set(name, value!, options ?? {})
           })
         },
       },
@@ -94,11 +106,25 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
+    if (isApiRoute) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
     const loginUrl = new URL("/login", request.url)
     loginUrl.searchParams.set("redirectTo", pathname)
     return NextResponse.redirect(loginUrl)
   }
 
+  // For API routes: just set auth headers and pass through (no role check)
+  if (isApiRoute) {
+    requestHeaders.set("x-auth-email", user.email!)
+    response.headers.set("x-auth-email", user.email!)
+    return response
+  }
+
+  // For page routes: full role-based access check
   const role = await fetchRole(supabase, user.email!)
 
   if (!role) {
