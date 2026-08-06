@@ -105,7 +105,15 @@ export async function middleware(request: NextRequest) {
     },
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // Bearer-token auth (mobile API clients) takes priority over cookies.
+  const authHeader = request.headers.get("Authorization")
+  const bearerToken = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7).trim()
+    : null
+
+  const { data: { user } } = bearerToken
+    ? await supabase.auth.getUser(bearerToken)
+    : await supabase.auth.getUser()
   if (!user) {
     if (isApiRoute) {
       return NextResponse.json(
