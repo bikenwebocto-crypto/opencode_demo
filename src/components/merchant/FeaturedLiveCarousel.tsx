@@ -35,14 +35,6 @@ interface LiveOffer {
     | "AWAITING_APPROVAL";
 }
 
-const GRADIENTS = [
-  "from-blue-500 to-indigo-600",
-  "from-emerald-500 to-teal-600",
-  "from-purple-500 to-pink-600",
-  "from-amber-500 to-orange-600",
-  "from-rose-500 to-red-600",
-];
-
 function formatOfferValue(offer: LiveOffer): string {
   const cfg = (offer.pricing?.configuration as Record<string, unknown>) ?? {};
   const offerType = offer.offerType;
@@ -62,6 +54,32 @@ function formatExpiry(dateStr: string): string {
     month: "short",
     year: "numeric",
   });
+}
+
+function usePerPage() {
+  const [perPage, setPerPage] = useState(3);
+
+  useEffect(() => {
+    const queries: { mq: string; perPage: number }[] = [
+      { mq: "(min-width: 1024px)", perPage: 3 },
+      { mq: "(min-width: 640px)", perPage: 2 },
+      { mq: "(min-width: 0px)", perPage: 1 },
+    ];
+    const update = () => {
+      const matched = queries.find((q) => window.matchMedia(q.mq).matches);
+      setPerPage(matched?.perPage ?? 1);
+    };
+    update();
+    const mqls = queries.map((q) => {
+      const mql = window.matchMedia(q.mq);
+      mql.addEventListener("change", update);
+      return mql;
+    });
+    return () =>
+      mqls.forEach((mql) => mql.removeEventListener("change", update));
+  }, []);
+
+  return perPage;
 }
 
 function CarouselSkeleton() {
@@ -105,36 +123,42 @@ export function FeaturedLiveCarousel({
   offers,
   isLoading,
 }: FeaturedLiveCarouselProps) {
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [page, setPage] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
   const total = offers.length;
+  const perPage = usePerPage();
+  const pageCount = Math.max(1, Math.ceil(total / perPage));
+
+  useEffect(() => {
+    setPage((p) => Math.min(p, pageCount - 1));
+  }, [pageCount]);
 
   const goTo = useCallback(
     (index: number) => {
-      setCurrentIndex(Math.max(0, Math.min(index, total - 1)));
+      setPage(Math.max(0, Math.min(index, pageCount - 1)));
     },
-    [total],
+    [pageCount],
   );
 
   const goNext = useCallback(
-    () => goTo(currentIndex + 1),
-    [goTo, currentIndex],
+    () => goTo(page + 1),
+    [goTo, page],
   );
   const goPrev = useCallback(
-    () => goTo(currentIndex - 1),
-    [goTo, currentIndex],
+    () => goTo(page - 1),
+    [goTo, page],
   );
 
   useEffect(() => {
-    if (isPaused || total <= 1) return;
+    if (isPaused || pageCount <= 1) return;
     intervalRef.current = setInterval(goNext, 5000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isPaused, goNext, total]);
+  }, [isPaused, goNext, pageCount]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0]?.clientX ?? 0;
@@ -150,9 +174,7 @@ export function FeaturedLiveCarousel({
   if (isLoading) return <CarouselSkeleton />;
   if (total === 0) return <EmptyCarousel />;
 
-  const offer = offers[currentIndex]!;
-  const grad =
-    offer.bannerGradient ?? GRADIENTS[currentIndex % GRADIENTS.length];
+  const visibleOffers = offers.slice(page * perPage, page * perPage + perPage);
 
   return (
     <div
@@ -163,7 +185,7 @@ export function FeaturedLiveCarousel({
       onTouchEnd={handleTouchEnd}
     >
       <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-2 p-2 sm:p-4 md:p-6">
-          {offers.map((offer) => (
+          {visibleOffers.map((offer) => (
             <Link
               key={offer.id}
               href={`/merchant/offers/${offer.id}`}
@@ -363,34 +385,34 @@ export function FeaturedLiveCarousel({
           ))}
       </div>
 
-      {total > 1 && (
+      {pageCount > 1 && (
         <>
           <button
             onClick={goPrev}
             className="absolute left-3 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm hover:bg-black/50 transition-colors"
-            aria-label="Previous offer"
+            aria-label="Previous offers"
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
           <button
             onClick={goNext}
             className="absolute right-3 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-full bg-black/30 text-white backdrop-blur-sm hover:bg-black/50 transition-colors"
-            aria-label="Next offer"
+            aria-label="Next offers"
           >
             <ChevronRight className="h-5 w-5" />
           </button>
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
-            {offers.map((_, i) => (
+            {Array.from({ length: pageCount }, (_, i) => (
               <button
                 key={i}
                 onClick={() => goTo(i)}
                 className={cn(
                   "rounded-full transition-all duration-300",
-                  i === currentIndex
+                  i === page
                     ? "h-2 w-6 bg-white"
                     : "h-2 w-2 bg-white/50 hover:bg-white/70",
                 )}
-                aria-label={`Go to offer ${i + 1}`}
+                aria-label={`Go to page ${i + 1}`}
               />
             ))}
           </div>

@@ -88,7 +88,7 @@ export function OfferStatusTimeline({
   return (
     <div className="space-y-2">
       {steps.map((step, i) => (
-        <div key={step.status} className="flex gap-3">
+        <div key={`${step.status}-${i}`} className="flex gap-3">
           <div className="flex flex-col items-center">
             <div
               className={cn(
