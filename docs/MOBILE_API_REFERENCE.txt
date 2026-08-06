@@ -224,6 +224,9 @@ return 401 UNAUTHORIZED on a missing / invalid token.
     POST   /api/mobile/auth/sync
     POST   /api/mobile/auth/logout
 
+  Devices / push notifications
+    POST   /api/mobile/devices
+
   Home feed
     GET    /api/mobile/employee/home
 
@@ -258,9 +261,6 @@ pass that token to /sync).
 ================================================================================
 END OF MOBILE AUTHENTICATION ARCHITECTURE
 ================================================================================
-  VALIDATION            400  Bad input
-  NOT_FOUND             404  Resource does not exist
-  INTERNAL              500  Unhandled exception (never exposes Prisma)
 
 ================================================================================
 1. POST /api/mobile/auth/sync
@@ -277,7 +277,12 @@ Request:
   Content-Type: application/json
 
   Body (all fields optional):
-  
+    deviceId    string   Identifier of the mobile device. Stored on the
+                         DeviceToken row so logout can target it.
+    fcmToken    string   FCM registration token for push notifications.
+                         When present, the DeviceToken row is upserted
+                         and activated (enabled=true) so the push
+                         service delivers to this device.
 
 Response 200:
   {
@@ -320,28 +325,40 @@ Audit:   MOBILE_AUTH_SYNC
 Side effects:
   - Account.lastLoginAt = now()
   - Employee.lastLoginAt = now()
+  - If fcmToken provided: DeviceToken row upserted by token and set
+    enabled=true (role='employee', platform='mobile', deviceId stored,
+    lastSeen=now) — the device is active for push delivery.
 
 ================================================================================
 2. POST /api/mobile/auth/logout
 ================================================================================
 
-Purpose:  Properly end the mobile session. Calls supabase.auth.signOut()
-          server-side (invalidation of the refresh token) and clears
-          the session cookies.
+Purpose:  Properly end the mobile session. Deactivates this device's FCM
+          token (so it stops receiving push notifications), calls
+          supabase.auth.signOut() server-side (which invalidates the
+          refresh token), and records a MOBILE_LOGOUT audit entry.
 
 Auth:     Bearer token (any authenticated user; the logout endpoint accepts any valid Supabase user).
 
 Request:
   POST /api/mobile/auth/logout
-  (no body)
+  Content-Type: application/json
+
+  Body (all fields optional — used to target the device-token row for
+  deactivation):
+    deviceId    string   Identifier of the device whose token(s) should
+                         be deactivated
+    fcmToken    string   FCM token to deactivate directly
 
 Response 200:
   { "success": true }
 
 Side effects:
-  - supabase.auth.signOut() is called
-  - sb-access-token cookie deleted
-  - sb-refresh-token cookie deleted
+  - Matching DeviceToken row(s) set enabled=false — the device stops
+    receiving push notifications
+  - supabase.auth.signOut() is called (refresh token invalidated)
+  - No cookie handling — the mobile app does not use Supabase SSR
+    cookies; the Bearer token is the only transport
 
 Audit:   MOBILE_LOGOUT
 
@@ -1024,5 +1041,79 @@ Response 400:
   { "success": false, "error": { "code": "VALIDATION", "message": "notificationIds must be an array" } }
 
 ================================================================================
+17. POST /api/mobile/devices
+===============================================================================
+
+Purpose:  Register (or re-activate) this device's FCM push token for the
+          authenticated employee. The app calls this after login and
+          whenever the FCM token refreshes. The token is upserted by its
+          unique value and marked enabled=true so the push service
+          delivers to it.
+
+Auth:     Bearer token. ACTIVE employee of an ACTIVE company (enforced by getAuthenticatedMobileEmployee).
+
+Request:
+  POST /api/mobile/devices
+  Content-Type: application/json
+
+  {
+    "fcmToken": "dFQk9abc...fcm-registration-token",
+    "deviceId": "android-8f3a1c2e-7b4d-4a6e-9c11-2d3f4a5b6c7d"
+  }
+
+  fcmToken   string  Required. FCM registration token.
+  deviceId   string  Optional. Identifier of the mobile device.
+
+Response 200:
+  { "success": true }
+
+Response 400 (missing token):
+  { "success": false, "error": { "code": "FCM_TOKEN_REQUIRED", "message": "fcmToken is required" } }
+
+Side effects:
+  - DeviceToken row upserted by token. userId is ALWAYS derived from the
+    authenticated user (account.authUserId), never from the request body.
+  - role='employee', platform='mobile', deviceId stored, enabled=true,
+    lastSeen=now
+Audit:   DEVICE_TOKEN_REGISTERED
+
+===============================================================================
+MOBILE PUSH DEVICE-TOKEN LIFECYCLE
+===============================================================================
+
+Purpose:  Push notifications for mobile are delivered to the DeviceToken
+          rows stored in the device_tokens table. Each row belongs to a
+          user (Supabase authUserId) and carries an FCM token, a deviceId,
+          a platform, and an `enabled` flag.
+
+Lifecycle:
+  1. LOGIN  - The app signs in at Supabase, then calls
+              POST /api/mobile/auth/sync with { deviceId, fcmToken }.
+              The sync endpoint upserts the DeviceToken row and sets
+              enabled=true. The device is now eligible for push.
+              (POST /api/mobile/devices does the same on demand / on
+              token refresh.)
+  2. ACTIVE - While logged in, the push service (push.service.ts)
+              delivers to all DeviceToken rows where
+              role='employee' AND enabled=true. The `enabled` flag is
+              the sole gate — deactivated rows are ignored.
+  3. LOGOUT - The app calls POST /api/mobile/auth/logout with
+              { deviceId, fcmToken }. The matching DeviceToken row(s)
+              are set enabled=false and stop receiving pushes.
+
+Key rules:
+  - role is stored lowercase ('employee') to match the push service and
+    the web userType convention.
+  - token is globally unique — upsert-by-token means a re-login reuses
+    the existing row instead of creating duplicates.
+  - userId is always taken from the authenticated token, never from the
+    body, so a caller cannot register a token against another account.
+  - FCM tokens are per app-install; a deviceId + token pair therefore
+    maps 1:1 to one DeviceToken row.
+  - No schema change was required: the existing DeviceToken model
+    (id, userId, role, token, platform, deviceId, enabled, lastSeen)
+    already covered the feature.
+
+===============================================================================
 END OF FILE
 ================================================================================

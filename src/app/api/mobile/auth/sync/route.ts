@@ -4,6 +4,7 @@ import {
   getAuthenticatedMobileEmployee,
   buildMobileAuthProfile,
 } from '@/lib/mobile-auth'
+import { activateDeviceToken } from '@/lib/device-token.service'
 import { createAuditLog } from '@/services/audit-log.service'
 import { internalError } from '@/lib/employee-helpers'
 
@@ -40,11 +41,11 @@ export async function POST(request: NextRequest) {
 
     // 2. Authenticate + load Account / Employee / Company.
     const auth = await getAuthenticatedMobileEmployee(request)
-    console.log('auth result:', auth) // Debugging line
     if (!auth.ok) return auth.response
     const { account, employee, company } = auth
 
-    // 3. Refresh login timestamps (best-effort, never block the login).
+    // 3. Refresh login timestamps + persist the device token (best-effort,
+    // never block the login).
     await Promise.all([
       prisma.account
         .update({
@@ -58,6 +59,13 @@ export async function POST(request: NextRequest) {
           data: { lastLoginAt: new Date() },
         })
         .catch(() => null),
+      fcmToken
+        ? activateDeviceToken({
+            userId: account.authUserId,
+            token: fcmToken,
+            deviceId,
+          }).catch(() => null)
+        : Promise.resolve(null),
     ])
 
     // 4. Audit log — fire-and-forget, never blocks the response.
@@ -76,7 +84,7 @@ export async function POST(request: NextRequest) {
         loginSource: 'mobile',
       },
     })
-    console.log('Audit log created for employee:', employee.id) // Debugging line
+
     // 5. Return the mobile profile. No JWT, no redirect URL.
     return NextResponse.json({
       success: true,
