@@ -4,6 +4,7 @@ import { createAuditLog } from "@/services/audit-log.service";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { getEntityKindFromReferenceType } from "@/lib/action-queue-types";
 import { ensureOfferQRCode } from "@/lib/offer-qr";
+import { BUSINESS_NOTIFICATION_TEMPLATES, channels, publishBusinessNotification, publishBusinessToAdmins, publishBusinessToCompanyAdmins } from '@/services/business-notification.service';
 
 function unauthorized() {
   return NextResponse.json(
@@ -527,6 +528,15 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
         });
         console.log(`[FIRST_OFFER_APPROVAL] ✅ Merchant updated to ACTIVE`);
 
+        await publishBusinessNotification({
+          ...BUSINESS_NOTIFICATION_TEMPLATES.offerApproved(offer.title),
+          recipients: [{ role: 'merchant', id: offer.merchantId }],
+          channels: channels('IN_APP', 'PUSH', 'EMAIL'),
+          referenceType: 'merchant_offer',
+          referenceId: offer.id,
+          metadata: { approvedBy: adminId },
+        });
+
         break;
       }
 
@@ -604,6 +614,25 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
         console.log(
           `[OFFER_REPLACEMENT] ✅ Replacement offer activated: ${newOffer.id}`,
         );
+
+        await publishBusinessNotification({
+          ...BUSINESS_NOTIFICATION_TEMPLATES.offerApproved(newOffer.title),
+          recipients: [{ role: 'merchant', id: newOffer.merchantId }],
+          channels: channels('IN_APP', 'PUSH', 'EMAIL'),
+          referenceType: 'merchant_offer',
+          referenceId: newOffer.id,
+          metadata: { replacedOfferId: oldOfferId ?? null, approvedBy: adminId },
+        });
+        await publishBusinessToAdmins({
+          type: 'OFFER_REPLACED',
+          title: `Offer replaced: ${newOffer.title}`,
+          message: 'A replacement offer was approved and is now live.',
+          priority: 'HIGH',
+          channels: channels('IN_APP', 'PUSH'),
+          referenceType: 'merchant_offer',
+          referenceId: newOffer.id,
+          metadata: { replacedOfferId: oldOfferId ?? null, approvedBy: adminId },
+        });
 
         // Generate QR for IN_STORE_QR replacement offers
         console.log('[OFFER_REPLACEMENT] newOffer.redemptionType:', newOffer.redemption?.redemptionType);
@@ -968,21 +997,52 @@ async function performReject(
           },
         });
       });
+      if (offer) {
+        await publishBusinessNotification({
+          ...BUSINESS_NOTIFICATION_TEMPLATES.offerRejected(offer.title),
+          recipients: [{ role: 'merchant', id: offer.merchantId }],
+          channels: channels('IN_APP', 'PUSH', 'EMAIL'),
+          referenceType: 'merchant_offer',
+          referenceId: offer.id,
+          metadata: { rejectedBy: adminId, rejectionReason },
+        });
+      }
     }
   } else if (kind === "MERCHANT") {
     const merchant = await prisma.merchant.findUnique({
       where: { id: queueItem.referenceId },
     });
-    if (merchant) {
+      if (merchant) {
       await prisma.merchant.update({
         where: { id: merchant.id },
         data: { status: "REJECTED", rejectionReason },
-      });
+        });
+        await publishBusinessNotification({
+          type: 'MERCHANT_REJECTED',
+          title: `Merchant rejected: ${merchant.businessName}`,
+          message: 'Your merchant registration was rejected. Review the provided reason for details.',
+          priority: 'HIGH',
+          recipients: [{ role: 'merchant', id: merchant.id }],
+          channels: channels('IN_APP', 'PUSH', 'EMAIL'),
+          referenceType: 'merchant',
+          referenceId: merchant.id,
+          metadata: { rejectedBy: adminId, rejectionReason },
+        });
     }
   } else if (kind === "COMPANY") {
     await prisma.company.update({
       where: { id: queueItem.referenceId },
       data: { status: "SUSPENDED" },
+    });
+    await publishBusinessToCompanyAdmins(queueItem.referenceId, {
+      type: 'COMPANY_DISABLED',
+      title: 'Company access suspended',
+      message: 'Your company account has been suspended. Contact support for details.',
+      priority: 'HIGH',
+      channels: channels('IN_APP', 'PUSH', 'EMAIL'),
+      referenceType: 'company',
+      referenceId: queueItem.referenceId,
+      metadata: { rejectedBy: adminId, rejectionReason },
     });
   }
 

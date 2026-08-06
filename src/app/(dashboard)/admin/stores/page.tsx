@@ -530,6 +530,7 @@ function StoresMap({
       zoom={5}
       onLoad={handleMapLoad}
       options={{
+        mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID,
         zoomControl: true,
         streetViewControl: false,
         mapTypeControl: true,

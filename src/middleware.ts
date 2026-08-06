@@ -24,6 +24,7 @@ const PUBLIC_API_ROUTES = [
   "/api/auth/sync-admin",
   "/api/auth/logout",
   "/api/auth/session",
+  "/api/firebase-config",
   "/api/webhooks",
   "/api/health",
 ];

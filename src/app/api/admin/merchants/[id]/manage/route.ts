@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { createAuditLog, fromCurrentUser } from '@/services/audit-log.service'
+import { channels, publishBusinessNotification, publishBusinessToAdmins } from '@/services/business-notification.service'
 
 function unauthorized() {
   return NextResponse.json(
@@ -140,6 +141,35 @@ export async function PATCH(
         changes: auditChanges,
       }),
     )
+
+    if (action === 'suspend' || action === 'activate') {
+      const suspended = action === 'suspend'
+      await publishBusinessNotification({
+        type: suspended ? 'COMPANY_DISABLED' : 'MERCHANT_APPROVED',
+        title: suspended ? `Merchant suspended: ${existing.businessName}` : `Merchant reactivated: ${existing.businessName}`,
+        message: suspended
+          ? 'Your merchant account has been suspended. Contact support for details.'
+          : 'Your merchant account has been reactivated.',
+        priority: suspended ? 'URGENT' : 'HIGH',
+        recipients: [{ role: 'merchant', id }],
+        channels: channels('IN_APP', 'PUSH', 'EMAIL'),
+        referenceType: 'merchant',
+        referenceId: id,
+        metadata: { previousStatus: existing.status, status: updated.status, reason: body?.reason ?? null },
+      })
+      if (suspended) {
+        await publishBusinessToAdmins({
+          type: 'COMPANY_DISABLED',
+          title: `Merchant suspended: ${existing.businessName}`,
+          message: 'A merchant account was suspended.',
+          priority: 'URGENT',
+          channels: channels('IN_APP', 'PUSH', 'EMAIL'),
+          referenceType: 'merchant',
+          referenceId: id,
+          metadata: { previousStatus: existing.status, reason: body?.reason ?? null },
+        })
+      }
+    }
 
     return NextResponse.json({
       success: true,

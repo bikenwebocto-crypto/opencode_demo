@@ -1,15 +1,15 @@
 "use client";
 
-import { Bell, ChevronDown, LogOut, Menu } from "lucide-react";
+import { ChevronDown, LogOut, Menu } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { LoadingButton } from "@/components/ui/loading-button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
-import { useNotificationStore } from "@/store/notification-store";
 import { supabase } from "@/lib/supabase/client";
 import { usePathname, useRouter } from "next/navigation";
+import { NotificationBell } from "@/components/shared/notification-bell";
 
 interface NavbarProps {
   title: string;
@@ -40,10 +40,10 @@ export function Navbar({
   userRole,
   avatarUrl,
 }: NavbarProps) {
-  const unreadCount = useNotificationStore((s) => s.unreadCount);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -62,11 +62,28 @@ export function Navbar({
   const displayEmail = userEmail || "NA";
   const initials = getInitials(displayName);
   const router = useRouter();
+
+  // Determine notification URLs based on user type
+  const notificationBase = pathname.startsWith("/admin")
+    ? "/api/admin/notifications"
+    : pathname.startsWith("/merchant")
+      ? "/api/merchant/notifications"
+      : pathname.startsWith("/company")
+        ? "/api/company/notifications"
+        : "/api/employee/notifications";
+
+  const notificationViewAll = pathname.startsWith("/admin")
+    ? "/admin/notifications"
+    : pathname.startsWith("/merchant")
+      ? "/merchant/notifications"
+      : pathname.startsWith("/company")
+        ? "/company/notifications"
+        : "/employee/notifications";
+
   const logout = async () => {
     setSigningOut(true);
     try {
-      const res = await supabase.auth.signOut();
-      //  console.log('Logout response:', res)
+      await supabase.auth.signOut();
       router.push("/login");
     } catch (error) {
       console.error("Logout failed:", error);
@@ -100,17 +117,11 @@ export function Navbar({
         </div>
 
         {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
-          {unreadCount > 0 && (
-            <Badge
-              variant="destructive"
-              className="absolute -right-1 -top-1 h-5 w-5 rounded-full p-0 text-[10px]"
-            >
-              {unreadCount > 99 ? "99+" : unreadCount}
-            </Badge>
-          )}
-        </Button>
+        <NotificationBell
+          fetchUrl={notificationBase}
+          markAllUrl={notificationBase}
+          viewAllUrl={notificationViewAll}
+        />
 
         {/* User avatar with dropdown */}
         <div className="relative" ref={dropdownRef}>

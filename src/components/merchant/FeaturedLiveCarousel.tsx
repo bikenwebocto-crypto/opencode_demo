@@ -162,8 +162,7 @@ export function FeaturedLiveCarousel({
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      <Link href={`/merchant/offers/${offer.id}`} prefetch={false}>
-        <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-2 p-2 sm:p-4 md:p-6">
+      <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-2 p-2 sm:p-4 md:p-6">
           {offers.map((offer) => (
             <Link
               key={offer.id}
@@ -362,8 +361,7 @@ export function FeaturedLiveCarousel({
               </div>
             </Link>
           ))}
-        </div>
-      </Link>
+      </div>
 
       {total > 1 && (
         <>

@@ -5,6 +5,7 @@ import { getAuthenticatedMobileEmployee } from '@/lib/mobile-auth'
 import { checkRedemptionEligibility } from '@/lib/offer-visibility'
 import { encodeMethod } from '@/lib/redemption-status'
 import { createAuditLog } from '@/services/audit-log.service'
+import { BUSINESS_NOTIFICATION_TEMPLATES, channels, publishBusinessNotification } from '@/services/business-notification.service'
 
 export async function POST(
   request: NextRequest,
@@ -98,6 +99,21 @@ export async function POST(
       where: { offerId },
       create: { offerId, clickCount: 1 },
       update: { clickCount: { increment: 1 } },
+    })
+
+    const template = BUSINESS_NOTIFICATION_TEMPLATES.redemptionSuccessful(offer.merchant.businessName)
+    await publishBusinessNotification({
+      ...template,
+      recipients: [{ role: 'merchant', id: offer.merchantId }],
+      channels: channels('IN_APP', 'PUSH'),
+      referenceType: 'redemption',
+      referenceId: redemption.id,
+      metadata: {
+        employeeId: auth.employee.id,
+        offerId: offer.id,
+        branchId: validBranch?.id ?? null,
+        redeemedAt: redemption.redeemedAt.toISOString(),
+      },
     })
 
     void createAuditLog({

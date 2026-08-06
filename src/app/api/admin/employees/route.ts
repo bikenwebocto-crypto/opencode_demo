@@ -5,6 +5,7 @@ import { adminEmployeeActionSchema } from "@/schemas";
 import { createAuditLog, fromCurrentUser } from "@/services/audit-log.service";
 import { validateUserEmail } from "@/services/user-validation.service";
 import { createPerfTimer } from "@/lib/perf";
+import { channels, publishBusinessNotification } from '@/services/business-notification.service';
 
 function unauthorized() {
   return NextResponse.json(
@@ -154,6 +155,18 @@ export async function POST(request: NextRequest) {
       return employee;
     });
 
+    await publishBusinessNotification({
+      type: 'EMPLOYEE_INVITED',
+      title: `Invitation to ${result.company.name}`,
+      message: 'You have been invited to join your company benefits account.',
+      priority: 'NORMAL',
+      recipients: [{ role: 'employee', id: result.id }],
+      channels: channels('EMAIL'),
+      referenceType: 'employee',
+      referenceId: result.id,
+      metadata: { companyId, invitedBy: user.id },
+    });
+
     timer.section('Serialization')
     timer.point('NextResponse.json')
     timer.end()
@@ -197,6 +210,10 @@ export async function PATCH(request: NextRequest) {
     }
 
     timer.section('Database Queries')
+    const employees = await prisma.employee.findMany({
+      where: { id: { in: employeeIds }, deletedAt: null },
+      select: { id: true, status: true },
+    });
     timer.point('employee.updateMany')
     const result = await prisma.employee.updateMany({
       where: { id: { in: employeeIds }, deletedAt: null },
@@ -205,6 +222,22 @@ export async function PATCH(request: NextRequest) {
 
     timer.point('createAuditLog')
     await createAuditLog(fromCurrentUser(user, `EMPLOYEES_BULK_${status}`, "employee", `bulk-${Date.now()}`, { changes: { employeeIds, status, reason, count: result.count } }));
+
+    for (const employee of employees) {
+      await publishBusinessNotification({
+        type: status === 'ACTIVE' ? 'SYSTEM' : 'EMPLOYEE_REMOVED',
+        title: status === 'ACTIVE' ? 'Employee account activated' : `Employee account ${status.toLowerCase()}`,
+        message: status === 'ACTIVE'
+          ? 'Your employee account has been activated.'
+          : `Your employee account status changed to ${status}.`,
+        priority: status === 'SUSPENDED' ? 'HIGH' : 'NORMAL',
+        recipients: [{ role: 'employee', id: employee.id }],
+        channels: channels(status === 'ACTIVE' ? 'IN_APP' : 'EMAIL'),
+        referenceType: 'employee',
+        referenceId: employee.id,
+        metadata: { previousStatus: employee.status, status, reason: reason ?? null },
+      });
+    }
 
     timer.section('Serialization')
     timer.point('NextResponse.json')

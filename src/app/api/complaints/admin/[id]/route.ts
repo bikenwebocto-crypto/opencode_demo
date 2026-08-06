@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { createAuditLog } from "@/services/audit-log.service";
+import { channels, publishBusinessNotification } from '@/services/business-notification.service';
 
 function unauthorized() {
   return NextResponse.json({ success: false, error: { code: "UNAUTHORIZED", message: "Unauthorized" } }, { status: 401 });
@@ -112,6 +113,22 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       entityId: id,
       metadata: { previousStatus: complaint.status, resolutionNotes },
     });
+
+    if (result.employeeId) {
+      await publishBusinessNotification({
+        type: 'COMPLAINT_UPDATED',
+        title: status === 'RESOLVED' ? 'Complaint resolved' : 'Complaint update',
+        message: status === 'RESOLVED'
+          ? 'Your complaint has been resolved.'
+          : 'Your complaint was reviewed and closed.',
+        priority: 'NORMAL',
+        recipients: [{ role: 'employee', id: result.employeeId }],
+        channels: channels('IN_APP', 'PUSH'),
+        referenceType: 'complaint',
+        referenceId: result.id,
+        metadata: { status, resolutionNotes: resolutionNotes ?? null },
+      });
+    }
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {

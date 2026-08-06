@@ -10,6 +10,7 @@ import {
   DEFAULT_OPENING_HOURS,
 } from '@/lib/branch-helpers'
 import { createAuditLog } from '@/services/audit-log.service'
+import { channels, publishBusinessNotification } from '@/services/business-notification.service'
 
 function unauthorized() {
   return NextResponse.json(
@@ -202,6 +203,18 @@ export async function POST(request: NextRequest) {
       entityType: 'merchant_branch',
       entityId: branch.id,
       changes: { branchName: branch.name, branchType: branch.branchType, isPrimary: branch.isPrimary } as any,
+    })
+
+    await publishBusinessNotification({
+      type: 'SYSTEM',
+      title: `Branch created: ${branch.name}`,
+      message: 'A new branch was created for your merchant account.',
+      priority: 'NORMAL',
+      recipients: [{ role: 'merchant', id: merchant.id }],
+      channels: channels('IN_APP'),
+      referenceType: 'merchant_branch',
+      referenceId: branch.id,
+      metadata: { merchantId: merchant.id },
     })
 
     return NextResponse.json({ success: true, data: branch, message: 'Branch created' }, { status: 201 })

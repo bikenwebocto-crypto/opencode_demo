@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getMerchantFromSession } from '@/lib/merchant-session'
 import { createAuditLog } from '@/services/audit-log.service';
+import { BUSINESS_NOTIFICATION_TEMPLATES, channels, publishBusinessNotification, publishBusinessToAdmins } from '@/services/business-notification.service';
 
 function unauthorized() {
   return NextResponse.json(
@@ -308,6 +309,27 @@ export async function POST(
 
       return updated;
     });
+
+    if (!qcResult.passed) {
+      const template = BUSINESS_NOTIFICATION_TEMPLATES.offerValidationFailed(finalOffer.title);
+      await publishBusinessNotification({
+        ...template,
+        recipients: [{ role: 'merchant', id: merchant.id }],
+        channels: channels('IN_APP'),
+        referenceType: 'merchant_offer',
+        referenceId: finalOffer.id,
+        metadata: { validationErrors: qcResult.errors },
+      });
+    } else if (!offer.replacesOfferId) {
+      const template = BUSINESS_NOTIFICATION_TEMPLATES.offerSubmitted(finalOffer.title);
+      await publishBusinessToAdmins({
+        ...template,
+        channels: channels('IN_APP', 'PUSH'),
+        referenceType: 'merchant_offer',
+        referenceId: finalOffer.id,
+        metadata: { merchantId: merchant.id },
+      });
+    }
 
     // Post-submission actions for passing offers
     if (qcResult.passed) {

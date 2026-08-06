@@ -63,7 +63,7 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://maps.gstatic.com",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://maps.gstatic.com https://www.gstatic.com",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "img-src 'self' data: blob: https://*.supabase.co https://*.supabase.in https://maps.gstatic.com https://maps.googleapis.com https://*.googleusercontent.com https://streetviewpixels-pa.googleapis.com",
               "connect-src 'self' http://localhost:54321 ws://localhost:54321 https://*.supabase.co https://*.supabase.in wss://*.supabase.co https://maps.googleapis.com https://*.googleapis.com https://maps.gstatic.com https://*.gstatic.com https://places.googleapis.com https://streetviewpixels-pa.googleapis.com",

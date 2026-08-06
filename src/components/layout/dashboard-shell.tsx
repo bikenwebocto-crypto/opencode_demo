@@ -7,6 +7,7 @@ import { Navbar } from '@/components/layout/navbar'
 import { Toaster } from '@/components/ui/toaster'
 import { cn } from '@/utils/cn'
 import { useCurrentUser } from '@/hooks/queries/use-current-user'
+import { usePushNotifications } from '@/hooks/use-push-notifications'
 import type { PublicBranding } from '@/features/admin/settings/login-branding/services/login-branding.service'
 
 const pageTitles: Record<string, string> = {
@@ -22,6 +23,7 @@ const pageTitles: Record<string, string> = {
   '/admin/settings': 'Settings',
   '/admin/settings/login-branding': 'Login Branding',
   '/admin/themes/customize': 'Theme Customizer',
+  '/admin/notifications': 'Notifications',
   '/admin/analytics': 'Platform Analytics',
   '/merchant': 'Merchant Overview',
   '/merchant/offers': 'My Offers',
@@ -29,11 +31,13 @@ const pageTitles: Record<string, string> = {
   '/merchant/branches': 'Branches',
   '/merchant/redemptions': 'Redemptions',
   '/merchant/profile': 'Profile',
+  '/merchant/notifications': 'Notifications',
   '/merchant/settings': 'Settings',
   '/company': 'Company Overview',
   '/company/employees': 'Employees',
   '/company/analytics': 'Analytics',
   '/company/billing': 'Billing',
+  '/company/notifications': 'Notifications',
   '/company/settings': 'Settings',
   '/employee': 'Employee Home',
   '/employee/offers': 'Available Offers',
@@ -53,6 +57,7 @@ export function DashboardShell({ children, branding }: DashboardShellProps) {
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { data: user } = useCurrentUser()
+  usePushNotifications({ enabled: Boolean(user) })
 
   const userType = pathname.startsWith('/merchant')
     ? 'merchant'

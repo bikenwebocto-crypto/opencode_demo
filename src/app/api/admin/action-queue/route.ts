@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createAuditLog, fromCurrentUser } from "@/services/audit-log.service";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { QUEUE_TYPE_MAP, getPriorityLabel } from "@/lib/action-queue-types";
+import { publishBusinessToAdmins } from '@/services/business-notification.service';
 
 function unauthorized() {
   return NextResponse.json(
@@ -332,6 +333,17 @@ export async function POST(request: NextRequest) {
       include: {
         merchant: { select: { id: true, businessName: true } },
       },
+    });
+
+    await publishBusinessToAdmins({
+      type: 'SYSTEM',
+      title: `Approval required: ${item.title}`,
+      message: item.description ?? 'A new action queue item requires review.',
+      priority: 'HIGH',
+      channels: ['IN_APP', 'PUSH'],
+      referenceType: 'action_queue',
+      referenceId: item.id,
+      metadata: { queueType: item.type, referenceId: item.referenceId, referenceType: item.referenceType },
     });
 
     return NextResponse.json(

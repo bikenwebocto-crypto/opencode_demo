@@ -1,5 +1,5 @@
 import { createAuditLog } from '@/services/audit-log.service'
-import { prisma } from '@/lib/prisma'
+import { NotificationService } from '@/services/notification.service'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { forbidden } from '@/lib/api-auth'
@@ -60,18 +60,16 @@ export async function writeBillingNotification(opts: {
   referenceId?: string
   priority?: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
 }) {
-  await prisma.notificationEvent.create({
-    data: {
-      recipientType: 'admin',
-      adminId: opts.adminId,
-      title: opts.title,
-      body: opts.body,
-      channel: 'IN_APP',
-      priority: opts.priority ?? 'NORMAL',
-      referenceType: opts.referenceType ?? 'company_billing',
-      referenceId: opts.referenceId ?? opts.companyId,
-      sentAt: new Date(),
-    },
+  if (!opts.adminId) return
+
+  await NotificationService.publishToCompanyAdmins(opts.companyId, {
+    type: 'BILLING_DUE',
+    title: opts.title,
+    message: opts.body,
+    priority: opts.priority ?? 'NORMAL',
+    channels: ['IN_APP', 'EMAIL'],
+    referenceType: opts.referenceType ?? 'company_billing',
+    referenceId: opts.referenceId ?? opts.companyId,
   })
 }
 

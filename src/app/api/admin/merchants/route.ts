@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/supabase/server';
 import { createAuditLog, fromCurrentUser } from '@/services/audit-log.service';
 import { adminApproveMerchantSchema } from '@/schemas';
 import { createPerfTimer } from '@/lib/perf';
+import { BUSINESS_NOTIFICATION_TEMPLATES, channels, publishBusinessNotification } from '@/services/business-notification.service';
 
 function unauthorized() {
   return NextResponse.json(
@@ -147,6 +148,27 @@ export async function POST(request: NextRequest) {
       where: { referenceId: merchantId, referenceType: 'merchant', status: 'PENDING' },
       data: { status: 'COMPLETED', completedAt: new Date() },
     });
+
+    const template = status === 'ACTIVE'
+      ? BUSINESS_NOTIFICATION_TEMPLATES.merchantApproved(merchant.businessName)
+      : status === 'REJECTED'
+        ? {
+            type: 'MERCHANT_REJECTED' as const,
+            title: `Merchant rejected: ${merchant.businessName}`,
+            message: 'Your merchant registration was rejected. Review the provided reason for details.',
+            priority: 'HIGH' as const,
+          }
+        : null;
+    if (template) {
+      await publishBusinessNotification({
+        ...template,
+        recipients: [{ role: 'merchant', id: merchant.id }],
+        channels: channels('IN_APP', 'PUSH', 'EMAIL'),
+        referenceType: 'merchant',
+        referenceId: merchant.id,
+        metadata: { previousStatus, status, rejectionReason: rejectionReason ?? null },
+      });
+    }
 
     timer.section('Serialization')
     timer.point('NextResponse.json')

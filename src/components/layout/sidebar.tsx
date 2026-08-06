@@ -67,6 +67,7 @@ const navConfig: Record<string, NavItem[]> = {
     // { label: 'Billing', href: '/admin/billing', icon: CreditCard },
     { label: 'Complaints', href: '/admin/complaints', icon: FileText },
     { label: 'Banners', href: '/admin/banners', icon: Palette },
+    { label: 'Notifications', href: '/admin/notifications', icon: Bell },
     { label: 'Settings', href: '/admin/settings', icon: Settings },
     { label: 'Login Branding', href: '/admin/settings/login-branding', icon: Palette },
     { label: 'Theme Customizer', href: '/admin/themes/customize', icon: Palette },
@@ -82,6 +83,7 @@ const navConfig: Record<string, NavItem[]> = {
     { label: 'Banners', href: '/merchant/banners', icon: Palette },
     { label: 'Profile', href: '/merchant/profile', icon: Store },
     { label: 'Store Map', href: '/merchant/profile/store-map', icon: MapPin },
+    { label: 'Notifications', href: '/merchant/notifications', icon: Bell },
     { label: 'Settings', href: '/merchant/settings', icon: Settings },
   ],
   company_admin: [
@@ -91,6 +93,7 @@ const navConfig: Record<string, NavItem[]> = {
     { label: 'Complaints', href: '/company/complaints', icon: FileText },
     { label: 'Analytics', href: '/company/analytics', icon: BarChart3 },
     { label: 'Billing', href: '/company/billing', icon: CreditCard },
+    { label: 'Notifications', href: '/company/notifications', icon: Bell },
     { label: 'Settings', href: '/company/settings', icon: Settings },
   ],
   employee: [

@@ -11,6 +11,7 @@ import { sendLaunchPack } from '@/lib/company-activation/launch-pack';
 import { derivePrimaryAdmin, summarizeAdmins } from '@/lib/company-contact';
 import { createPerfTimer } from '@/lib/perf';
 import type { CompanyStatus } from '@/types';
+import { BUSINESS_NOTIFICATION_TEMPLATES, channels, publishBusinessToAdmins, publishBusinessToCompanyAdmins } from '@/services/business-notification.service';
 
 function unauthorized() {
   return NextResponse.json(
@@ -226,6 +227,17 @@ export async function POST(request: NextRequest) {
       return company;
     });
 
+    await publishBusinessToAdmins({
+      type: 'SYSTEM',
+      title: `New company registration: ${result.name}`,
+      message: 'A company registration is waiting for review.',
+      priority: 'HIGH',
+      channels: channels('IN_APP', 'PUSH'),
+      referenceType: 'company',
+      referenceId: result.id,
+      metadata: { companyId: result.id },
+    });
+
     timer.point('sendCompanyAdminInvitation')
     await sendCompanyAdminInvitation({
       email, firstName, lastName, companyName: name, companyId: result.id,
@@ -323,6 +335,24 @@ export async function PATCH(request: NextRequest) {
       } catch (err) {
         console.error('Launch pack failed for company', companyId, err)
       }
+    }
+
+    if (status === 'ACTIVE' || status === 'SUSPENDED') {
+      const template = status === 'ACTIVE'
+        ? BUSINESS_NOTIFICATION_TEMPLATES.companyApproved(company.name)
+        : {
+            type: 'SYSTEM' as const,
+            title: `Company application update: ${company.name}`,
+            message: 'Your company application was rejected. Contact support for details.',
+            priority: 'HIGH' as const,
+          };
+      await publishBusinessToCompanyAdmins(companyId, {
+        ...template,
+        channels: channels('IN_APP', 'PUSH', 'EMAIL'),
+        referenceType: 'company',
+        referenceId: companyId,
+        metadata: { previousStatus, status, reason: reason ?? null },
+      });
     }
 
     timer.section('Serialization')

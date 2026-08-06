@@ -11,6 +11,7 @@ import {
 import { createAuditLog } from "@/services/audit-log.service";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { createPerfTimer } from "@/lib/perf";
+import { BUSINESS_NOTIFICATION_TEMPLATES, channels, publishBusinessToAdmins } from '@/services/business-notification.service';
 
 const VALID_TYPES = [
   "MISLEADING",
@@ -92,6 +93,15 @@ export async function POST(request: NextRequest) {
       entityType: "COMPLAINT",
       entityId: complaint.id,
       metadata: { complaintType, offerId },
+    });
+
+    const template = BUSINESS_NOTIFICATION_TEMPLATES.complaintCreated(`Complaint on offer ${offerId}`);
+    await publishBusinessToAdmins({
+      ...template,
+      channels: channels('IN_APP', 'PUSH'),
+      referenceType: 'complaint',
+      referenceId: complaint.id,
+      metadata: { complaintId: complaint.id, offerId, merchantId: offer.merchantId, employeeId: employee.id },
     });
 
     return NextResponse.json(

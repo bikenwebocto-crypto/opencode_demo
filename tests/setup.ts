@@ -138,5 +138,13 @@ vi.mock('@/lib/prisma', () => ({
     notificationEvent: {
       create: vi.fn(),
     },
+    deviceToken: {
+      findMany: vi.fn(),
+      deleteMany: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      findUnique: vi.fn(),
+    },
   },
 }));

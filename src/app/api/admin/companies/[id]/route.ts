@@ -6,6 +6,7 @@ import { sendLaunchPack, sendBillingReminder } from '@/lib/company-activation/la
 import { derivePrimaryAdmin, ensurePrimaryAdmin, summarizeAdmins } from '@/lib/company-contact';
 import { createAuditLog, fromCurrentUser } from '@/services/audit-log.service';
 import { forbidden } from '@/lib/api-auth';
+import { BUSINESS_NOTIFICATION_TEMPLATES, channels, publishBusinessToCompanyAdmins } from '@/services/business-notification.service';
 
 export async function GET(
   _request: NextRequest,
@@ -179,6 +180,24 @@ export async function PATCH(
         } catch (err) {
           console.error('Launch pack failed for company', id, err)
         }
+      }
+
+      if (body.status === 'ACTIVE' || body.status === 'SUSPENDED') {
+        const template = body.status === 'ACTIVE'
+          ? BUSINESS_NOTIFICATION_TEMPLATES.companyApproved(company.name)
+          : {
+              type: 'COMPANY_DISABLED' as const,
+              title: `Company access suspended: ${company.name}`,
+              message: 'Your company account has been suspended. Contact support for details.',
+              priority: 'HIGH' as const,
+            };
+        await publishBusinessToCompanyAdmins(id, {
+          ...template,
+          channels: channels('IN_APP', 'PUSH', 'EMAIL'),
+          referenceType: 'company',
+          referenceId: id,
+          metadata: { previousStatus, status: body.status, reason: body.reason ?? null },
+        });
       }
     }
 

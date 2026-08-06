@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { validateUserEmail, createAccountForProfile } from '@/services/user-validation.service';
+import { publishBusinessToAdmins } from '@/services/business-notification.service';
 
 function unauthorized() {
   return NextResponse.json(
@@ -81,6 +82,17 @@ export async function POST(request: NextRequest) {
       });
 
       return merchant;
+    });
+
+    await publishBusinessToAdmins({
+      type: 'SYSTEM',
+      title: `New merchant registration: ${result.businessName}`,
+      message: 'A merchant registration is waiting for review.',
+      priority: 'HIGH',
+      channels: ['IN_APP', 'PUSH'],
+      referenceType: 'merchant',
+      referenceId: result.id,
+      metadata: { merchantId: result.id },
     });
 
     return NextResponse.json(

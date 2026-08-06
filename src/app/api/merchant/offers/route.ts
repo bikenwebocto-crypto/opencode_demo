@@ -9,6 +9,7 @@ import {
 import { logReplacementAudit, notifyReplacement } from "@/lib/offer-replacement-notifications";
 import { createAuditLog } from '@/services/audit-log.service';
 import { generateUniqueOfferCode } from '@/lib/offer-code';
+import { BUSINESS_NOTIFICATION_TEMPLATES, channels, publishBusinessNotification, publishBusinessToAdmins } from '@/services/business-notification.service';
 const MIN_TITLE_LENGTH = 5;
 const MAX_TITLE_LENGTH = 255;
 const MAX_DESCRIPTION_LENGTH = 2000;
@@ -550,6 +551,18 @@ export async function POST(request: NextRequest) {
     });
     console.log('** Created offer with ID:', offer.id, 'Status:', offer.status);
 
+    if (!saveAsDraft && !qcResult.passed) {
+      const template = BUSINESS_NOTIFICATION_TEMPLATES.offerValidationFailed(title);
+      await publishBusinessNotification({
+        ...template,
+        recipients: [{ role: 'merchant', id: merchant.id }],
+        channels: channels('IN_APP'),
+        referenceType: 'merchant_offer',
+        referenceId: offer.id,
+        metadata: { validationErrors: qcResult.errors },
+      });
+    }
+
     // Post-creation actions for passing offers
     if (!saveAsDraft && qcResult.passed) {
       if (replacesOfferId) {
@@ -625,6 +638,14 @@ export async function POST(request: NextRequest) {
             },
           });
         }
+        const template = BUSINESS_NOTIFICATION_TEMPLATES.offerSubmitted(title);
+        await publishBusinessToAdmins({
+          ...template,
+          channels: channels('IN_APP', 'PUSH'),
+          referenceType: 'merchant_offer',
+          referenceId: offer.id,
+          metadata: { merchantId: merchant.id },
+        });
       }
       console.log('** Created action queue item for offer approval/replacement',);
       // Audit log
