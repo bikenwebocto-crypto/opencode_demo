@@ -94,7 +94,7 @@ export class PushServiceClass {
     console.log('[PushService] Loaded device tokens for recipients', {
       rows,
     })
-    // return [...new Set(rows.flat().map((row) => row.token))]
+    return [...new Set(rows.flat().map((row) => row.token))]
   }
 
 
