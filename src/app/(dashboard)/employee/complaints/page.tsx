@@ -159,7 +159,7 @@ export default function EmployeeComplaintsPage() {
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <AlertTriangle className="mb-2 h-8 w-8 text-muted-foreground/50" />
             <p className="text-sm font-medium">No complaints filed yet</p>
-            <p className="mt-1 text-xs text-muted-foreground">Click "File a Complaint" to submit your first complaint.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Click &quot;File a Complaint&quot; to submit your first complaint.</p>
           </CardContent>
         </Card>
       ) : (

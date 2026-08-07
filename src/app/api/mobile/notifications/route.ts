@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
 
     const where = {
       employeeId: auth.employee.id,
+      channel: 'IN_APP' as const,
       OR: [
         { referenceType: { not: 'saved_offer' } },
         { referenceType: null },

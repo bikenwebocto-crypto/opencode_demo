@@ -86,7 +86,7 @@ export async function middleware(request: NextRequest) {
 
   const requestHeaders = new Headers(request.headers)
 
-  let response = NextResponse.next({
+  const response = NextResponse.next({
     request: { headers: requestHeaders },
   })
 

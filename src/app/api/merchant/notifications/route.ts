@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get('pageSize') ?? '20')));
     const unreadOnly = searchParams.get('unreadOnly') === 'true';
 
-    const where: any = { merchantId: merchant.id };
+    const where: any = { merchantId: merchant.id, channel: 'IN_APP' };
     if (unreadOnly) where.isRead = false;
 
     const [notifications, total, unreadCount] = await Promise.all([
@@ -38,12 +38,13 @@ export async function GET(request: NextRequest) {
         take: pageSize,
       }),
       prisma.notificationEvent.count({ where }),
-      prisma.notificationEvent.count({ where: { merchantId: merchant.id, isRead: false } }),
+      prisma.notificationEvent.count({ where: { merchantId: merchant.id, channel: 'IN_APP', isRead: false } }),
     ]);
 
     return NextResponse.json({
       success: true,
       data: notifications,
+      unread: unreadCount,
       unreadCount,
       meta: {
         page,
@@ -52,6 +53,7 @@ export async function GET(request: NextRequest) {
         totalPages: Math.ceil(total / pageSize),
         hasNextPage: page * pageSize < total,
         hasPreviousPage: page > 1,
+        unreadCount,
       },
     });
   } catch (error) {
@@ -65,7 +67,7 @@ export async function POST() {
     if (!merchant) return unauthorized();
 
     await prisma.notificationEvent.updateMany({
-      where: { merchantId: merchant.id, isRead: false },
+      where: { merchantId: merchant.id, channel: 'IN_APP', isRead: false },
       data: { isRead: true, readAt: new Date() },
     });
 

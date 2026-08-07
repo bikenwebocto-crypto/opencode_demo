@@ -11,9 +11,13 @@
  * - analytics.aggregate -> Aggregate daily analytics
  * - notification.send   -> Send queued notifications
  * - merchant.expire     -> Expire stale merchant offers
+ *
+ * The polling loop also gates the hourly OfferExpiryScheduler, which checks
+ * for offers expiring within 24h, expiring today, and recently expired.
  */
 
 import { prisma } from '@/lib/prisma';
+import { OfferExpiryScheduler } from './offer-expiry-scheduler';
 
 interface QueueMessage {
   id: string;
@@ -26,6 +30,7 @@ interface QueueMessage {
 class QueueWorker {
   private isRunning = false;
   private pollIntervalMs = 5000;
+  private offerExpiryScheduler = new OfferExpiryScheduler();
 
   async start(): Promise<void> {
     this.isRunning = true;
@@ -33,6 +38,7 @@ class QueueWorker {
 
     while (this.isRunning) {
       await this.processNextBatch();
+      await this.runScheduledJobs();
       await this.sleep(this.pollIntervalMs);
     }
   }
@@ -40,6 +46,13 @@ class QueueWorker {
   stop(): void {
     this.isRunning = false;
     console.log('[QueueWorker] Stopped');
+  }
+
+  private async runScheduledJobs(): Promise<void> {
+    // Hourly offer-expiry checks (deduplicated + idempotent by design).
+    if (this.offerExpiryScheduler.shouldRun()) {
+      await this.offerExpiryScheduler.run();
+    }
   }
 
   private async processNextBatch(): Promise<void> {

@@ -731,6 +731,7 @@ model NotificationEvent {
   body           String?
   channel        NotificationChannel  @default(IN_APP)
   priority       NotificationPriority @default(NORMAL)
+  type           String?              @db.VarChar(50)
   referenceType  String?              @db.VarChar(50)
   referenceId    String?              @db.Uuid
   isRead         Boolean              @default(false)
@@ -742,13 +743,32 @@ model NotificationEvent {
   companyAdmin   CompanyAdmin?        @relation("CompanyAdminNotification", fields: [companyAdminId], references: [id])
   employee       Employee?            @relation("EmployeeNotification", fields: [employeeId], references: [id])
   merchant       Merchant?            @relation("MerchantNotification", fields: [merchantId], references: [id])
+  deliveries     NotificationDelivery[]
 
   @@index([adminId])
   @@index([merchantId])
   @@index([companyAdminId])
   @@index([employeeId])
   @@index([createdAt])
+  @@index([type])
+  @@index([type, createdAt])
   @@map("notification_events")
+}
+
+model NotificationDelivery {
+  id             String                    @id @default(uuid()) @db.Uuid
+  notificationId String                    @db.Uuid
+  channel        NotificationChannel
+  status         NotificationDeliveryStatus @default(PENDING)
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  error          String?
+  createdAt      DateTime                  @default(now())
+  notification   NotificationEvent         @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId])
+  @@index([notificationId, channel])
+  @@map("notification_deliveries")
 }
 
 model NotificationPreference {
@@ -1075,6 +1095,13 @@ enum NotificationPriority {
   NORMAL
   HIGH
   URGENT
+}
+
+enum NotificationDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  SKIPPED
 }
 
 enum RealtimeEventType {

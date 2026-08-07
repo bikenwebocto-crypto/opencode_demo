@@ -21,6 +21,21 @@ export async function activateDeviceToken({
   platform = 'mobile',
 }: ActivateDeviceTokenParams) {
   if (!token) return null
+
+  // Never hijack a token registered to another user. A token belongs to a
+  // single device; if ownership differs, keep the original owner's row.
+  const existing = await prisma.deviceToken.findUnique({
+    where: { token },
+    select: { userId: true },
+  })
+  if (existing && existing.userId !== userId) {
+    console.warn('[DeviceTokenService] Refusing to reassign token to another user', {
+      existingUserId: existing.userId,
+      requestedUserId: userId,
+    })
+    return null
+  }
+
   return prisma.deviceToken.upsert({
     where: { token },
     update: {

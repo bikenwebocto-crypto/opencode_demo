@@ -176,7 +176,7 @@ export default function MerchantProfilePage() {
     ]
 
     for (const f of fieldsToCheck) {
-      let a = (profile as any)[f]
+      const a = (profile as any)[f]
       let b = (values as any)[f]
 
       // Override with freshly uploaded URLs if applicable
@@ -482,7 +482,7 @@ export default function MerchantProfilePage() {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              This is the merchant's primary address. For per-location addresses, go to Branches.
+              This is the merchant&apos;s primary address. For per-location addresses, go to Branches.
             </p>
             <Input
               value={values.addressLine1 ?? ''}

@@ -22,6 +22,18 @@ export const BUSINESS_NOTIFICATION_TEMPLATES = {
     message: 'Your offer has been approved and is now live.',
     priority: 'HIGH',
   }),
+  offerNowLive: (title: string): BusinessNotificationTemplate => ({
+    type: 'NEW_OFFER',
+    title: `New offer: ${title}`,
+    message: 'A new offer is now available.',
+    priority: 'NORMAL',
+  }),
+  offerUpdated: (title: string): BusinessNotificationTemplate => ({
+    type: 'OFFER_UPDATED',
+    title: `Offer updated: ${title}`,
+    message: 'An offer has been updated.',
+    priority: 'NORMAL',
+  }),
   offerRejected: (title: string): BusinessNotificationTemplate => ({
     type: 'OFFER_REJECTED',
     title: `Offer rejected: ${title}`,
@@ -106,6 +118,38 @@ export async function publishBusinessToCompanyAdmins(
   } catch (error) {
     console.error('[BusinessNotification] Company-admin publish failed', {
       companyId,
+      type: options.type,
+      referenceType: options.referenceType,
+      referenceId: options.referenceId,
+      error,
+    })
+  }
+}
+
+export async function publishBusinessToEmployees(
+  companyId: string,
+  options: Omit<PublishNotificationOptions, 'recipients'>,
+): Promise<void> {
+  try {
+    await NotificationService.publishToEmployees(companyId, options)
+  } catch (error) {
+    console.error('[BusinessNotification] Employee publish failed', {
+      companyId,
+      type: options.type,
+      referenceType: options.referenceType,
+      referenceId: options.referenceId,
+      error,
+    })
+  }
+}
+
+export async function publishBusinessToAllEmployees(
+  options: Omit<PublishNotificationOptions, 'recipients'>,
+): Promise<void> {
+  try {
+    await NotificationService.publishToAllEmployees(options)
+  } catch (error) {
+    console.error('[BusinessNotification] All-employee publish failed', {
       type: options.type,
       referenceType: options.referenceType,
       referenceId: options.referenceId,

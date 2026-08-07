@@ -31,10 +31,13 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const authHeader = request.headers.get('Authorization')
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+  console.log(' ** Token in sync-admin route:', token);
 
   const { data: { user }, error } = token
     ? await supabase.auth.getUser(token)
     : await supabase.auth.getUser()
+
+    console.log(' ** User in sync-admin route:', user);
 
   if (error || !user) {
     return NextResponse.json(

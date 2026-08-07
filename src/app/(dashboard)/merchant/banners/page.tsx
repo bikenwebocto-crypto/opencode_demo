@@ -309,7 +309,7 @@ export default function MerchantBannersPage() {
               <Skeleton className="h-16 w-full" />
             </div>
           ) : bookings.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No banner bookings yet. Click "Book a Banner" to get started.</p>
+            <p className="text-sm text-muted-foreground">No banner bookings yet. Click &quot;Book a Banner&quot; to get started.</p>
           ) : (
             <>
               <ul className="space-y-2">

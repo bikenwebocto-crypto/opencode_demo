@@ -1,7 +1,13 @@
 import { prisma } from '@/lib/prisma'
 import { emailService } from '@/lib/email/email'
 import type { NotificationType } from '@/types/notification'
-import type { NotificationChannel, NotificationPriority, NotificationEvent } from '@prisma/client'
+import type { Prisma } from '@prisma/client'
+import type {
+  NotificationChannel,
+  NotificationDeliveryStatus,
+  NotificationPriority,
+  NotificationEvent,
+} from '@prisma/client'
 import { PushService } from './push.service'
 
 // ============================================================
@@ -75,29 +81,61 @@ class NotificationServiceClass {
     // Group recipients by role for batch processing
     const grouped = this.groupRecipients(recipients)
 
+    // Recipients eligible for each delivery channel after preference filtering
+    const pushRecipients: Recipient[] = []
+    const emailRecipients: Recipient[] = []
+    const smsRecipients: Recipient[] = []
+
     for (const [role, ids] of Object.entries(grouped)) {
+      const roleKey = role as RecipientRole
+      const preferenceMap = await this.loadPreferences(roleKey, ids, type)
+
+      // Resolve which channels each recipient accepts, applying their
+      // NotificationPreference (default: in-app, email, push on; SMS off).
+      const channelsByRecipient = new Map<string, NotificationChannel[]>()
+      for (const id of ids) {
+        const enabled = this.resolveEnabledChannels(preferenceMap.get(id), channels)
+        channelsByRecipient.set(id, enabled)
+        const recipient: Recipient = { role: roleKey, id }
+        if (enabled.includes('PUSH')) pushRecipients.push(recipient)
+        if (enabled.includes('EMAIL')) emailRecipients.push(recipient)
+        if (enabled.includes('SMS')) smsRecipients.push(recipient)
+      }
+
       const notifications = await this.createForRole(
-        role as RecipientRole,
+        roleKey,
         ids,
-        { type, title, message, priority, channels, referenceType, referenceId }
+        { type, title, message, priority, channels, referenceType, referenceId },
+        channelsByRecipient
       )
       createdNotifications.push(...notifications)
     }
 
-    // Dispatch emails asynchronously (non-blocking)
-    if (channels.includes('EMAIL')) {
-      this.dispatchEmails(createdNotifications, recipients).catch((err) => {
-        console.error('[NotificationService] Email dispatch failed:', err)
-      })
+    // Map each recipient back to the event created for them so the async
+    // channel dispatchers can update per-channel delivery state.
+    const recipientToNotification = new Map<string, NotificationEvent>()
+    for (const notification of createdNotifications) {
+      for (const [role, fkField] of Object.entries(this.getForeignKeyFields())) {
+        const recipientId = (notification as any)[fkField]
+        if (recipientId) {
+          recipientToNotification.set(`${role}:${recipientId}`, notification)
+          break
+        }
+      }
     }
+    const notificationIdsFor = (list: Recipient[]): string[] =>
+      list
+        .map((r) => recipientToNotification.get(`${r.role}:${r.id}`)?.id)
+        .filter((id): id is string => Boolean(id))
 
-    if (channels.includes('PUSH')) {
+    // Dispatch push asynchronously (non-blocking)
+    if (pushRecipients.length) {
       console.log('[NotificationService] Starting push delivery', {
         type,
-        recipientCount: recipients.length,
+        recipientCount: pushRecipients.length,
         title,
       })
-      void PushService.sendToRecipients(recipients, {
+      void PushService.sendToRecipients(pushRecipients, {
         title,
         body: message,
         data: {
@@ -106,17 +144,57 @@ class NotificationServiceClass {
           ...(referenceId ? { referenceId } : {}),
           ...this.stringifyMetadata(metadata),
         },
-      }).then((result) => {
-        console.log('[NotificationService] Push delivery result', {
-          type,
-          ...result,
-        })
-        if (result.failed > 0) {
-          console.error('[NotificationService] Push delivery partially failed:', result)
-        }
-      }).catch((err) => {
-        console.error('[NotificationService] Push delivery failed:', err)
       })
+        .then(async (result) => {
+          console.log('[NotificationService] Push delivery result', {
+            type,
+            ...result,
+          })
+          const ids = notificationIdsFor(pushRecipients)
+          const updated = await this.updateDeliveryStatus(
+            ids,
+            'PUSH',
+            result.successful > 0 ? 'DELIVERED' : 'FAILED',
+            result.successful > 0 ? undefined : result.errors?.[0]?.code
+          )
+          console.log('[NotificationService] Mobile push delivered & delivery record synced', {
+            type,
+            title,
+            successful: result.successful,
+            failed: result.failed,
+            status: result.successful > 0 ? 'DELIVERED' : 'FAILED',
+            deliveryRecordsUpdated: updated.count,
+          })
+          if (result.failed > 0) {
+            console.error('[NotificationService] Push delivery partially failed:', result)
+          }
+        })
+        .catch((err) => {
+          console.error('[NotificationService] Push delivery failed:', err)
+          void this.updateDeliveryStatus(
+            notificationIdsFor(pushRecipients),
+            'PUSH',
+            'FAILED',
+            String(err)
+          )
+        })
+    }
+
+    // Dispatch emails asynchronously (non-blocking)
+    if (emailRecipients.length) {
+      this.dispatchEmails(createdNotifications, emailRecipients).catch((err) => {
+        console.error('[NotificationService] Email dispatch failed:', err)
+      })
+    }
+
+    // No SMS provider is configured; record intent so delivery is auditable.
+    if (smsRecipients.length) {
+      void this.updateDeliveryStatus(
+        notificationIdsFor(smsRecipients),
+        'SMS',
+        'SKIPPED',
+        'SMS channel not configured'
+      )
     }
 
     return createdNotifications
@@ -183,9 +261,73 @@ class NotificationServiceClass {
     })
   }
 
+  /**
+   * Publish to all active employees across the platform.
+   * Used for marketplace-wide broadcasts such as "new offer published".
+   */
+  async publishToAllEmployees(
+    options: Omit<PublishNotificationOptions, 'recipients'>
+  ): Promise<NotificationEvent[]> {
+    const employees = await prisma.employee.findMany({
+      where: { status: 'ACTIVE', deletedAt: null },
+      select: { id: true },
+    })
+    return this.publish({
+      ...options,
+      recipients: employees.map((e) => ({ role: 'employee', id: e.id })),
+    })
+  }
+
   // ============================================================
   // PRIVATE METHODS
   // ============================================================
+
+  private getForeignKeyFields(): Record<RecipientRole, string> {
+    return {
+      admin: 'adminId',
+      merchant: 'merchantId',
+      company_admin: 'companyAdminId',
+      employee: 'employeeId',
+    }
+  }
+
+  private getForeignKeyField(role: RecipientRole): string {
+    return this.getForeignKeyFields()[role]
+  }
+
+  private async loadPreferences(
+    role: RecipientRole,
+    ids: string[],
+    type: NotificationType
+  ): Promise<Map<string, NotificationPreferenceRecord>> {
+    if (!ids.length) return new Map()
+    const rows = await prisma.notificationPreference.findMany({
+      where: { role, notificationType: type, userId: { in: ids } },
+    })
+    const map = new Map<string, NotificationPreferenceRecord>()
+    for (const row of rows) map.set(row.userId, row as NotificationPreferenceRecord)
+    return map
+  }
+
+  private resolveEnabledChannels(
+    pref: NotificationPreferenceRecord | undefined,
+    requested: NotificationChannel[]
+  ): NotificationChannel[] {
+    const enabled: NotificationChannel[] = []
+    if (requested.includes('IN_APP') && (pref ? pref.enableInApp : true)) {
+      enabled.push('IN_APP')
+    }
+    if (requested.includes('EMAIL') && (pref ? pref.enableEmail : true)) {
+      enabled.push('EMAIL')
+    }
+    if (requested.includes('PUSH') && (pref ? pref.enablePush : true)) {
+      enabled.push('PUSH')
+    }
+    if (requested.includes('SMS') && (pref ? pref.enableSms : false)) {
+      enabled.push('SMS')
+    }
+    return enabled
+  }
 
   private groupRecipients(recipients: Recipient[]): Record<RecipientRole, string[]> {
     const grouped: Record<RecipientRole, string[]> = {
@@ -211,41 +353,51 @@ class NotificationServiceClass {
       channels: NotificationChannel[]
       referenceType?: string
       referenceId?: string
-    }
+    },
+    channelsByRecipient: Map<string, NotificationChannel[]>
   ): Promise<NotificationEvent[]> {
     if (!ids.length) return []
 
     const foreignKey = this.getForeignKeyField(role)
-    let targetIds = ids
+
+    // Only recipients that kept at least one enabled channel get an event record.
+    const recipientsWithChannels = ids.filter(
+      (id) => (channelsByRecipient.get(id)?.length ?? 0) > 0
+    )
+    if (!recipientsWithChannels.length) return []
+
+    let targetIds = recipientsWithChannels
     if (data.referenceId) {
       const existing = await prisma.notificationEvent.findMany({
         where: {
-          referenceType: data.referenceType ?? data.type,
           referenceId: data.referenceId,
           title: data.title,
-          OR: ids.map((id) => ({ [foreignKey]: id })),
+          AND: [
+            { OR: [{ type: data.type }, { referenceType: data.type }] },
+            { OR: recipientsWithChannels.map((id) => ({ [foreignKey]: id })) },
+          ],
         },
         select: { [foreignKey]: true } as any,
       })
       const existingIds = new Set(existing.map((row) => (row as any)[foreignKey]))
-      targetIds = ids.filter((id) => !existingIds.has(id))
+      targetIds = recipientsWithChannels.filter((id) => !existingIds.has(id))
     }
     if (!targetIds.length) return []
 
     const now = new Date()
-    const primaryChannel = data.channels[0] ?? 'IN_APP'
 
     // Build batch insert payloads
     const payloads = targetIds.map((id) => {
-      const fkField = foreignKey
+      const channels = channelsByRecipient.get(id) ?? []
       return {
         recipientType: role,
-        [fkField]: id,
+        [foreignKey]: id,
         title: data.title,
         body: data.message ?? null,
-        channel: primaryChannel,
+        channel: channels[0] ?? 'IN_APP',
         priority: data.priority,
-        referenceType: data.referenceType ?? data.type,
+        type: data.type,
+        referenceType: data.referenceType ?? null,
         referenceId: data.referenceId ?? null,
         isRead: false,
         sentAt: now,
@@ -258,32 +410,79 @@ class NotificationServiceClass {
       skipDuplicates: true,
     })
 
+    if (!result.count) return []
+
     // Fetch created records (createMany doesn't return them)
     // Use a findMany with the same conditions
     const created = await prisma.notificationEvent.findMany({
       where: {
-        referenceType: data.referenceType ?? data.type,
+        type: data.type,
+        referenceType: data.referenceType ?? null,
         referenceId: data.referenceId ?? null,
         createdAt: { gte: new Date(now.getTime() - 1000) },
-        OR: ids.map((id) => ({
+        OR: targetIds.map((id) => ({
           [foreignKey]: id,
         })),
       },
       orderBy: { createdAt: 'desc' },
-      take: targetIds.length,
+      take: result.count,
     })
+
+    // Record per-channel delivery state.
+    const deliveryData: Prisma.NotificationDeliveryCreateManyInput[] = []
+    for (const notification of created) {
+      const recipientId = (notification as any)[foreignKey] as string | undefined
+      if (!recipientId) continue
+      const channels = channelsByRecipient.get(recipientId) ?? []
+      for (const channel of channels) {
+        if (channel === 'IN_APP') {
+          deliveryData.push({
+            notificationId: notification.id,
+            channel,
+            status: 'DELIVERED',
+            sentAt: now,
+            deliveredAt: now,
+          })
+        } else {
+          deliveryData.push({ notificationId: notification.id, channel, status: 'PENDING' })
+        }
+      }
+    }
+    if (deliveryData.length) {
+      await prisma.notificationDelivery.createMany({ data: deliveryData })
+    }
 
     return created
   }
 
-  private getForeignKeyField(role: RecipientRole): string {
-    const map: Record<RecipientRole, string> = {
-      admin: 'adminId',
-      merchant: 'merchantId',
-      company_admin: 'companyAdminId',
-      employee: 'employeeId',
+  private async updateDeliveryStatus(
+    notificationIds: string[],
+    channel: NotificationChannel,
+    status: NotificationDeliveryStatus,
+    error?: string
+  ): Promise<{ count: number }> {
+    const uniqueIds = [...new Set(notificationIds.filter(Boolean))]
+    if (!uniqueIds.length) return { count: 0 }
+    const now = new Date()
+    const data: Prisma.NotificationDeliveryUpdateManyMutationInput = { status }
+    if (status === 'DELIVERED') {
+      data.sentAt = now
+      data.deliveredAt = now
+    } else if (status !== 'SKIPPED') {
+      data.sentAt = now
     }
-    return map[role]
+    if (error) data.error = error
+    const result = await prisma.notificationDelivery.updateMany({
+      where: { notificationId: { in: uniqueIds }, channel },
+      data,
+    })
+    console.log(`[NotificationService] Delivery record updated: ${channel} -> ${status}`, {
+      channel,
+      status,
+      recordsUpdated: result.count,
+      error: error ?? null,
+    })
+    return result
   }
 
   private async dispatchEmails(
@@ -292,6 +491,9 @@ class NotificationServiceClass {
   ): Promise<void> {
     // Deduplicate recipients
     const uniqueRecipients = [...new Map(recipients.map((r) => [`${r.role}:${r.id}`, r])).values()]
+
+    const delivered: string[] = []
+    const failed: string[] = []
 
     for (const recipient of uniqueRecipients) {
       const notification = notifications.find((n) => {
@@ -302,21 +504,33 @@ class NotificationServiceClass {
 
       // Look up email
       const email = await this.lookupEmail(recipient)
-      if (!email) continue
+      if (!email) {
+        failed.push(notification.id)
+        continue
+      }
 
-      // Send email
-      await emailService.sendEmail({
-        to: email,
-        subject: notification.title,
-        html: this.buildEmailHtml(notification),
-      })
+      try {
+        // Send email
+        await emailService.sendEmail({
+          to: email,
+          subject: notification.title,
+          html: this.buildEmailHtml(notification),
+        })
 
-      // Mark as delivered
-      await prisma.notificationEvent.update({
-        where: { id: notification.id },
-        data: { deliveredAt: new Date() },
-      })
+        delivered.push(notification.id)
+
+        // Mark the event as delivered for backward compatibility
+        await prisma.notificationEvent.update({
+          where: { id: notification.id },
+          data: { deliveredAt: new Date() },
+        })
+      } catch {
+        failed.push(notification.id)
+      }
     }
+
+    await this.updateDeliveryStatus(delivered, 'EMAIL', 'DELIVERED')
+    await this.updateDeliveryStatus(failed, 'EMAIL', 'FAILED', 'Email send failed')
   }
 
   private async lookupEmail(recipient: Recipient): Promise<string | null> {

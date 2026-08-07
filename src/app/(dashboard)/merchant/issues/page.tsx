@@ -251,7 +251,7 @@ export default function MerchantIssuesPage() {
               <Skeleton className="h-16 w-full" />
             </div>
           ) : !data?.data || data.data.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No issues. Click "New Issue" to create one.</p>
+            <p className="text-sm text-muted-foreground">No issues. Click &quot;New Issue&quot; to create one.</p>
           ) : (
             <>
               <ul className="space-y-2">

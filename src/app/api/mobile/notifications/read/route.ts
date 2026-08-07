@@ -25,8 +25,8 @@ export async function PATCH(request: NextRequest) {
 
     const where =
       Array.isArray(ids) && ids.length > 0
-        ? { id: { in: ids as string[] }, employeeId: auth.employee.id, isRead: false }
-        : { employeeId: auth.employee.id, isRead: false }
+        ? { id: { in: ids as string[] }, employeeId: auth.employee.id, channel: 'IN_APP' as const, isRead: false }
+        : { employeeId: auth.employee.id, channel: 'IN_APP' as const, isRead: false }
 
     const { count } = await prisma.notificationEvent.updateMany({
       where,

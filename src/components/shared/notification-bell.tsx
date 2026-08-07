@@ -54,12 +54,14 @@ export function NotificationBell({
   const storeUnreadCount = useNotificationStore((s) => s.unreadCount)
 
   const { data } = useQuery({
-    queryKey: ['notification-bell'],
+    queryKey: ['notification-bell', fetchUrl],
     queryFn: async () => {
       const res = await fetch(fetchUrl)
       const json = await res.json()
       if (!res.ok) return { data: [], unread: 0 }
-      return { data: (json.data ?? []) as Notification[], unread: json.unread ?? 0 }
+      const unread =
+        json.unread ?? json.unreadCount ?? json.meta?.unreadCount ?? json.meta?.unread ?? 0
+      return { data: (json.data ?? []) as Notification[], unread: unread as number }
     },
     refetchInterval: 30000,
   })
@@ -69,7 +71,7 @@ export function NotificationBell({
       const res = await fetch(markReadUrl(id), { method: 'PATCH' })
       return res.json()
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notification-bell'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notification-bell', fetchUrl] }),
   })
 
   const markAll = useMutation({
@@ -81,7 +83,7 @@ export function NotificationBell({
         await Promise.all(unread.map((n) => fetch(markReadUrl(n.id), { method: 'PATCH' })))
       }
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notification-bell'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notification-bell', fetchUrl] }),
   })
 
   // Close on outside click

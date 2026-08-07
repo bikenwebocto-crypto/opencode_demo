@@ -4,7 +4,7 @@ import { createAuditLog } from "@/services/audit-log.service";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { getEntityKindFromReferenceType } from "@/lib/action-queue-types";
 import { ensureOfferQRCode } from "@/lib/offer-qr";
-import { BUSINESS_NOTIFICATION_TEMPLATES, channels, publishBusinessNotification, publishBusinessToAdmins, publishBusinessToCompanyAdmins } from '@/services/business-notification.service';
+import { BUSINESS_NOTIFICATION_TEMPLATES, channels, publishBusinessNotification, publishBusinessToAdmins, publishBusinessToCompanyAdmins, publishBusinessToAllEmployees } from '@/services/business-notification.service';
 
 function unauthorized() {
   return NextResponse.json(
@@ -537,6 +537,16 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
           metadata: { approvedBy: adminId },
         });
 
+        // Event: New Offer Published — broadcast to all active employees.
+        // Individual employees can opt out via notification preferences.
+        await publishBusinessToAllEmployees({
+          ...BUSINESS_NOTIFICATION_TEMPLATES.offerNowLive(offer.title),
+          channels: channels('IN_APP', 'PUSH'),
+          referenceType: 'merchant_offer',
+          referenceId: offer.id,
+          metadata: { merchantId: offer.merchantId, approvedBy: adminId },
+        });
+
         break;
       }
 
@@ -632,6 +642,19 @@ async function performApprove(queueItem: any, adminId: string, now: Date) {
           referenceType: 'merchant_offer',
           referenceId: newOffer.id,
           metadata: { replacedOfferId: oldOfferId ?? null, approvedBy: adminId },
+        });
+
+        // Event: New Offer Published — the replacement offer is now live.
+        await publishBusinessToAllEmployees({
+          ...BUSINESS_NOTIFICATION_TEMPLATES.offerNowLive(newOffer.title),
+          channels: channels('IN_APP', 'PUSH'),
+          referenceType: 'merchant_offer',
+          referenceId: newOffer.id,
+          metadata: {
+            merchantId: newOffer.merchantId,
+            replacedOfferId: oldOfferId ?? null,
+            approvedBy: adminId,
+          },
         });
 
         // Generate QR for IN_STORE_QR replacement offers

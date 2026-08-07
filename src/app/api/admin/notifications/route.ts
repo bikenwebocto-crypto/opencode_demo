@@ -13,10 +13,10 @@ export async function GET(request: NextRequest) {
     const unreadOnly = searchParams.get('unread') === 'true'
     const limit = Math.min(parseInt(searchParams.get('limit') ?? '50'), 100)
 
-    const where: any = { adminId: user.profileId }
+    const where: any = { adminId: user.profileId, channel: 'IN_APP' }
     if (unreadOnly) where.isRead = false
 
-    const [data, unread] = await Promise.all([
+    const [data, unread, total] = await Promise.all([
       prisma.notificationEvent.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -25,9 +25,21 @@ export async function GET(request: NextRequest) {
       prisma.notificationEvent.count({
         where: { ...where, isRead: false },
       }),
+      prisma.notificationEvent.count({ where }),
     ])
 
-    return NextResponse.json({ success: true, data, unread })
+    return NextResponse.json({
+      success: true,
+      data,
+      unread,
+      meta: {
+        page: 1,
+        pageSize: limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        unread,
+      },
+    })
   } catch (error) {
     console.error('[Admin Notifications]', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -42,7 +54,7 @@ export async function POST() {
     }
 
     await prisma.notificationEvent.updateMany({
-      where: { adminId: user.profileId, isRead: false },
+      where: { adminId: user.profileId, channel: 'IN_APP', isRead: false },
       data: { isRead: true, readAt: new Date() },
     })
 

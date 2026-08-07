@@ -5,12 +5,14 @@
 export type NotificationType =
   | 'SYSTEM'
   | 'ANNOUNCEMENT'
+  | 'NEW_OFFER'
   | 'OFFER_APPROVED'
   | 'OFFER_REJECTED'
   | 'OFFER_REPLACED'
   | 'OFFER_REDEEMED'
   | 'OFFER_EXPIRING'
   | 'OFFER_EXPIRED'
+  | 'OFFER_UPDATED'
   | 'MERCHANT_APPROVED'
   | 'MERCHANT_REJECTED'
   | 'COMPANY_APPROVED'
@@ -39,12 +41,14 @@ export type NotificationType =
 export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   SYSTEM: 'System',
   ANNOUNCEMENT: 'Announcement',
+  NEW_OFFER: 'New Offer',
   OFFER_APPROVED: 'Offer Approved',
   OFFER_REJECTED: 'Offer Rejected',
   OFFER_REPLACED: 'Offer Replaced',
   OFFER_REDEEMED: 'Offer Redeemed',
   OFFER_EXPIRING: 'Offer Expiring',
   OFFER_EXPIRED: 'Offer Expired',
+  OFFER_UPDATED: 'Offer Updated',
   MERCHANT_APPROVED: 'Merchant Approved',
   MERCHANT_REJECTED: 'Merchant Rejected',
   COMPANY_APPROVED: 'Company Approved',

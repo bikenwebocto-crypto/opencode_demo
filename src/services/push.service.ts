@@ -47,6 +47,9 @@ export class PushServiceClass {
     if (!recipients.length) return result
 
     const tokens = await this.loadTokens(recipients)
+    console.log('[PushService] Loaded tokens for recipients', {
+      token: tokens,
+    })
     if (!tokens.length) return result
 
     const messaging = getFirebaseAdminMessaging()
@@ -88,8 +91,10 @@ export class PushServiceClass {
         select: { token: true },
       })
     ))
-
-    return [...new Set(rows.flat().map((row) => row.token))]
+    console.log('[PushService] Loaded device tokens for recipients', {
+      rows,
+    })
+    // return [...new Set(rows.flat().map((row) => row.token))]
   }
 
 
@@ -118,6 +123,13 @@ export class PushServiceClass {
       }
 
       const response = await messaging.sendEachForMulticast(message)
+
+      console.log('[PushService] Multicast delivered', {
+        attempted: tokens.length,
+        successful: response.successCount,
+        failed: response.failureCount,
+        tokensExhausted: response.responses.every((entry) => entry.success),
+      })
 
       const invalidTokens: string[] = []
       const errors = new Map<string, number>()

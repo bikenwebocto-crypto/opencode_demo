@@ -96,7 +96,7 @@ export default function EmployeeHomePage() {
           <div className="flex items-start gap-3 rounded-md border border-yellow-300 bg-yellow-50 p-4 text-sm text-yellow-900 dark:border-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-200">
             <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
             <div>
-              <p className="font-medium">Your company's access is currently inactive.</p>
+              <p className="font-medium">Your company&apos;s access is currently inactive.</p>
               <p className="mt-1 text-xs">
                 Please contact your company administrator to restore access. You can still
                 view your profile and settings, but offers and redemptions are disabled.

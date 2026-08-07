@@ -45,11 +45,21 @@ export async function POST(request: NextRequest) {
     })
 
     if (existing) {
+      // Never overwrite a token that belongs to another user/device.
+      if (existing.userId !== user.id) {
+        return NextResponse.json(
+          { error: 'Token is registered to another user' },
+          { status: 409 },
+        )
+      }
+
       await prisma.deviceToken.update({
         where: { token },
         data: {
           userId: user.id,
           role: user.userType,
+          platform,
+          deviceId: deviceId ?? existing.deviceId,
           lastSeen: new Date(),
           enabled: true,
         },
