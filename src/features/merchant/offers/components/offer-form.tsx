@@ -384,7 +384,7 @@ export function OfferForm({
     termsAndConditions: form.termsAndConditions || null,
     imageUrls: form.imageUrls,
     offerType: OFFER_TYPE_MAP[form.offerType] ?? form.offerType,
-    discountValue: Number(form.discountValue),
+    discountValue: form.discountValue ? Number(form.discountValue) : null,
     discountMax: form.discountMax ? Number(form.discountMax) : null,
     discountPercent: form.discountPercent ? Number(form.discountPercent) : null,
     minimumSpend: form.minimumSpend ? Number(form.minimumSpend) : null,

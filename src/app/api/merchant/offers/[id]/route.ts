@@ -178,18 +178,18 @@ export async function PATCH(
         const pricingConfig: Record<string, unknown> = {};
         if (body.offerType || body.discountValue !== undefined || body.discountMax !== undefined || body.discountPercent !== undefined || body.minimumSpend !== undefined) {
           const config = existing.pricing?.configuration as Record<string, unknown> ?? {};
-          pricingConfig.amount = body.discountValue !== undefined ? Number(body.discountValue) : config.amount;
-          pricingConfig.percent = body.discountPercent !== undefined ? Number(body.discountPercent) : config.percent;
-          pricingConfig.maximumDiscount = body.discountMax !== undefined ? Number(body.discountMax) : config.maximumDiscount;
-          pricingConfig.minimumSpend = body.minimumSpend !== undefined ? Number(body.minimumSpend) : config.minimumSpend;
+          pricingConfig.amount = body.discountValue !== undefined ? (body.discountValue === null || body.discountValue === '' ? config.amount : Number(body.discountValue)) : config.amount;
+          pricingConfig.percent = body.discountPercent !== undefined ? (body.discountPercent === null || body.discountPercent === '' ? config.percent : Number(body.discountPercent)) : config.percent;
+          pricingConfig.maximumDiscount = body.discountMax !== undefined ? (body.discountMax === null || body.discountMax === '' ? config.maximumDiscount : Number(body.discountMax)) : config.maximumDiscount;
+          pricingConfig.minimumSpend = body.minimumSpend !== undefined ? (body.minimumSpend === null || body.minimumSpend === '' ? config.minimumSpend : Number(body.minimumSpend)) : config.minimumSpend;
         }
         if (body.buyQuantity !== undefined || body.buyItem !== undefined || body.getQuantity !== undefined || body.freeItem !== undefined || body.maxFreeItems !== undefined) {
           const config = existing.pricing?.configuration as Record<string, unknown> ?? {};
-          pricingConfig.buyQuantity = body.buyQuantity !== undefined ? Number(body.buyQuantity) : config.buyQuantity;
-          pricingConfig.buyItem = body.buyItem !== undefined ? body.buyItem : config.buyItem;
-          pricingConfig.getQuantity = body.getQuantity !== undefined ? Number(body.getQuantity) : config.getQuantity;
-          pricingConfig.freeItem = body.freeItem !== undefined ? body.freeItem : config.freeItem;
-          pricingConfig.maxFreeItems = body.maxFreeItems !== undefined ? Number(body.maxFreeItems) : config.maxFreeItems;
+          pricingConfig.buyQuantity = body.buyQuantity !== undefined ? (body.buyQuantity === null || body.buyQuantity === '' ? config.buyQuantity : Number(body.buyQuantity)) : config.buyQuantity;
+          pricingConfig.buyItem = body.buyItem !== undefined ? (body.buyItem === null || body.buyItem === '' ? config.buyItem : body.buyItem) : config.buyItem;
+          pricingConfig.getQuantity = body.getQuantity !== undefined ? (body.getQuantity === null || body.getQuantity === '' ? config.getQuantity : Number(body.getQuantity)) : config.getQuantity;
+          pricingConfig.freeItem = body.freeItem !== undefined ? (body.freeItem === null || body.freeItem === '' ? config.freeItem : body.freeItem) : config.freeItem;
+          pricingConfig.maxFreeItems = body.maxFreeItems !== undefined ? (body.maxFreeItems === null || body.maxFreeItems === '' ? config.maxFreeItems : Number(body.maxFreeItems)) : config.maxFreeItems;
         }
 
         await tx.offerPricing.upsert({
@@ -263,7 +263,7 @@ export async function PATCH(
           update: {
             ...(body.redemptionType !== undefined && { redemptionType: body.redemptionType }),
             ...(Object.keys(redemptionConfig).length > 0 && { configuration: (redemptionConfig as any) }),
-            ...(body.maxRedemptions !== undefined && { maxRedemptions: Number(body.maxRedemptions) }),
+            ...(body.maxRedemptions !== undefined && { maxRedemptions: body.maxRedemptions === null || body.maxRedemptions === '' ? null : Number(body.maxRedemptions) }),
             ...(body.daysOfWeek !== undefined && {
               daysOfWeek: Array.isArray(body.daysOfWeek) ? body.daysOfWeek : [0, 1, 2, 3, 4, 5, 6],
             }),

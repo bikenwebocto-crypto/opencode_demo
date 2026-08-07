@@ -203,15 +203,15 @@ export async function POST(
       ) {
         const config = (offer.pricing?.configuration as Record<string, unknown>) ?? {};
         const pricingConfig: Record<string, unknown> = { ...config };
-        if (body.discountValue !== undefined) pricingConfig.amount = Number(body.discountValue);
-        if (body.discountPercent !== undefined) pricingConfig.percent = Number(body.discountPercent);
-        if (body.discountMax !== undefined) pricingConfig.maximumDiscount = Number(body.discountMax);
-        if (body.minimumSpend !== undefined) pricingConfig.minimumSpend = Number(body.minimumSpend);
-        if (body.buyQuantity !== undefined) pricingConfig.buyQuantity = Number(body.buyQuantity);
-        if (body.buyItem !== undefined) pricingConfig.buyItem = body.buyItem;
-        if (body.getQuantity !== undefined) pricingConfig.getQuantity = Number(body.getQuantity);
-        if (body.freeItem !== undefined) pricingConfig.freeItem = body.freeItem;
-        if (body.maxFreeItems !== undefined) pricingConfig.maxFreeItems = Number(body.maxFreeItems);
+        if (body.discountValue !== undefined) pricingConfig.amount = body.discountValue === null || body.discountValue === '' ? config.amount : Number(body.discountValue);
+        if (body.discountPercent !== undefined) pricingConfig.percent = body.discountPercent === null || body.discountPercent === '' ? config.percent : Number(body.discountPercent);
+        if (body.discountMax !== undefined) pricingConfig.maximumDiscount = body.discountMax === null || body.discountMax === '' ? config.maximumDiscount : Number(body.discountMax);
+        if (body.minimumSpend !== undefined) pricingConfig.minimumSpend = body.minimumSpend === null || body.minimumSpend === '' ? config.minimumSpend : Number(body.minimumSpend);
+        if (body.buyQuantity !== undefined) pricingConfig.buyQuantity = body.buyQuantity === null || body.buyQuantity === '' ? config.buyQuantity : Number(body.buyQuantity);
+        if (body.buyItem !== undefined) pricingConfig.buyItem = body.buyItem === null || body.buyItem === '' ? config.buyItem : body.buyItem;
+        if (body.getQuantity !== undefined) pricingConfig.getQuantity = body.getQuantity === null || body.getQuantity === '' ? config.getQuantity : Number(body.getQuantity);
+        if (body.freeItem !== undefined) pricingConfig.freeItem = body.freeItem === null || body.freeItem === '' ? config.freeItem : body.freeItem;
+        if (body.maxFreeItems !== undefined) pricingConfig.maxFreeItems = body.maxFreeItems === null || body.maxFreeItems === '' ? config.maxFreeItems : Number(body.maxFreeItems);
 
         await tx.offerPricing.upsert({
           where: { offerId: id },
@@ -255,7 +255,7 @@ export async function POST(
           update: {
             ...(body.redemptionType !== undefined && { redemptionType: body.redemptionType }),
             ...(Object.keys(redemptionConfig).length > 0 && { configuration: redemptionConfig as any }),
-            ...(body.maxRedemptions !== undefined && { maxRedemptions: Number(body.maxRedemptions) }),
+            ...(body.maxRedemptions !== undefined && { maxRedemptions: body.maxRedemptions === null || body.maxRedemptions === '' ? null : Number(body.maxRedemptions) }),
             ...(body.daysOfWeek !== undefined && {
               daysOfWeek: Array.isArray(body.daysOfWeek) ? body.daysOfWeek : [0, 1, 2, 3, 4, 5, 6],
             }),

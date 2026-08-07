@@ -22,14 +22,14 @@ function initPrisma() {
     client.$on('query', (e: any) => {
       if (!globalForPrisma.firstQueryDone) {
         const coldMs = performance.now() - (globalForPrisma.prismaInitTime ?? initStart);
-        console.log(`[COLD_START] First Prisma query executed ${coldMs.toFixed(1)}ms after Client init`);
-        console.log(`[COLD_START] SQL: ${e.query.substring(0, 120)}`);
+        // console.log(`[COLD_START] First Prisma query executed ${coldMs.toFixed(1)}ms after Client init`);
+        // console.log(`[COLD_START] SQL: ${e.query.substring(0, 120)}`);
         globalForPrisma.firstQueryDone = true;
       }
     });
 
     const initDuration = performance.now() - initStart;
-    console.log(`[COLD_START] PrismaClient instantiated in ${initDuration.toFixed(1)}ms`);
+    // console.log(`[COLD_START] PrismaClient instantiated in ${initDuration.toFixed(1)}ms`);
   }
 
   return client;
