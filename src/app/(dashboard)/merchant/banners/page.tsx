@@ -270,7 +270,12 @@ export default function MerchantBannersPage() {
 
                 <div className="flex justify-end gap-2 pt-2">
                   <Button type="button" variant="outline" onClick={() => setShowBook(false)}>Cancel</Button>
-                  <LoadingButton type="submit" loading={bookMutation.isPending} disabled={!form.imageUrl} loadingText="Submitting…">
+                  <LoadingButton
+                    type="submit"
+                    disabled={!pendingBannerFile && !form.imageUrl}
+                    loading={bookMutation.isPending}
+                    loadingText="Submitting…"
+                  >
                     Submit Booking
                   </LoadingButton>
                 </div>

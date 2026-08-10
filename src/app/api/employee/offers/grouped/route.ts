@@ -138,24 +138,42 @@ export async function GET(_request: NextRequest) {
     const redeemedSet = new Set(redeemed.map((r) => r.offerId).filter(Boolean) as string[])
 
     const grouped = new Map<string, typeof offerRows>()
+    const uncategorized: typeof offerRows = []
     for (const offer of offerRows) {
       const cat = offer.merchant.category
-      if (!cat) continue
+      if (!cat) {
+        if (uncategorized.length < 6) uncategorized.push(offer)
+        continue
+      }
       if (!grouped.has(cat.id)) grouped.set(cat.id, [])
       const list = grouped.get(cat.id)!
       if (list.length < 6) list.push(offer)
     }
 
-    const categorySection = categories
-      .filter((c) => grouped.has(c.id))
-      .map((c) => ({
-        id: c.id,
-        name: c.name,
-        icon: c.icon,
-        offers: (grouped.get(c.id) ?? []).map((o) =>
-          mapOfferRow(o as any, now, savedSet, redeemedSet),
-        ),
-      }))
+    const categorySection = [
+      ...categories
+        .filter((c) => grouped.has(c.id))
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          icon: c.icon,
+          offers: (grouped.get(c.id) ?? []).map((o) =>
+            mapOfferRow(o as any, now, savedSet, redeemedSet),
+          ),
+        })),
+      ...(uncategorized.length > 0
+        ? [
+            {
+              id: 'uncategorized',
+              name: 'All Offers',
+              icon: null,
+              offers: uncategorized.map((o) =>
+                mapOfferRow(o as any, now, savedSet, redeemedSet),
+              ),
+            },
+          ]
+        : []),
+    ]
 
     return NextResponse.json({
       success: true,
