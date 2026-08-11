@@ -33,13 +33,21 @@
     "exactOptionalPropertyTypes": false,
     "strictNullChecks": true
   },
-
-  "include": [
+"include": [
     "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
+    "src/**/*.ts",
+    "src/**/*.tsx",
     ".next/types/**/*.ts"
   ],
 
-  "exclude": ["node_modules", "supabase/functions"]
+  "exclude": [
+    "node_modules",
+    "e2e",
+    "playwright.config.ts",
+    "cypress.config.ts",
+    "tests",
+    "test-results",
+    "playwright-report",
+    "supabase/functions"
+  ]
 }
