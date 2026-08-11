@@ -32,3 +32,5 @@ Thumbs.db
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+/e2e/.auth/
+/e2e/.env.e2e
