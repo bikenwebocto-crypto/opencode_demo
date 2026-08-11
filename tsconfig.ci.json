@@ -5,6 +5,7 @@
     "e2e",
     "playwright.config.ts",
     "cypress.config.ts",
-    "tests"
+    "tests", 
+    "supabase/functions"
   ]
 }
