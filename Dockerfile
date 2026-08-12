@@ -30,6 +30,9 @@ RUN npx prisma generate
 
 RUN npm run build
 
+RUN --mount=type=secret,id=database_url \
+    export DATABASE_URL="$(cat /run/secrets/database_url)" && \
+    npm run build
 
 # ============================================================
 # Production
