@@ -11,6 +11,15 @@ export async function GET(request: NextRequest) {
     const auth = await getAuthenticatedMobileEmployee(request);
     if (!auth.ok) return auth.response;
 
+    const [countOfRedemption, merchantRedemptions] = await Promise.all([
+      prisma.redemption.count({ where: { employeeId: auth.employee.id } }),
+      prisma.redemption.findMany({
+        where: { employeeId: auth.employee.id },
+        select: { merchantId: true },
+        distinct: ["merchantId"],
+      }),
+    ]);
+
     return NextResponse.json({
       success: true,
       data: {
@@ -23,6 +32,8 @@ export async function GET(request: NextRequest) {
         jobTitle: auth.employee.jobTitle,
         status: auth.employee.status,
         phone: auth.employee?.phone,
+        count_of_redemption: countOfRedemption,
+        count_of_merchant_itredeemed: merchantRedemptions.length,
         company: {
           id: auth.company.id,
           name: auth.company.name,
