@@ -26,11 +26,13 @@ COPY --from=deps /app/node_modules ./node_modules
 
 COPY . .
 
+# Generate Prisma client only.
+# This does NOT migrate or modify the database.
 RUN npx prisma generate
 
-# DATABASE_URL is available only while this command runs.
-# It is NOT persisted into the resulting image.
-RUN --mount=type=secret,id=database_url \
+# Build using the staging database URL as a temporary BuildKit secret.
+# The secret is NOT persisted into the image.
+RUN --mount=type=secret,id=database_url,required=true \
     DATABASE_URL="$(cat /run/secrets/database_url)" \
     npm run build
 
@@ -41,8 +43,6 @@ RUN --mount=type=secret,id=database_url \
 FROM node:20-alpine AS runner
 
 WORKDIR /app
-
-RUN apk add --no-cache openssl
 
 ENV NODE_ENV=production
 ENV PORT=3000

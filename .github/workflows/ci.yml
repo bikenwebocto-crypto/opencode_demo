@@ -150,25 +150,15 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build Docker image
-        env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
-          IMAGE_TAG: staging-latest
-        run: |
-          docker build \
-            --secret id=database_url,env=DATABASE_URL \
-            -t "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" \
-            .
-
-      - name: Tag Docker image with commit SHA
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}
-        run: |
-          docker tag \
-            "$ECR_REGISTRY/$ECR_REPOSITORY:staging-latest" \
-            "$ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}"
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:staging-latest
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          secrets: |
+            database_url=${{ secrets.STAGING_DATABASE_URL }}
 
       - name: Push Docker image to ECR
         env:
