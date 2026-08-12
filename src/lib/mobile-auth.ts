@@ -39,6 +39,7 @@ export interface MobileAuthProfile {
   firstName: string
   lastName: string
   email: string
+  phone: string
   avatarUrl: string | null
   company: { id: string; name: string; status: string }
   role: 'EMPLOYEE'
@@ -168,6 +169,7 @@ export function buildMobileAuthProfile(
     lastName: employee.lastName,
     email: account.email,
     avatarUrl: employee.avatarUrl,
+    phone: employee.phone !,
     company: {
       id: company.id,
       name: company.name,

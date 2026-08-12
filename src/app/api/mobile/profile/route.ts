@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
         department: auth.employee.department,
         jobTitle: auth.employee.jobTitle,
         status: auth.employee.status,
+        phone: auth.employee?.phone,
         company: {
           id: auth.company.id,
           name: auth.company.name,
