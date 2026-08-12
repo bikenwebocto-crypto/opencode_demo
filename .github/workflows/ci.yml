@@ -80,7 +80,7 @@ jobs:
   # ============================================================
   # SUPABASE EDGE FUNCTIONS
   # ============================================================
-
+ #
   # deploy-supabase-functions:
   #   name: Deploy Supabase Functions
   #   runs-on: ubuntu-latest
