@@ -9,7 +9,7 @@ on:
 env:
   NODE_VERSION: "20"
   AWS_REGION: "us-east-1"
-  ECR_REPOSITORY: "opencode_demo"
+  ECR_REPOSITORY: "employee_perk_platform"
 
 jobs:
 
