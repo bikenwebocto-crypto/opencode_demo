@@ -18,8 +18,6 @@ const ROLE_ACCESS_MAP: Record<string, string[]> = {
 const roleCache = new Map<string, { role: string; timestamp: number }>();
 const CACHE_TTL = 5 * 60 * 1000;
 
-const SESSION_API = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/auth/session`;
-
 const PUBLIC_API_ROUTES = [
   "/api/auth/sync-admin",
   "/api/auth/logout",
@@ -29,7 +27,11 @@ const PUBLIC_API_ROUTES = [
   "/api/health",
 ];
 
-async function fetchRole(supabase: ReturnType<typeof createServerClient>, email: string): Promise<string | null> {
+async function fetchRole(
+  supabase: ReturnType<typeof createServerClient>,
+  email: string,
+  request: NextRequest,
+): Promise<string | null> {
   const cached = roleCache.get(email);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.role;
@@ -39,7 +41,7 @@ async function fetchRole(supabase: ReturnType<typeof createServerClient>, email:
     const { data: { session } } = await supabase.auth.getSession()
     if (!session?.access_token) return null
 
-    const res = await fetch(SESSION_API, {
+    const res = await fetch(new URL("/api/auth/session", request.url), {
       headers: {
         Authorization: `Bearer ${session.access_token}`,
         "x-middleware-email": email,
@@ -134,7 +136,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // For page routes: full role-based access check
-  const role = await fetchRole(supabase, user.email!)
+  const role = await fetchRole(supabase, user.email!, request)
 
   if (!role) {
     await supabase.auth.signOut()
