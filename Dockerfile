@@ -29,10 +29,36 @@ COPY . .
 # This does NOT migrate or modify the database.
 RUN npx prisma generate
 
-# Build using the staging database URL as a temporary BuildKit secret.
-# The secret is NOT persisted into the image.
+# Build using the staging database URL and public runtime config as temporary
+# BuildKit secrets. Secrets are NOT persisted into the image.
 RUN --mount=type=secret,id=database_url,required=true \
+    --mount=type=secret,id=next_public_supabase_url,required=true \
+    --mount=type=secret,id=next_public_supabase_publishable_key,required=true \
+    --mount=type=secret,id=next_public_app_url,required=true \
+    --mount=type=secret,id=next_public_google_maps_api_key,required=true \
+    --mount=type=secret,id=next_public_google_maps_map_id,required=true \
+    --mount=type=secret,id=next_public_firebase_api_key,required=true \
+    --mount=type=secret,id=next_public_firebase_auth_domain,required=true \
+    --mount=type=secret,id=next_public_firebase_project_id,required=true \
+    --mount=type=secret,id=next_public_firebase_storage_bucket,required=true \
+    --mount=type=secret,id=next_public_firebase_messaging_sender_id,required=true \
+    --mount=type=secret,id=next_public_firebase_app_id,required=true \
+    --mount=type=secret,id=next_public_firebase_measurement_id,required=true \
+    --mount=type=secret,id=next_public_firebase_vapid_key,required=true \
     DATABASE_URL="$(cat /run/secrets/database_url)" \
+    NEXT_PUBLIC_SUPABASE_URL="$(cat /run/secrets/next_public_supabase_url)" \
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY="$(cat /run/secrets/next_public_supabase_publishable_key)" \
+    NEXT_PUBLIC_APP_URL="$(cat /run/secrets/next_public_app_url)" \
+    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY="$(cat /run/secrets/next_public_google_maps_api_key)" \
+    NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID="$(cat /run/secrets/next_public_google_maps_map_id)" \
+    NEXT_PUBLIC_FIREBASE_API_KEY="$(cat /run/secrets/next_public_firebase_api_key)" \
+    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="$(cat /run/secrets/next_public_firebase_auth_domain)" \
+    NEXT_PUBLIC_FIREBASE_PROJECT_ID="$(cat /run/secrets/next_public_firebase_project_id)" \
+    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="$(cat /run/secrets/next_public_firebase_storage_bucket)" \
+    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="$(cat /run/secrets/next_public_firebase_messaging_sender_id)" \
+    NEXT_PUBLIC_FIREBASE_APP_ID="$(cat /run/secrets/next_public_firebase_app_id)" \
+    NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID="$(cat /run/secrets/next_public_firebase_measurement_id)" \
+    NEXT_PUBLIC_FIREBASE_VAPID_KEY="$(cat /run/secrets/next_public_firebase_vapid_key)" \
     npm run build
 
 # ============================================================
