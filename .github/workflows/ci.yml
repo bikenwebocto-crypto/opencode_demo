@@ -69,7 +69,6 @@ jobs:
 
       - name: Verify AWS identity
         run: aws sts get-caller-identity
-
       - name: Verify ECR repository
         run: |
           aws ecr describe-repositories \
