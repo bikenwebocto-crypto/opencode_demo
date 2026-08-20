@@ -25,3 +25,12 @@ coverage
 # mac/windows
 .DS_Store
 Thumbs.db
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+/e2e/.auth/
+/e2e/.env.e2e

@@ -1,19 +1,24 @@
 import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { prisma } from '@/lib/prisma';
+import { authContextStore, buildAuthContext } from '@/lib/auth';
+import type { AuthResult } from '@/lib/auth';
+import type { PerfTimer } from '@/lib/perf';
 import type { Database } from './types';
+import type { User } from '@supabase/supabase-js';
 
-export async function createClient() {
+export async function createClient(timer?: PerfTimer) {
+  const tCookies = performance.now()
   const cookieStore = await cookies() 
+  timer?.point(`cookies(): ${(performance.now() - tCookies).toFixed(1)}ms`)
 
-  return createServerClient<Database>(
+  const tClient = performance.now()
+  const client = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
       cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
+        getAll() { return cookieStore.getAll() },
         setAll(cookiesToSet : { name: string; value: string; options?: any }[]) {
           cookiesToSet.forEach(({ name, value, options }) =>
             cookieStore.set(name, value, options)
@@ -22,6 +27,8 @@ export async function createClient() {
       },
     }
   )
+  timer?.point(`createServerClient: ${(performance.now() - tClient).toFixed(1)}ms`)
+  return client
 }
 
 export type UserProfile =
@@ -35,6 +42,7 @@ export interface CurrentUser {
   email: string;
   role: string;
   companyName?: string | null;
+  companyStatus?: string | null;
   userType: 'admin' | 'merchant' | 'company_admin' | 'employee';
   companyId: string | null;
   profileType: string;
@@ -42,80 +50,84 @@ export interface CurrentUser {
   profile: Record<string, unknown> | null;
 }
 
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+function getCompanyName(ctx: { profileType: string; profile: any; company: any }): string | null {
+  if (ctx.profile?.companyName) return ctx.profile.companyName
+  if (ctx.company?.name) return ctx.company.name
+  return null
+}
+
+function currentUserFromContext(ctx: any): CurrentUser {
+  const userTypeMap: Record<string, 'admin' | 'merchant' | 'company_admin' | 'employee'> = {
+    SUPER_ADMIN: 'admin',
+    MERCHANT: 'merchant',
+    COMPANY_ADMIN: 'company_admin',
+    EMPLOYEE: 'employee',
+  }
+  return {
+    id: ctx.user.id,
+    email: ctx.user.email!,
+    role: ctx.account.role,
+    userType: userTypeMap[ctx.account.role] ?? 'employee',
+    companyId: ctx.companyId,
+    companyName: getCompanyName(ctx),
+    companyStatus: ctx.companyStatus,
+    profileType: ctx.profileType,
+    profileId: ctx.profileId,
+    profile: ctx.profile as Record<string, unknown> | null,
+  }
+}
+
+export async function getCurrentUser(timer?: PerfTimer): Promise<CurrentUser | null> {
+  const start = performance.now()
+
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return null
-
-    const account = await prisma.account.findUnique({
-      where: { email: user.email, },
-    })
-    if (!account) return null
-    if (account.status !== 'ACTIVE') return null
-
-    const userTypeMap: Record<string, 'admin' | 'merchant' | 'company_admin' | 'employee'> = {
-      SUPER_ADMIN: 'admin',
-      MERCHANT: 'merchant',
-      COMPANY_ADMIN: 'company_admin',
-      EMPLOYEE: 'employee',
+    const existing = authContextStore.getStore()
+    if (existing) {
+      return currentUserFromContext(existing)
     }
 
-    const userType = userTypeMap[account.role] ?? 'employee'
-    let companyId: string | null = null
-    let profileId: string | null = null
-    let profile: Record<string, unknown> | null = null
+    let authUser: User | null = null
 
-    switch (account.profileType) {
-      case 'ADMIN': {
-        const p = await prisma.adminUser.findFirst({ where: { accountId: account.authUserId } })
-        profile = p as Record<string, unknown> | null
-        profileId = p?.id ?? null
-        companyId = null
-        break
-      }
-      case 'MERCHANT': {
-        const p = await prisma.merchant.findFirst({ where: { accountId: account.authUserId } })
-        profile = p as Record<string, unknown> | null
-        profileId = p?.id ?? null
-        companyId = null
-        break
-      }
-      case 'COMPANY': {
-        const p = await prisma.companyAdmin.findFirst({ 
-          where: { accountId: account.authUserId },
-          include: { company: { select: { name: true } } }
+    // Check if middleware already authenticated this request
+    try {
+      const headersList = await headers()
+      const middlewareEmail = headersList.get('x-auth-email')
+      if (middlewareEmail) {
+        const account = await prisma.account.findUnique({
+          where: { email: middlewareEmail },
+          select: { authUserId: true },
         })
-        profile = p as Record<string, unknown> | null
-        profileId = p?.id ?? null
-        companyId = p?.companyId ?? null
-        break
+        if (account) {
+          authUser = { id: account.authUserId, email: middlewareEmail } as User
+        } else {
+          return null
+        }
       }
-      case 'EMPLOYEE': {
-        const p = await prisma.employee.findFirst({ 
-          where: { accountId: account.authUserId },
-          include: { company: { select: { name: true } } }
-        })
-        profile = p as Record<string, unknown> | null
-        profileId = p?.id ?? null
-        companyId = p?.companyId ?? null
-        break
-      }
+    } catch {
+      // headers() unavailable in this context
     }
 
-    return {
-      id: user.id,
-      email: user.email!,
-      role: account.role,
-      userType,
-      companyId,
-      companyName: (profile as any)?.companyName ?? null,
-      profileType: account.profileType,
-      profileId,
-      profile,
+    if (!authUser) {
+      const supabase = await createClient(timer)
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!user) return null
+      authUser = user
     }
+
+    const auth: AuthResult = { user: authUser, accessToken: '' }
+    const ctx = await buildAuthContext(auth)
+
+    authContextStore.enterWith(ctx)
+    return currentUserFromContext(ctx)
   } catch (error) {
-    console.error('getCurrentUser error:', error)
+    console.log(
+      `[getCurrentUser] FAILED after ${(performance.now() - start).toFixed(2)} ms`
+    )
+    console.error(error)
     return null
   }
 }
@@ -136,7 +148,6 @@ export async function resolveAuthenticatedUser(): Promise<ResolvedUser | null> {
   if (!session) return null
 
   let name = session.email
-
   if (session.profile) {
     switch (session.profileType) {
       case 'ADMIN': {
@@ -165,7 +176,7 @@ export async function resolveAuthenticatedUser(): Promise<ResolvedUser | null> {
     role: session.role,
     profileId: session.profileId,
     name: name || 'NA',
-    companyName: session.companyId ? (session.profile as any)?.company?.name ?? null : null,  
+    companyName: session.companyName,
     isActive: session.role !== null && session.role !== undefined,
   }
 }

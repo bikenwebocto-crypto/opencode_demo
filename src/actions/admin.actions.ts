@@ -92,15 +92,32 @@ export async function approveOfferAction(formData: FormData) {
 
   const parsed = adminApproveOfferSchema.parse(raw);
 
-  const offer = await prisma.merchantOffer.update({
-    where: { id: parsed.offerId },
-    data: {
-      status: parsed.status as any,
-      rejectionReason: parsed.rejectionReason,
-      reviewedBy: 'system',
-      reviewedAt: new Date(),
-      liveAt: parsed.status === 'LIVE' ? new Date() : undefined,
-    },
+  const offer = await prisma.$transaction(async (tx) => {
+    const updated = await tx.merchantOffer.update({
+      where: { id: parsed.offerId },
+      data: {
+        status: parsed.status as any,
+        reviewedAt: new Date(),
+        liveAt: parsed.status === 'LIVE' ? new Date() : undefined,
+      },
+    });
+
+    await tx.offerReview.upsert({
+      where: { offerId: parsed.offerId },
+      create: {
+        offerId: parsed.offerId,
+        reviewedBy: 'system',
+        reviewedAt: new Date(),
+        rejectionReason: parsed.rejectionReason ?? null,
+      },
+      update: {
+        reviewedBy: 'system',
+        reviewedAt: new Date(),
+        rejectionReason: parsed.rejectionReason ?? null,
+      },
+    });
+
+    return updated;
   });
 
   // If approved, expire the previous live offer (one live offer rule)

@@ -128,12 +128,11 @@ export async function POST(request: NextRequest) {
       return badRequest(`Priority must be one of: ${VALID_PRIORITIES.join(', ')}`)
     }
 
-    const systemEmployeeId = await getOrCreateSystemEmployee()
+    // const systemEmployeeId = await getOrCreateSystemEmployee()
 
     const issue = await prisma.issueReport.create({
       data: {
         merchantId: merchant.id,
-        employeeId: systemEmployeeId,
         title: title.trim(),
         description: description.trim(),
         category,
@@ -147,7 +146,7 @@ export async function POST(request: NextRequest) {
         type: 'ISSUE_REVIEW',
         title: `Issue from ${merchant.businessName}: ${title}`,
         description: description.slice(0, 200),
-        referenceId: issue.id,
+        referenceId: merchant.id,
         referenceType: 'issue',
         status: 'PENDING',
         priority: priority === 'urgent' ? 4 : priority === 'high' ? 3 : 2,

@@ -19,8 +19,7 @@ interface ArchivedRow {
   updatedAt: string
   replacesOffer: { id: string; title: string } | null
   _count: { redemptions: number }
-  viewCount: number
-  saveCount: number
+  analytics: { viewCount: number; saveCount: number } | null
 }
 
 interface ApiResponse {
@@ -123,7 +122,7 @@ export default function ArchivedOffersPage() {
                       </div>
                       <div className="text-right text-xs text-muted-foreground">
                         <p>{o._count.redemptions} redemptions</p>
-                        <p>{o.viewCount} views · {o.saveCount} saves</p>
+                        <p>{o.analytics?.viewCount ?? 0} views · {o.analytics?.saveCount ?? 0} saves</p>
                       </div>
                     </div>
                   </li>

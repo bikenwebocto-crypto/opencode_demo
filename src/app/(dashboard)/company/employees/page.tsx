@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -63,9 +64,9 @@ export default function CompanyEmployeesPage() {
           <p className="mt-1 text-sm text-muted-foreground">Manage your company employees</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => { exportCsv.mutateAsync().then(() => showToast({ type: 'success', title: 'Export started' })).catch((e: any) => showToast({ type: 'error', title: 'Export failed', description: e.message })) }} disabled={exportCsv.isPending}>
+          <LoadingButton variant="outline" onClick={() => { exportCsv.mutateAsync().then(() => showToast({ type: 'success', title: 'Export started' })).catch((e: any) => showToast({ type: 'error', title: 'Export failed', description: e.message })) }} loading={exportCsv.isPending} loadingText="Exporting...">
             <Download className="mr-1 h-4 w-4" /> Export CSV
-          </Button>
+          </LoadingButton>
           <Button onClick={() => setShowForm(!showForm)}>
             <Plus className="mr-1 h-4 w-4" /> Add Employee
           </Button>
@@ -83,9 +84,9 @@ export default function CompanyEmployeesPage() {
               <Input placeholder="Department" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
               <Input placeholder="Job Title" value={form.jobTitle} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} />
               <div className="sm:col-span-2 flex gap-2">
-                <Button type="submit" disabled={createEmployee.isPending}>
-                  {createEmployee.isPending ? 'Saving...' : 'Save Employee'}
-                </Button>
+                <LoadingButton type="submit" loading={createEmployee.isPending} loadingText="Saving...">
+                  Save Employee
+                </LoadingButton>
                 <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
               </div>
             </form>

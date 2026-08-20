@@ -1,74 +1,95 @@
-// middleware.ts
-import { createServerClient } from '@supabase/ssr'
-import { NextRequest, NextResponse } from 'next/server'
+import { createServerClient } from "@supabase/ssr";
+import { NextRequest, NextResponse } from "next/server";
 
-// Role to dashboard mapping
 const ROLE_DASHBOARD_MAP: Record<string, string> = {
-  SUPER_ADMIN: '/admin',
-  COMPANY_ADMIN: '/company',
-  MERCHANT: '/merchant',
-  EMPLOYEE: '/employee',
-}
+  SUPER_ADMIN: "/admin",
+  COMPANY_ADMIN: "/company",
+  MERCHANT: "/merchant",
+  EMPLOYEE: "/employee",
+};
 
-// Role to allowed path prefixes
 const ROLE_ACCESS_MAP: Record<string, string[]> = {
-  SUPER_ADMIN: ['/admin'],
-  COMPANY_ADMIN: ['/company'],
-  MERCHANT: ['/merchant'],
-  EMPLOYEE: ['/employee'],
-}
+  SUPER_ADMIN: ["/admin"],
+  COMPANY_ADMIN: ["/company"],
+  MERCHANT: ["/merchant"],
+  EMPLOYEE: ["/employee"],
+};
 
-// Cache for user roles (5 minutes)
-const roleCache = new Map<string, { role: string; timestamp: number }>()
-const CACHE_TTL = 5 * 60 * 1000
+const roleCache = new Map<string, { role: string; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000;
 
-async function getUserRoleFromSession(email: string, token: string): Promise<string | null> {
-  // Check cache first
-  const cached = roleCache.get(email)
+const PUBLIC_API_ROUTES = [
+  "/api/auth/sync-admin",
+  "/api/auth/logout",
+  "/api/auth/session",
+  "/api/firebase-config",
+  "/api/webhooks",
+  "/api/health",
+];
+
+async function fetchRole(
+  supabase: ReturnType<typeof createServerClient>,
+  email: string,
+  request: NextRequest,
+): Promise<string | null> {
+  const cached = roleCache.get(email);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    console.log('Using cached role for:', email, cached.role)
-    return cached.role
+    return cached.role;
   }
 
   try {
-    // Call your session API
-    const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/session`, {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session?.access_token) return null
+
+    const res = await fetch(new URL("/api/auth/session", request.url), {
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+        "x-middleware-email": email,
+        "Content-Type": "application/json",
       },
-      cache: 'no-store'
+      cache: "no-store",
     })
+    if (!res.ok) return null
 
-    if (!response.ok) {
-      console.error('Session API error:', response.status)
-      return null
-    }
-
-    const data = await response.json()
-    const role = data.user?.role
-    
-    console.log('Role from session API:', role, 'for user:', email)
-
+    const data = await res.json()
+    const role: string | undefined = data.user?.role
     if (role) {
-      // Cache the role
       roleCache.set(email, { role, timestamp: Date.now() })
     }
-    
-    return role || null
-  } catch (error) {
-    console.error('Failed to get role from session API:', error)
+    return role ?? null
+  } catch {
     return null
   }
 }
 
 export async function middleware(request: NextRequest) {
-  console.log('Middleware running for:', request.nextUrl.pathname)
-  
-  let supabaseResponse = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
+  const pathname = request.nextUrl.pathname
+
+  if (pathname === "/") {
+    return NextResponse.redirect(new URL("/login", request.url))
+  }
+  if (pathname === "/login" || pathname === "/auth/callback") {
+    return NextResponse.next()
+  }
+
+  const isProtected = ["/admin", "/merchant", "/company", "/employee"].some((p) =>
+    pathname.startsWith(p),
+  )
+  const isApiRoute = pathname.startsWith("/api")
+
+  if (!isProtected && !isApiRoute) {
+    return NextResponse.next()
+  }
+
+  const isPublicApi = isApiRoute && PUBLIC_API_ROUTES.some((p) => pathname.startsWith(p))
+  if (isPublicApi) {
+    return NextResponse.next()
+  }
+
+  const requestHeaders = new Headers(request.headers)
+
+  const response = NextResponse.next({
+    request: { headers: requestHeaders },
   })
 
   const supabase = createServerClient(
@@ -76,95 +97,72 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
       cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet : { name: string; value: string; options?: any }[]) {
+        getAll() { return request.cookies.getAll() },
+        setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
           cookiesToSet.forEach(({ name, value, options }) => {
-            supabaseResponse.cookies.set(name, value, options)
+            response.cookies.set(name, value!, options ?? {})
           })
         },
       },
-    }
+    },
   )
 
-  // Get user and session
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: { session } } = await supabase.auth.getSession()
-  
-  const pathname = request.nextUrl.pathname
+  // Bearer-token auth (mobile API clients) takes priority over cookies.
+  const authHeader = request.headers.get("Authorization")
+  const bearerToken = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7).trim()
+    : null
 
-  // Define routes
-  const protectedPaths = ['/admin', '/merchant', '/company', '/employee']
-  const isProtectedRoute = protectedPaths.some((path) => pathname.startsWith(path))
-  const isLoginRoute = pathname === '/login'
-  const isAuthCallbackRoute = pathname === '/auth/callback'
-  const isApiRoute = pathname.startsWith('/api')
-
-  // Allow auth callback and API routes
-  if (isAuthCallbackRoute || isApiRoute) {
-    return supabaseResponse
-  }
-
-  // Case 1: Not authenticated - redirect to login
-  if (isProtectedRoute && !user) {
-    console.log('User not authenticated, redirecting to login')
-    const loginUrl = new URL('/login', request.url)
-    loginUrl.searchParams.set('redirectTo', pathname)
+  const { data: { user } } = bearerToken
+    ? await supabase.auth.getUser(bearerToken)
+    : await supabase.auth.getUser()
+  if (!user) {
+    if (isApiRoute) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      )
+    }
+    const loginUrl = new URL("/login", request.url)
+    loginUrl.searchParams.set("redirectTo", pathname)
     return NextResponse.redirect(loginUrl)
   }
 
-  // Case 2: Authenticated user on protected route - check role
-  if (user && user.email && isProtectedRoute && session?.access_token) {
-    console.log('Checking role for user:', user.email)
-    
-    // Get role from session API
-    const userRole = await getUserRoleFromSession(user.email, session.access_token)
-    
-    console.log('User role:', userRole)
-
-    // No role found - sign out and show error
-    if (!userRole) {
-      console.log('No role found, signing out')
-      await supabase.auth.signOut()
-      const loginUrl = new URL('/login', request.url)
-      loginUrl.searchParams.set('error', 'Your account role is not configured. Please contact system administrator.')
-      return NextResponse.redirect(loginUrl)
-    }
-
-    // Check if user has access to this path
-    const allowedPaths = ROLE_ACCESS_MAP[userRole] || ['/employee']
-    const hasAccess = allowedPaths.some(path => pathname.startsWith(path))
-    
-    console.log('Allowed paths:', allowedPaths)
-    console.log('Has access:', hasAccess)
-
-    // If no access, redirect to their correct dashboard
-    if (!hasAccess) {
-      const correctPath = ROLE_DASHBOARD_MAP[userRole] || '/employee'
-      console.log(`Access denied to ${pathname}, redirecting to ${correctPath}`)
-      return NextResponse.redirect(new URL(correctPath, request.url))
-    }
+  // For API routes: just set auth headers and pass through (no role check)
+  if (isApiRoute) {
+    requestHeaders.set("x-auth-email", user.email!)
+    response.headers.set("x-auth-email", user.email!)
+    return response
   }
 
-  // Case 3: User on login page - redirect to their dashboard
-  if (isLoginRoute && user && user.email && session?.access_token) {
-    console.log('User on login page, checking role for:', user.email)
-    
-    const userRole = await getUserRoleFromSession(user.email, session.access_token)
-    
-    if (userRole) {
-      const redirectPath = ROLE_DASHBOARD_MAP[userRole] || '/employee'
-      console.log('Redirecting from login to:', redirectPath)
-      return NextResponse.redirect(new URL(redirectPath, request.url))
-    }
+  // For page routes: full role-based access check
+  const role = await fetchRole(supabase, user.email!, request)
+
+  if (!role) {
+    await supabase.auth.signOut()
+    const loginUrl = new URL("/login", request.url)
+    loginUrl.searchParams.set("error", "Your account role is not configured.")
+    return NextResponse.redirect(loginUrl)
   }
 
-  return supabaseResponse
+  const allowedPaths = ROLE_ACCESS_MAP[role] ?? ["/employee"]
+  const hasAccess = allowedPaths.some((path) => pathname.startsWith(path))
+  if (!hasAccess) {
+    return NextResponse.redirect(
+      new URL(ROLE_DASHBOARD_MAP[role] ?? "/employee", request.url),
+    )
+  }
+
+  requestHeaders.set("x-auth-role", role)
+  requestHeaders.set("x-auth-email", user.email!)
+
+  response.headers.set("x-auth-role", role)
+  response.headers.set("x-auth-email", user.email!)
+  return response
 }
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
-}
+};

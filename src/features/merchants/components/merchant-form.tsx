@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 import { ArrowLeft, Save, Upload } from 'lucide-react'
 import { CSVUploadDropzone } from '@/features/csv-uploads/components/csv-upload-dropzone'
 import { useCreateMerchant, useUpdateMerchant } from '@/hooks/queries/use-merchants'
@@ -13,7 +14,7 @@ import { useCategories } from '@/hooks/queries/use-categories'
 interface FormData {
   businessName: string
   email: string
-  password: string
+  // password: string
   contactName: string
   contactPhone: string
   categoryId: string
@@ -48,7 +49,7 @@ export function MerchantForm({ merchantId, initialData }: MerchantFormProps) {
   const [form, setForm] = useState<FormData>(initialData ?? {
     businessName: '',
     email: '',
-    password: '',
+    // password: '',
     contactName: '',
     contactPhone: '',
     categoryId: '',
@@ -78,8 +79,8 @@ export function MerchantForm({ merchantId, initialData }: MerchantFormProps) {
     if (!form.businessName.trim()) errs.businessName = 'Business name is required'
     if (!form.email.trim()) errs.email = 'Email is required'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) errs.email = 'Invalid email address'
-    if (!isEdit && !form.password) errs.password = 'Password is required'
-    else if (form.password && form.password.length < 8) errs.password = 'Password must be at least 8 characters'
+    // if (!isEdit && !form.password) errs.password = 'Password is required'
+    // else if (form.password && form.password.length < 8) errs.password = 'Password must be at least 8 characters'
     if (!form.contactName.trim()) errs.contactName = 'Contact name is required'
     if (!form.contactPhone.trim()) errs.contactPhone = 'Phone number is required'
     else if (!/^\+?[\d\s\-()]{7,20}$/.test(form.contactPhone)) errs.contactPhone = 'Invalid phone number'
@@ -96,17 +97,18 @@ export function MerchantForm({ merchantId, initialData }: MerchantFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
-
+    console.log('Submitting form:', form)
     const body = { ...form } as Record<string, unknown>
     if (!body.password) delete body.password
     if (isEdit) body.id = merchantId
-
+    console.log('Mutation body:', body)
     const mutateFn = isEdit
       ? (data: typeof body) => updateMerchant.mutateAsync(data as any)
       : (data: typeof body) => createMerchant.mutateAsync(data as any)
 
     try {
       const res = await mutateFn(body)
+      console.log('Mutation response:', res)
       showToast({ type: 'success', title: res.message ?? (isEdit ? 'Merchant updated' : 'Merchant created') })
       router.push('/admin/merchants')
     } catch (err: any) {
@@ -312,10 +314,10 @@ export function MerchantForm({ merchantId, initialData }: MerchantFormProps) {
 
       <div className="flex items-center justify-end gap-3">
         <Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>
-        <Button type="submit" disabled={mutation.isPending}>
+        <LoadingButton type="submit" loading={mutation.isPending} loadingText="Saving...">
           <Save className="mr-1 h-4 w-4" />
-          {mutation.isPending ? 'Saving...' : isEdit ? 'Update Merchant' : 'Save Merchant'}
-        </Button>
+          {isEdit ? 'Update Merchant' : 'Save Merchant'}
+        </LoadingButton>
       </div>
     </form>
   )

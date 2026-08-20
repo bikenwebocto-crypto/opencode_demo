@@ -100,11 +100,11 @@ export function useRealtimeSubscriptions(options: UseRealtimeSubscriptionOptions
     }
 
     // Employee subscriptions
-    if (userType === 'employee') {
+    if (userType === 'employee' && userId) {
       unsubscribers.push(
         subscribeToChannel(
           `employee-${userId}-notifications`,
-          { table: 'notification_events', event: 'INSERT', filter: `recipient_id=eq.${userId}` },
+          { table: 'notification_events', event: 'INSERT', filter: `employee_id=eq.${userId}` },
           (payload: RealtimePostgresChangesPayload<any>) => {
             addNotification(payload.new);
           }
@@ -113,11 +113,37 @@ export function useRealtimeSubscriptions(options: UseRealtimeSubscriptionOptions
     }
 
     // Company admin subscriptions
-    if (userType === 'company_admin' && companyId) {
+    if (userType === 'company_admin' && userId) {
       unsubscribers.push(
         subscribeToChannel(
-          `company-${companyId}-notifications`,
-          { table: 'notification_events', event: 'INSERT', filter: `recipient_id=eq.${userId}` },
+          `company-admin-${userId}-notifications`,
+          { table: 'notification_events', event: 'INSERT', filter: `company_admin_id=eq.${userId}` },
+          (payload: RealtimePostgresChangesPayload<any>) => {
+            addNotification(payload.new);
+          }
+        )
+      );
+    }
+
+    // Admin subscriptions for notifications
+    if (userType === 'admin' && userId) {
+      unsubscribers.push(
+        subscribeToChannel(
+          `admin-${userId}-notifications`,
+          { table: 'notification_events', event: 'INSERT', filter: `admin_id=eq.${userId}` },
+          (payload: RealtimePostgresChangesPayload<any>) => {
+            addNotification(payload.new);
+          }
+        )
+      );
+    }
+
+    // Merchant subscriptions for notifications
+    if (userType === 'merchant' && merchantId) {
+      unsubscribers.push(
+        subscribeToChannel(
+          `merchant-${merchantId}-notifications`,
+          { table: 'notification_events', event: 'INSERT', filter: `merchant_id=eq.${merchantId}` },
           (payload: RealtimePostgresChangesPayload<any>) => {
             addNotification(payload.new);
           }

@@ -5,6 +5,8 @@ interface OfferStrengthIndicatorProps {
   discountValue: number
   offerType: string
   categoryId?: string | null
+  minimumSpend?: number
+  discountMax?: number
 }
 
 const strengthConfig = {
@@ -27,7 +29,7 @@ const categoryAverages: Record<string, number> = {
   default: 20,
 }
 
-export function OfferStrengthIndicator({ discountValue, offerType, categoryId }: OfferStrengthIndicatorProps) {
+export function OfferStrengthIndicator({ discountValue, offerType, categoryId, minimumSpend, discountMax }: OfferStrengthIndicatorProps) {
   const score = useMemo(() => {
     const baseValue = offerType === 'PERCENTAGE' ? discountValue : discountValue * 2
     const maxScore = 100
@@ -84,6 +86,24 @@ export function OfferStrengthIndicator({ discountValue, offerType, categoryId }:
           {comparison}
         </span>
       </div>
+
+      {/* Linked Discount Summary */}
+      {minimumSpend && discountMax && (
+        <div className="text-xs text-muted-foreground pt-2 border-t space-y-1">
+          <div className="flex justify-between">
+            <span>Effective discount rate:</span>
+            <span className="font-medium text-foreground">
+              {((discountMax / minimumSpend) * 100).toFixed(1)}%
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span>Savings per order:</span>
+            <span className="font-medium text-foreground">
+              up to ${discountMax.toFixed(2)}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

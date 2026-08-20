@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/page-header'
 import { showToast } from '@/hooks/use-toast'
@@ -195,9 +196,9 @@ export default function MerchantIssuesPage() {
                 <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={create.isPending}>
-                  {create.isPending ? 'Submitting…' : 'Submit Issue'}
-                </Button>
+                <LoadingButton type="submit" loading={create.isPending} loadingText="Submitting…">
+                  Submit Issue
+                </LoadingButton>
               </div>
             </form>
           </CardContent>
@@ -250,7 +251,7 @@ export default function MerchantIssuesPage() {
               <Skeleton className="h-16 w-full" />
             </div>
           ) : !data?.data || data.data.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No issues. Click "New Issue" to create one.</p>
+            <p className="text-sm text-muted-foreground">No issues. Click &quot;New Issue&quot; to create one.</p>
           ) : (
             <>
               <ul className="space-y-2">

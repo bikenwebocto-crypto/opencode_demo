@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Save, Send, Loader2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, Save, Send, Loader2, Sparkles, Store } from "lucide-react";
 import {
   useCreateMerchantOffer,
   useUpdateMerchantOffer,
@@ -15,11 +16,13 @@ import {
   OfferImageUploader,
   type PendingImage,
 } from "@/components/merchant/offers/OfferImageUploader";
+import type { DeferredFile } from "@/components/shared/ImageUploader";
 import { OfferImageGallery } from "@/components/merchant/offers/OfferImageGallery";
 import { OfferMobilePreview } from "@/components/merchant/offers/OfferMobilePreview";
 import { OfferBannerInfo } from "@/components/merchant/offers/OfferBannerInfo";
 import { showToast } from "@/hooks/use-toast";
 import { useCategories } from "@/hooks/queries/use-categories";
+import { uploadImage, OFFER_IMAGE_OPTIONS } from '@/lib/upload/image'
 import { deleteOfferImage } from "@/lib/upload-offer-image";
 
 interface FormData {
@@ -34,6 +37,11 @@ interface FormData {
   discountPercent: string;
   minimumSpend: string;
   maxRedemptions: string;
+  buyQuantity: string;
+  buyItem: string;
+  getQuantity: string;
+  freeItem: string;
+  maxFreeItems: string;
   startDate: string;
   endDate: string;
   daysOfWeek: string;
@@ -42,6 +50,9 @@ interface FormData {
   categoryId: string;
   submissionNotes: string;
   replacementReason: string;
+  redemptionType: string;
+  bookingUrl: string;
+  qrCodeUrl: string;
 }
 
 interface FormErrors {
@@ -63,6 +74,22 @@ const ACCEPTED_TYPES = [
   "image/gif",
 ];
 const MAX_SIZE = 5 * 1024 * 1024;
+
+const OFFER_TYPE_MAP: Record<string, string> = {
+  FLAT: 'flat_rate',
+  PERCENTAGE: 'percentage',
+  BUY_X_GET_Y: 'buy_x_get_y',
+}
+
+const DAYS_OF_WEEK = [
+  { value: 0, short: 'Sun', full: 'Sunday' },
+  { value: 1, short: 'Mon', full: 'Monday' },
+  { value: 2, short: 'Tue', full: 'Tuesday' },
+  { value: 3, short: 'Wed', full: 'Wednesday' },
+  { value: 4, short: 'Thu', full: 'Thursday' },
+  { value: 5, short: 'Fri', full: 'Friday' },
+  { value: 6, short: 'Sat', full: 'Saturday' },
+] as const
 
 function parseInitialImageUrls(input: string | string[] | undefined): string[] {
   if (!input) return [];
@@ -97,8 +124,8 @@ export function OfferForm({
   const submitOffer = useSubmitMerchantOffer();
   const [errors, setErrors] = useState<FormErrors>({});
   const [showStrength, setShowStrength] = useState(false);
-  const [uploadingCount, setUploadingCount] = useState(0);
   const { data: categories } = useCategories();
+  const [lastEditedField, setLastEditedField] = useState<'discountValue' | 'minimumSpend' | 'discountMax' | 'discountPercent' | null>(null);
 
   useEffect(()=>{
     if(categories && initialData?.categoryId){
@@ -131,6 +158,11 @@ export function OfferForm({
     discountPercent: initialData?.discountPercent ?? "",
     minimumSpend: initialData?.minimumSpend ?? "",
     maxRedemptions: initialData?.maxRedemptions ?? "",
+    buyQuantity: initialData?.buyQuantity ?? "",
+    buyItem: initialData?.buyItem ?? "",
+    getQuantity: initialData?.getQuantity ?? "",
+    freeItem: initialData?.freeItem ?? "",
+    maxFreeItems: initialData?.maxFreeItems ?? "",
     startDate: initialData?.startDate ?? "",
     endDate: initialData?.endDate ?? "",
     daysOfWeek: initialData?.daysOfWeek ?? "0,1,2,3,4,5,6",
@@ -139,6 +171,9 @@ export function OfferForm({
     categoryId: initialData?.categoryId ?? "",
     submissionNotes: initialData?.submissionNotes ?? "",
     replacementReason: initialData?.replacementReason ?? "",
+    redemptionType: initialData?.redemptionType ?? "IN_STORE_QR",
+    bookingUrl: initialData?.bookingUrl ?? "",
+    qrCodeUrl: initialData?.qrCodeUrl ?? "",
   });
 
   const set =
@@ -159,19 +194,163 @@ export function OfferForm({
         setShowStrength(true);
     };
 
+  const handleLinkedFieldChange = (
+    field: 'discountValue' | 'minimumSpend' | 'discountMax' | 'discountPercent',
+    value: string,
+  ) => {
+    setLastEditedField(field);
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+
+      if (next.offerType === 'PERCENTAGE') {
+        const dv = Number(next.discountValue);
+        const ms = Number(next.minimumSpend);
+        const dm = Number(next.discountMax);
+        const dp = Number(next.discountPercent);
+        const hasDv = !isNaN(dv) && dv > 0;
+        const hasMs = !isNaN(ms) && ms > 0;
+        const hasDm = !isNaN(dm) && dm > 0;
+        const hasDp = !isNaN(dp) && dp > 0;
+
+        if (field === 'discountValue') {
+          if (hasDv && hasDp) {
+            const calcMs = dv / (dp / 100);
+            next.minimumSpend = String(Math.round(calcMs * 100) / 100);
+            next.discountMax = String(dv);
+          } else if (hasDv && hasMs) {
+            const pct = (dv / ms) * 100;
+            next.discountPercent = Math.min(Math.round(pct * 100) / 100, 90).toString();
+            next.discountMax = String(dv);
+          } else if (hasDv) {
+            next.discountMax = String(dv);
+          }
+        } else if (field === 'minimumSpend') {
+          if (hasDv && hasDp) {
+            const calcMs = dv / (dp / 100);
+            next.minimumSpend = String(Math.round(calcMs * 100) / 100);
+            next.discountMax = String(dv);
+          } else if (hasMs && hasDp) {
+            next.discountMax = String(Math.round((ms * dp) / 100 * 100) / 100);
+          } else if (hasMs && hasDm) {
+            const pct = (dm / ms) * 100;
+            next.discountPercent = Math.min(Math.round(pct * 100) / 100, 90).toString();
+          }
+        } else if (field === 'discountPercent') {
+          if (hasDv && hasMs) {
+            const calcMs = dv / (dp / 100);
+            next.minimumSpend = String(Math.round(calcMs * 100) / 100);
+            next.discountMax = String(dv);
+          } else if (hasMs && hasDm) {
+            next.discountMax = String(Math.round((ms * dp) / 100 * 100) / 100);
+          }
+        } else if (field === 'discountMax') {
+          if (hasDv && hasMs) {
+            const pct = (dm / ms) * 100;
+            next.discountPercent = Math.min(Math.round(pct * 100) / 100, 90).toString();
+          }
+        }
+      } else if (next.offerType === 'FLAT') {
+        const dv = Number(next.discountValue);
+        if (field === 'discountValue' && !isNaN(dv) && dv > 0) {
+          next.discountMax = String(dv);
+        }
+      }
+
+      return next;
+    });
+
+    setErrors((prev) => {
+      const n = { ...prev };
+      delete n[field];
+      delete n.discountMax;
+      delete n.discountPercent;
+      delete n.minimumSpend;
+      delete n.discountValue;
+      return n;
+    });
+    setShowStrength(true);
+  };
+
+  const toggleDay = (day: number) => {
+    setForm((prev) => {
+      const current = prev.daysOfWeek.split(',').filter(Boolean)
+      const str = String(day)
+      const next = current.includes(str)
+        ? current.filter((d) => d !== str)
+        : [...current, str].sort()
+      return { ...prev, daysOfWeek: next.join(',') }
+    })
+    if (errors.daysOfWeek) {
+      setErrors((prev) => {
+        const n = { ...prev }
+        delete n.daysOfWeek
+        return n
+      })
+    }
+  }
+
   const validate = (): boolean => {
     const errs: FormErrors = {};
     if (!form.title.trim()) errs.title = "Title is required";
     if (form.title.length < 5)
       errs.title = "Title must be at least 5 characters";
     if (!form.offerType) errs.offerType = "Offer type is required";
-    if (!form.discountValue.trim())
-      errs.discountValue = "Discount value is required";
-    else if (
-      isNaN(Number(form.discountValue)) ||
-      Number(form.discountValue) <= 0
-    )
-      errs.discountValue = "Must be a positive number";
+
+    if (form.offerType === 'FLAT') {
+      if (!form.discountValue.trim())
+        errs.discountValue = "Discount value is required";
+      else if (isNaN(Number(form.discountValue)) || Number(form.discountValue) <= 0)
+        errs.discountValue = "Must be a positive number";
+      if (form.discountPercent.trim()) {
+        const dp = Number(form.discountPercent);
+        if (isNaN(dp) || dp < 0 || dp > 90)
+          errs.discountPercent = "Must be between 0% and 90%";
+      }
+      if (form.discountMax.trim() && form.discountValue.trim()) {
+        const dm = Number(form.discountMax);
+        if (isNaN(dm) || dm <= 0) errs.discountMax = "Must be greater than 0";
+        if (dm > Number(form.discountValue))
+          errs.discountMax = "Maximum discount cannot exceed discount value";
+      }
+    } else if (form.offerType === 'PERCENTAGE') {
+      if (!form.discountPercent.trim())
+        errs.discountPercent = "Discount percentage is required";
+      else {
+        const dp = Number(form.discountPercent);
+        if (isNaN(dp) || dp < 0 || dp > 90)
+          errs.discountPercent = "Must be between 0% and 90%";
+      }
+      if (form.discountMax.trim()) {
+        const dm = Number(form.discountMax);
+        if (isNaN(dm) || dm <= 0) errs.discountMax = "Must be greater than 0";
+        if (form.discountValue.trim() && dm > Number(form.discountValue))
+          errs.discountMax = "Maximum discount cannot exceed discount value";
+      }
+      if (form.minimumSpend.trim()) {
+        const ms = Number(form.minimumSpend);
+        if (isNaN(ms) || ms <= 0) errs.minimumSpend = "Must be greater than 0";
+        if (form.discountValue.trim() && ms < Number(form.discountValue))
+          errs.minimumSpend = "Minimum spend cannot be lower than discount value";
+      }
+    } else if (form.offerType === 'BUY_X_GET_Y') {
+      if (!form.buyQuantity.trim())
+        errs.buyQuantity = "Buy quantity is required";
+      else if (isNaN(Number(form.buyQuantity)) || Number(form.buyQuantity) <= 0)
+        errs.buyQuantity = "Must be a positive number";
+      if (!form.buyItem.trim())
+        errs.buyItem = "Buy item is required";
+      if (!form.getQuantity.trim())
+        errs.getQuantity = "Get quantity is required";
+      else if (isNaN(Number(form.getQuantity)) || Number(form.getQuantity) <= 0)
+        errs.getQuantity = "Must be a positive number";
+      if (!form.freeItem.trim())
+        errs.freeItem = "Free item is required";
+      if (form.maxFreeItems.trim()) {
+        const mfi = Number(form.maxFreeItems);
+        if (isNaN(mfi) || mfi <= 0) errs.maxFreeItems = "Must be a positive number";
+      }
+    }
+
     if (!form.startDate.trim()) errs.startDate = "Start date is required";
     if (!form.endDate.trim()) errs.endDate = "End date is required";
     else if (
@@ -182,24 +361,39 @@ export function OfferForm({
     if (isReplacement && !form.termsAndConditions.trim())
       errs.termsAndConditions =
         "Terms and conditions are required for replacement offers";
+
+    // Days of week validation
+    const selectedDays = form.daysOfWeek.split(',').filter(Boolean)
+    if (selectedDays.length === 0) {
+      errs.daysOfWeek = "Select at least one valid day"
+    } else {
+      const invalid = selectedDays.filter((d) => !DAYS_OF_WEEK.map((day) => String(day.value)).includes(d))
+      if (invalid.length > 0) {
+        errs.daysOfWeek = "Select at least one valid day"
+      }
+    }
+
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
-  const isUploading = uploadingCount > 0;
-  
   const buildBody = (saveAsDraft = false): Record<string, unknown> => ({
     title: form.title,
-    description: form.description,
+    description: form.description || null,
     shortDescription: form.shortDescription || null,
     termsAndConditions: form.termsAndConditions || null,
     imageUrls: form.imageUrls,
-    offerType: form.offerType,
-    discountValue: Number(form.discountValue),
+    offerType: OFFER_TYPE_MAP[form.offerType] ?? form.offerType,
+    discountValue: form.discountValue ? Number(form.discountValue) : null,
     discountMax: form.discountMax ? Number(form.discountMax) : null,
     discountPercent: form.discountPercent ? Number(form.discountPercent) : null,
     minimumSpend: form.minimumSpend ? Number(form.minimumSpend) : null,
     maxRedemptions: form.maxRedemptions ? Number(form.maxRedemptions) : null,
+    buyQuantity: form.buyQuantity ? Number(form.buyQuantity) : null,
+    buyItem: form.buyItem || null,
+    getQuantity: form.getQuantity ? Number(form.getQuantity) : null,
+    freeItem: form.freeItem || null,
+    maxFreeItems: form.maxFreeItems ? Number(form.maxFreeItems) : null,
     startDate: form.startDate,
     endDate: form.endDate,
     daysOfWeek: form.daysOfWeek
@@ -212,29 +406,57 @@ export function OfferForm({
     submissionNotes: form.submissionNotes || null,
     replacementReason: isReplacement ? form.replacementReason || null : null,
     saveAsDraft,
+    redemptionType: form.redemptionType || null,
+    bookingUrl: form.bookingUrl || null,
+    qrCodeUrl: form.qrCodeUrl || null,
     ...(isReplacement && currentLiveOffer
       ? { replacesOfferId: currentLiveOffer.id }
       : {}),
   });
+
+  /** Upload any pending (not yet uploaded) images and return the complete image URL list. */
+  const resolveAllImageUrls = async (): Promise<string[] | null> => {
+    const existingUrls = [...form.imageUrls]
+    const pendingItems = pendingImages.filter((p) => p.status === 'pending' && p.file?.size > 0)
+
+    if (pendingItems.length === 0) return existingUrls
+
+    try {
+      const newUrls = await Promise.all(
+        pendingItems.map((item) => uploadImage(item.file, OFFER_IMAGE_OPTIONS))
+      )
+      // Mark pending images as done
+      setPendingImages((prev) =>
+        prev.map((p) =>
+          p.status === 'pending' ? { ...p, status: 'done' as const } : p
+        )
+      )
+      return [...existingUrls, ...newUrls]
+    } catch (err: any) {
+      showToast({
+        type: "error",
+        title: "Image upload failed",
+        description: err.message || "Failed to upload images. Changes not saved.",
+      })
+      return null
+    }
+  }
 
   const handleSaveDraft = async () => {
     if (!form.title.trim()) {
       showToast({ type: "error", title: "Title is required to save a draft" });
       return;
     }
-    if (isUploading) {
-      showToast({
-        type: "error",
-        title: "Please wait for image uploads to complete",
-      });
-      return;
-    }
+    const allUrls = await resolveAllImageUrls()
+    if (allUrls === null) return
+
     try {
+      const body = { ...buildBody(true), imageUrls: allUrls }
       if (isEdit) {
-        await updateOffer.mutateAsync({ id: offerId, ...buildBody(true) });
+        await updateOffer.mutateAsync({ id: offerId, ...body });
         showToast({ type: "success", title: "Draft saved" });
       } else {
-        await createOffer.mutateAsync(buildBody(true));
+        await createOffer.mutateAsync(body);
         showToast({ type: "success", title: "Draft saved" });
       }
       router.push("/merchant/offers");
@@ -250,19 +472,17 @@ export function OfferForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validate()) return;
-    if (isUploading) {
-      showToast({
-        type: "error",
-        title: "Please wait for image uploads to complete",
-      });
-      return;
-    }
+
+    const allUrls = await resolveAllImageUrls()
+    if (allUrls === null) return
+
+    const body = { ...buildBody(false), imageUrls: allUrls }
 
     if (isEdit) {
       try {
         const result = await submitOffer.mutateAsync({
           id: offerId,
-          ...buildBody(false),
+          ...body,
         });
         if (result.qualityCheck === "PASSED") {
           showToast({ type: "success", title: "Offer submitted for review" });
@@ -283,7 +503,7 @@ export function OfferForm({
       }
     } else {
       try {
-        const result = await createOffer.mutateAsync(buildBody(false));
+        const result = await createOffer.mutateAsync(body);
         if (result.qualityCheck === "PASSED") {
           showToast({
             type: "success",
@@ -312,48 +532,21 @@ export function OfferForm({
     }
   };
 
-  const handleImagesReady = (images: PendingImage[]) => {
-    setPendingImages((prev) => {
-      const merged = [...prev];
-      for (const img of images) {
-        const idx = merged.findIndex((p) => p.id === img.id);
-        if (idx >= 0) {
-          merged[idx] = img;
-        } else {
-          merged.push(img);
-        }
-      }
-      return merged;
-    });
-
-    const uploading = images.filter((i) => i.status === "uploading").length;
-    const done = images.filter((i) => i.status === "done").length;
-    const errors = images.filter((i) => i.status === "error").length;
-
-    if (uploading > 0) {
-      setUploadingCount((prev) => prev + uploading);
-    }
-    if (done > 0 || errors > 0) {
-      setUploadingCount((prev) => Math.max(0, prev - (done + errors)));
-    }
-
-    const completedUrls = images
-      .filter((i) => i.status === "done" && i.url)
-      .map((i) => i.url!);
-    if (completedUrls.length > 0) {
-      setForm((prev) => {
-        const existing = new Set(prev.imageUrls);
-        const toAdd = completedUrls.filter((u) => !existing.has(u));
-        if (toAdd.length === 0) return prev;
-        return { ...prev, imageUrls: [...prev.imageUrls, ...toAdd] };
-      });
-    }
+  const handleFilesSelected = (files: DeferredFile[]) => {
+    const newImages: PendingImage[] = files.map((f) => ({
+      id: `pending-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+      file: f.file,
+      previewUrl: f.previewUrl,
+      status: 'pending' as const,
+    }))
+    setPendingImages((prev) => [...prev, ...newImages])
   };
 
   const handleRemoveImage = (id: string) => {
     setPendingImages((prev) => {
       const img = prev.find((p) => p.id === id);
       if (img?.url) {
+        // Existing uploaded image — clean up from storage
         deleteOfferImage(img.url);
       }
       return prev.filter((p) => p.id !== id);
@@ -541,6 +734,7 @@ export function OfferForm({
                   <div>
                     <label className={labelClass}>Category</label>
                     <select
+                      name="category"
                       className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                       value={form.categoryId}
                       onChange={set("categoryId")}
@@ -557,6 +751,7 @@ export function OfferForm({
                   <div>
                     <label className={labelClass}>Offer Type *</label>
                     <select
+                      name="offerType"
                       className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
                       value={form.offerType}
                       onChange={set("offerType")}
@@ -568,78 +763,340 @@ export function OfferForm({
                   </div>
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <label className={labelClass}>Discount Value *</label>
-                    <Input
-                      className={inputClass}
-                      type="number"
-                      step="0.01"
-                      value={form.discountValue}
-                      onChange={set("discountValue")}
-                      placeholder="e.g. 5.00"
-                    />
-                    {errors.discountValue && (
-                      <p className="mt-1 text-xs text-destructive">
-                        {errors.discountValue}
-                      </p>
-                    )}
-                  </div>
-                  <div>
-                    <label className={labelClass}>Discount Max</label>
-                    <Input
-                      className={inputClass}
-                      type="number"
-                      step="0.01"
-                      value={form.discountMax}
-                      onChange={set("discountMax")}
-                      placeholder="Maximum discount amount"
-                    />
-                  </div>
+                {/* Redemption Type Selection */}
+                <div>
+                  <label className={labelClass}>Redemption Type</label>
+                  <select
+                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                    value={form.redemptionType}
+                    onChange={set("redemptionType")}
+                    name="redemptionType"
+                  >
+                    <option value="IN_STORE_QR">In-Store QR Code</option>
+                    <option value="ONLINE_CODE">Online Code</option>
+                    <option value="BOOKING_LINK">Booking Link</option>
+                  </select>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {form.redemptionType === 'ONLINE_CODE' && 'Employee gets a code to enter on merchant website'}
+                    {form.redemptionType === 'BOOKING_LINK' && 'Employee is redirected to merchant booking page'}
+                    {form.redemptionType === 'IN_STORE_QR' && 'Employee shows QR code at merchant location'}
+                  </p>
                 </div>
 
+                {/* Redemption Type Specific Fields */}
+                {form.redemptionType === 'ONLINE_CODE' && (
+                  <Card className="bg-muted/30">
+                    <CardHeader>
+                      <CardTitle className="text-sm">Online Code Configuration</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div>
+                        <label className={labelClass}>Booking URL *</label>
+                        <Input
+                          className={inputClass}
+                          value={form.bookingUrl}
+                          onChange={set("bookingUrl")}
+                          placeholder="https://merchant-website.com/offer"
+                          type="url"
+                        />
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Where employees will be directed to use their code
+                        </p>
+                      </div>
+                      <div>
+                        <label className={labelClass}>Offer Code</label>
+                        <Input
+                          className={inputClass}
+                          value={form.redemptionCode}
+                          onChange={set("redemptionCode")}
+                          placeholder="Auto-generated if empty"
+                          maxLength={6}
+                        />
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          6-character alphanumeric code. Leave empty to auto-generate.
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {form.redemptionType === 'BOOKING_LINK' && (
+                  <Card className="bg-muted/30">
+                    <CardHeader>
+                      <CardTitle className="text-sm">Booking Link Configuration</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div>
+                        <label className={labelClass}>Booking URL *</label>
+                        <Input
+                          className={inputClass}
+                          value={form.bookingUrl}
+                          onChange={set("bookingUrl")}
+                          placeholder="https://booking-system.com/offers/..."
+                          type="url"
+                        />
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Direct link to merchant booking system
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {form.redemptionType === 'IN_STORE_QR' && (
+                  <Card className="bg-muted/30">
+                    <CardHeader>
+                      <CardTitle className="text-sm">In-Store QR Configuration</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-muted-foreground">
+                        A unique QR code will be generated for this offer. Employees will scan it at the merchant location to receive their redemption code.
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {form.offerType === 'FLAT' && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className={labelClass}>Discount Amount *</label>
+                      <Input
+                        className={inputClass}
+                        type="number"
+                        step="0.01"
+                        value={form.discountValue}
+                        onChange={(e) => handleLinkedFieldChange("discountValue", e.target.value)}
+                        placeholder="e.g. 100"
+                      />
+                      {errors.discountValue && (
+                        <p className="mt-1 text-xs text-destructive">
+                          {errors.discountValue}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className={labelClass}>Minimum Spend</label>
+                      <Input
+                        className={inputClass}
+                        type="number"
+                        step="0.01"
+                        value={form.minimumSpend}
+                        onChange={set("minimumSpend")}
+                        placeholder="Minimum order amount"
+                      />
+                      {errors.minimumSpend && (
+                        <p className="mt-1 text-xs text-destructive">
+                          {errors.minimumSpend}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {showStrength &&
+                  form.offerType === 'FLAT' &&
                   form.discountValue &&
                   Number(form.discountValue) > 0 && (
                     <OfferStrengthIndicator
                       discountValue={Number(form.discountValue)}
                       offerType={form.offerType}
                       categoryId={form.categoryId || null}
+                      minimumSpend={form.minimumSpend ? Number(form.minimumSpend) : undefined}
+                      discountMax={form.discountMax ? Number(form.discountMax) : undefined}
                     />
                   )}
 
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <div>
-                    <label className={labelClass}>Discount Percent</label>
-                    <Input
-                      className={inputClass}
-                      type="number"
-                      value={form.discountPercent}
-                      onChange={set("discountPercent")}
-                      placeholder="e.g. 20"
-                    />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Minimum Spend</label>
-                    <Input
-                      className={inputClass}
-                      type="number"
-                      step="0.01"
-                      value={form.minimumSpend}
-                      onChange={set("minimumSpend")}
-                      placeholder="Minimum order amount"
-                    />
-                  </div>
-                  <div>
-                    <label className={labelClass}>Max Redemptions</label>
-                    <Input
-                      className={inputClass}
-                      type="number"
-                      value={form.maxRedemptions}
-                      onChange={set("maxRedemptions")}
-                      placeholder="Unlimited if empty"
-                    />
-                  </div>
+                {form.offerType === 'PERCENTAGE' && (
+                  <>
+                    <div className="grid gap-4 sm:grid-cols-3">
+                      <div>
+                        <label className={labelClass}>Discount Percentage *</label>
+                        <Input
+                          className={inputClass}
+                          type="number"
+                          value={form.discountPercent}
+                          onChange={(e) => handleLinkedFieldChange("discountPercent", e.target.value)}
+                          placeholder="e.g. 20"
+                        />
+                        {errors.discountPercent && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {errors.discountPercent}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className={labelClass}>Maximum Discount</label>
+                        <Input
+                          className={inputClass}
+                          type="number"
+                          step="0.01"
+                          value={form.discountMax}
+                          onChange={(e) => handleLinkedFieldChange("discountMax", e.target.value)}
+                          placeholder="Cap amount"
+                        />
+                        {errors.discountMax && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {errors.discountMax}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className={labelClass}>Minimum Spend</label>
+                        <Input
+                          className={inputClass}
+                          type="number"
+                          step="0.01"
+                          value={form.minimumSpend}
+                          onChange={(e) => handleLinkedFieldChange("minimumSpend", e.target.value)}
+                          placeholder="Minimum order amount"
+                        />
+                        {errors.minimumSpend && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {errors.minimumSpend}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {showStrength &&
+                      form.discountValue &&
+                      Number(form.discountValue) > 0 && (
+                        <OfferStrengthIndicator
+                          discountValue={Number(form.discountValue)}
+                          offerType={form.offerType}
+                          categoryId={form.categoryId || null}
+                          minimumSpend={form.minimumSpend ? Number(form.minimumSpend) : undefined}
+                          discountMax={form.discountMax ? Number(form.discountMax) : undefined}
+                        />
+                      )}
+
+                    {form.minimumSpend && form.discountMax && form.maxRedemptions && (
+                      <div className="rounded-lg border bg-muted/50 p-3 space-y-1">
+                        <h4 className="text-xs font-semibold text-muted-foreground">Campaign Liability Estimate</h4>
+                        <p className="text-sm font-medium">
+                          Total potential payout: ${(
+                            Number(form.discountMax) * Number(form.maxRedemptions)
+                          ).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Based on max {form.maxRedemptions} redemptions × ${Number(form.discountMax).toFixed(2)} max discount
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {form.offerType === 'BUY_X_GET_Y' && (
+                  <>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className={labelClass}>Buy Quantity *</label>
+                        <Input
+                          className={inputClass}
+                          type="number"
+                          value={form.buyQuantity}
+                          onChange={set("buyQuantity")}
+                          placeholder="e.g. 2"
+                        />
+                        {errors.buyQuantity && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {errors.buyQuantity}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className={labelClass}>Buy Item *</label>
+                        <Input
+                          className={inputClass}
+                          value={form.buyItem}
+                          onChange={set("buyItem")}
+                          placeholder="e.g. Pizza"
+                        />
+                        {errors.buyItem && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {errors.buyItem}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className={labelClass}>Get Quantity *</label>
+                        <Input
+                          className={inputClass}
+                          type="number"
+                          value={form.getQuantity}
+                          onChange={set("getQuantity")}
+                          placeholder="e.g. 1"
+                        />
+                        {errors.getQuantity && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {errors.getQuantity}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className={labelClass}>Free Item *</label>
+                        <Input
+                          className={inputClass}
+                          value={form.freeItem}
+                          onChange={set("freeItem")}
+                          placeholder="e.g. Pizza"
+                        />
+                        {errors.freeItem && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {errors.freeItem}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className={labelClass}>Maximum Free Items</label>
+                        <Input
+                          className={inputClass}
+                          type="number"
+                          value={form.maxFreeItems}
+                          onChange={set("maxFreeItems")}
+                          placeholder="Cap on free items"
+                        />
+                        {errors.maxFreeItems && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {errors.maxFreeItems}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className={labelClass}>Minimum Spend</label>
+                        <Input
+                          className={inputClass}
+                          type="number"
+                          step="0.01"
+                          value={form.minimumSpend}
+                          onChange={set("minimumSpend")}
+                          placeholder="Minimum order amount"
+                        />
+                        {errors.minimumSpend && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {errors.minimumSpend}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <div>
+                  <label className={labelClass}>Max Redemptions</label>
+                  <Input
+                    className={inputClass}
+                    type="number"
+                    value={form.maxRedemptions}
+                    onChange={set("maxRedemptions")}
+                    placeholder="Unlimited if empty"
+                  />
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -672,6 +1129,47 @@ export function OfferForm({
                     )}
                   </div>
                 </div>
+
+                {/* Days of Week */}
+                <div>
+                  <label className={labelClass}>Available Days</label>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {DAYS_OF_WEEK.map((day) => {
+                      const selected = form.daysOfWeek
+                        .split(',')
+                        .map((s) => s.trim())
+                        .includes(String(day.value))
+                      return (
+                        <button
+                          key={day.value}
+                          type="button"
+                          onClick={() => toggleDay(day.value)}
+                          className={`
+                            rounded-full px-3 py-1.5 text-xs font-medium transition-colors
+                            ${selected
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                            }
+                          `}
+                        >
+                          {day.short}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {(() => {
+                      const sel = form.daysOfWeek.split(',').filter(Boolean)
+                      if (sel.length === 7) return 'Every day'
+                      return sel.map((s) => DAYS_OF_WEEK.find((d) => d.value === Number(s))?.short).join(' • ')
+                    })()}
+                  </p>
+                  {errors.daysOfWeek && (
+                    <p className="mt-1 text-xs text-destructive">
+                      {errors.daysOfWeek}
+                    </p>
+                  )}
+                </div>
               </CardContent>
             </Card>
 
@@ -681,8 +1179,9 @@ export function OfferForm({
               </CardHeader>
               <CardContent className="space-y-4">
                 <OfferImageUploader
-                  onImagesReady={handleImagesReady}
-                  disabled={isUploading}
+                  uploadMode="deferred"
+                  onFilesSelected={handleFilesSelected}
+                  disabled={false}
                   currentCount={pendingImages.length}
                 />
 
@@ -748,8 +1247,7 @@ export function OfferForm({
                     variant="outline"
                     onClick={handleSaveDraft}
                     disabled={
-                      isUploading ||
-                      createOffer.isPending ||
+                                            createOffer.isPending ||
                       updateOffer.isPending
                     }
                   >
@@ -763,8 +1261,7 @@ export function OfferForm({
                   <Button
                     type="submit"
                     disabled={
-                      isUploading ||
-                      createOffer.isPending ||
+                                            createOffer.isPending ||
                       submitOffer.isPending
                     }
                   >
@@ -785,10 +1282,10 @@ export function OfferForm({
                   <Button
                     type="submit"
                     disabled={
-                      isUploading ||
-                      updateOffer.isPending ||
+                                            updateOffer.isPending ||
                       submitOffer.isPending
                     }
+              
                   >
                     {updateOffer.isPending ? (
                       <Loader2 className="mr-1 h-4 w-4 animate-spin" />
@@ -813,11 +1310,25 @@ export function OfferForm({
         {/* Right column — preview panel */}
         <div className="space-y-6 lg:col-span-1">
           <div className="lg:sticky lg:top-24 lg:self-start">
-            <Card>
-              <CardHeader>
-                <CardTitle>Mobile Preview</CardTitle>
+            <Card className="overflow-hidden border-2">
+              <CardHeader className="border-b bg-gradient-to-br from-muted/50 to-muted/20 pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
+                      <Sparkles className="h-4 w-4 text-primary" />
+                    </div>
+                    Live Preview
+                  </CardTitle>
+                  <Badge variant="secondary" className="text-[10px]">
+                    <Store className="mr-1 h-2.5 w-2.5" />
+                    Mobile
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  How employees will see this offer in their app
+                </p>
               </CardHeader>
-              <CardContent>
+              <CardContent className="bg-gradient-to-br from-background via-muted/20 to-muted/40 p-6">
                 <OfferMobilePreview
                   title={form.title}
                   shortDescription={form.shortDescription}
@@ -831,6 +1342,8 @@ export function OfferForm({
                   isExclusive={false}
                   merchantName="Your Business"
                   categoryName={categoryName}
+                  redemptionType={form.redemptionType}
+                  minSpend={form.minimumSpend}
                 />
               </CardContent>
             </Card>

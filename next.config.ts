@@ -1,6 +1,10 @@
+import path from "path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
+  outputFileTracingRoot: process.cwd(),
+
   // Enable React strict mode for development
   reactStrictMode: true,
 
@@ -55,15 +59,18 @@ const nextConfig: NextConfig = {
           //     "frame-ancestors 'none'",
           //   ].join("; "),
           // },
+
           {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://maps.gstatic.com",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob: https://*.supabase.co https://*.supabase.in https://maps.gstatic.com",
-              "connect-src 'self' http://localhost:54321 ws://localhost:54321 https://*.supabase.co https://*.supabase.in wss://*.supabase.co",
-              "font-src 'self' data:",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://maps.gstatic.com https://www.gstatic.com",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+              "img-src 'self' data: blob: https://*.supabase.co https://*.supabase.in https://maps.gstatic.com https://maps.googleapis.com https://*.googleusercontent.com https://streetviewpixels-pa.googleapis.com",
+              "connect-src 'self' http://localhost:54321 ws://localhost:54321 https://*.supabase.co https://*.supabase.in wss://*.supabase.co https://maps.googleapis.com https://*.googleapis.com https://maps.gstatic.com https://*.gstatic.com https://places.googleapis.com https://streetviewpixels-pa.googleapis.com",
+              "font-src 'self' data: https://fonts.gstatic.com",
+               "worker-src 'self' blob:",
+              "frame-src https://www.google.com",
               "frame-ancestors 'none'",
             ].join("; "),
           },

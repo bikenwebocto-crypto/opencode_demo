@@ -1,18 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getCurrentUser } from "@/lib/supabase/server";
-import { Prisma, OfferStatus } from "@prisma/client";
+import { getMerchantFromSession } from '@/lib/merchant-session'
+import { OfferStatus } from "@prisma/client";
 import {
   ReplacementValidationError,
   validateReplacement,
 } from "@/lib/offer-replacement";
 import { logReplacementAudit, notifyReplacement } from "@/lib/offer-replacement-notifications";
 import { createAuditLog } from '@/services/audit-log.service';
+import { generateUniqueOfferCode } from '@/lib/offer-code';
+import { BUSINESS_NOTIFICATION_TEMPLATES, channels, publishBusinessNotification, publishBusinessToAdmins } from '@/services/business-notification.service';
 const MIN_TITLE_LENGTH = 5;
 const MAX_TITLE_LENGTH = 255;
 const MAX_DESCRIPTION_LENGTH = 2000;
 const MAX_SHORT_DESCRIPTION_LENGTH = 500;
 const ALLOWED_IMAGE_FORMATS = ["jpg", "jpeg", "png", "webp"];
+const VALID_REDEMPTION_TYPES = ['ONLINE_CODE', 'BOOKING_LINK', 'IN_STORE_QR'] as const;
+
+const VALID_OFFER_TYPES = ['flat_rate', 'percentage', 'buy_x_get_y'] as const;
 
 function unauthorized() {
   return NextResponse.json(
@@ -42,19 +47,12 @@ function internalError(error: unknown) {
   );
 }
 
-async function getMerchantFromUser() {
-  const user = await getCurrentUser();
-  if (!user || user.userType !== "merchant") return null;
-  const account = await prisma.account.findUnique({ where: { email: user.email }, select: { authUserId: true } });
-  if (!account) return null;
-  return prisma.merchant.findFirst({ where: { accountId: account.authUserId } });
-}
-
 function runQualityChecks(body: any): {
   passed: boolean;
   errors: Record<string, string>;
 } {
   const errors: Record<string, string> = {};
+  const ot = body.offerType;
 
   if (!body.title || body.title.trim().length < MIN_TITLE_LENGTH) {
     errors.title = `Title must be at least ${MIN_TITLE_LENGTH} characters`;
@@ -71,10 +69,42 @@ function runQualityChecks(body: any): {
   ) {
     errors.shortDescription = `Short description must be at most ${MAX_SHORT_DESCRIPTION_LENGTH} characters`;
   }
-  if (!body.offerType) errors.offerType = "Offer type is required";
-  if (body.discountValue == null || Number(body.discountValue) <= 0) {
-    errors.discountValue = "Discount value must be a positive number";
+  if (!ot) {
+    errors.offerType = "Offer type is required";
+  } else if (!VALID_OFFER_TYPES.includes(ot)) {
+    errors.offerType = `Offer type must be one of: ${VALID_OFFER_TYPES.join(', ')}`;
   }
+
+  if (ot === 'flat_rate') {
+    if (body.discountValue == null || Number(body.discountValue) <= 0) {
+      errors.discountValue = "Discount value is required for flat offers";
+    }
+  } else if (ot === 'percentage') {
+    if (body.discountPercent == null || Number(body.discountPercent) <= 0) {
+      errors.discountPercent = "Discount percentage is required for percentage offers";
+    } else if (Number(body.discountPercent) > 90) {
+      errors.discountPercent = "Discount percentage cannot exceed 90%";
+    }
+    if (body.discountMax != null && body.discountValue != null) {
+      if (Number(body.discountMax) > Number(body.discountValue)) {
+        errors.discountMax = "Maximum discount cannot exceed discount value";
+      }
+    }
+  } else if (ot === 'buy_x_get_y') {
+    if (!body.buyQuantity || Number(body.buyQuantity) <= 0) {
+      errors.buyQuantity = "Buy quantity is required";
+    }
+    if (!body.buyItem?.trim()) {
+      errors.buyItem = "Buy item is required";
+    }
+    if (!body.getQuantity || Number(body.getQuantity) <= 0) {
+      errors.getQuantity = "Get quantity is required";
+    }
+    if (!body.freeItem?.trim()) {
+      errors.freeItem = "Free item is required";
+    }
+  }
+
   if (!body.startDate) errors.startDate = "Start date is required";
   if (!body.endDate) errors.endDate = "End date is required";
   if (
@@ -101,6 +131,15 @@ function runQualityChecks(body: any): {
       }
     }
   }
+  if (body.daysOfWeek !== undefined && body.daysOfWeek !== null) {
+    if (!Array.isArray(body.daysOfWeek)) {
+      errors.daysOfWeek = "daysOfWeek must be an array of integers 0-6"
+    } else if (body.daysOfWeek.length === 0) {
+      errors.daysOfWeek = "Select at least one valid day"
+    } else if (body.daysOfWeek.some((d: unknown) => typeof d !== 'number' || d < 0 || d > 6 || !Number.isInteger(d))) {
+      errors.daysOfWeek = "Each day must be an integer between 0 and 6"
+    }
+  }
 
   return { passed: Object.keys(errors).length === 0, errors };
 }
@@ -114,6 +153,7 @@ async function checkDuplicateOffer(
     where: {
       merchantId,
       title: { equals: title, mode: "insensitive" },
+      deletedAt: null,
       status: {
         in: [
           OfferStatus.LIVE,
@@ -129,7 +169,7 @@ async function checkDuplicateOffer(
 
 export async function GET(request: NextRequest) {
   try {
-    const merchant = await getMerchantFromUser();
+    const merchant = await getMerchantFromSession();
     // console.log("** Merchant offers GET - merchant running ");
     if (!merchant) return unauthorized();
 
@@ -143,12 +183,12 @@ export async function GET(request: NextRequest) {
     const q = searchParams.get("q");
     const scope = searchParams.get("scope"); // 'live', 'history', 'drafts'
 
-    const where: any = { merchantId: merchant.id };
+    const where: any = { merchantId: merchant.id, deletedAt: null };
     if (status) where.status = status;
     if (q)
       where.OR = [
         { title: { contains: q, mode: "insensitive" } },
-        { description: { contains: q, mode: "insensitive" } },
+        { content: { is: { description: { contains: q, mode: "insensitive" } } } },
       ];
     if (scope === "history") {
       where.status = { in: ["REPLACED", "EXPIRED", "ARCHIVED"] };
@@ -158,31 +198,38 @@ export async function GET(request: NextRequest) {
       where.status = "ARCHIVED";
     }
 
-    const [offers, total] = await Promise.all([
+    const [offers, total, currentLive] = await Promise.all([
       prisma.merchantOffer.findMany({
         where,
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: {
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          offerType: true,
+          startDate: true,
+          endDate: true,
           _count: { select: { redemptions: true } },
           replacesOffer: { select: { id: true, title: true } },
+          pricing: { select: { configuration: true } },
+          redemption: { select: { currentRedemptions: true, maxRedemptions: true } },
+          content: {select: { imageUrls: true } }
         },
       }),
       prisma.merchantOffer.count({ where }),
-    ]);
-
-    // Get current live offer separately
-    const currentLive = await prisma.merchantOffer.findFirst({
-      where: { merchantId: merchant.id, status: "LIVE" },
-      include: {
-        _count: { select: { redemptions: true } },
-        replacementReqAsNew: {
-          where: { status: { in: ["PENDING", "AWAITING_APPROVAL"] } },
-          include: { newOffer: true },
+      prisma.merchantOffer.findFirst({
+        where: { merchantId: merchant.id, status: "LIVE", deletedAt: null },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          offerType: true,
+          pricing: { select: { configuration: true } },
         },
-      },
-    });
+      }),
+    ]);
 
     // Get pending replacement (if any). CHANGES_REQUESTED counts as
     // "still in flight" — merchant must edit+resubmit or delete before
@@ -192,6 +239,7 @@ export async function GET(request: NextRequest) {
           where: {
             merchantId: merchant.id,
             replacesOfferId: currentLive.id,
+            deletedAt: null,
             status: {
               in: [
                 "VALIDATION_IN_PROGRESS",
@@ -200,6 +248,16 @@ export async function GET(request: NextRequest) {
                 "CHANGES_REQUESTED",
               ],
             },
+          },
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            offerType: true,
+            createdAt: true,
+            submittedAt: true,
+            pricing: { select: { configuration: true } },
+            review: { select: { reviewNotes: true, rejectionReason: true } },
           },
         })
       : null;
@@ -229,11 +287,17 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const merchant = await getMerchantFromUser();
+    const merchant = await getMerchantFromSession();
     console.log("** Merchant offers POST - merchant:");
     if (!merchant) return unauthorized();
 
     const body = await request.json();
+    console.log("[MERCHANT OFFERS POST] Incoming body keys:", Object.keys(body));
+    console.log("[MERCHANT OFFERS POST] redemptionType:", body.redemptionType);
+    console.log("[MERCHANT OFFERS POST] saveAsDraft:", body.saveAsDraft);
+    console.log("[MERCHANT OFFERS POST] replacesOfferId:", body.replacesOfferId);
+    console.log("[MERCHANT OFFERS POST] redemptionCode present:", !!body.redemptionCode);
+
     const {
       title,
       description,
@@ -256,18 +320,34 @@ export async function POST(request: NextRequest) {
       replacesOfferId,
       replacementReason,
       saveAsDraft,
+      redemptionType,
+      bookingUrl,
+      buyQuantity,
+      buyItem,
+      getQuantity,
+      freeItem,
+      maxFreeItems,
     } = body;
 
-    if (
-      !title ||
-      !offerType ||
-      discountValue == null ||
-      !startDate ||
-      !endDate
-    ) {
+    if (!title || !offerType || !startDate || !endDate) {
       return badRequest(
-        "Missing required fields: title, offerType, discountValue, startDate, endDate",
+        "Missing required fields: title, offerType, startDate, endDate",
       );
+    }
+
+    // Validate redemptionType if provided
+    if (redemptionType && !VALID_REDEMPTION_TYPES.includes(redemptionType)) {
+      return badRequest(
+        `Invalid redemptionType. Must be one of: ${VALID_REDEMPTION_TYPES.join(', ')}`,
+      );
+    }
+
+    // Validate redemptionType-specific fields
+    if (redemptionType === 'ONLINE_CODE' && !bookingUrl && !saveAsDraft) {
+      return badRequest("Booking URL is required for ONLINE_CODE offers");
+    }
+    if (redemptionType === 'BOOKING_LINK' && !bookingUrl && !saveAsDraft) {
+      return badRequest("Booking URL is required for BOOKING_LINK offers");
     }
 
     // Validate category
@@ -325,6 +405,7 @@ export async function POST(request: NextRequest) {
       const existingDraft = await prisma.merchantOffer.findFirst({
         where: {
           merchantId: merchant.id,
+          deletedAt: null,
           status: { in: ['DRAFT', 'VALIDATION_FAILED', 'CHANGES_REQUESTED'] },
           id: { not: body.excludeId ?? '' },
         },
@@ -341,47 +422,147 @@ export async function POST(request: NextRequest) {
       qcResult = runQualityChecks(body);
     }
 
+    console.log('[MERCHANT OFFERS POST] saveAsDraft:', saveAsDraft);
+    console.log('[MERCHANT OFFERS POST] qcResult.passed:', qcResult.passed);
+    console.log('[MERCHANT OFFERS POST] qcResult.errors:', qcResult.errors);
+
     // After validation, offers go to AWAITING_APPROVAL or VALIDATION_FAILED
     // VALIDATION_IN_PROGRESS is only for transient background processing
-    console.log('** Quality check result:', qcResult);
     const targetStatus = saveAsDraft
       ? "DRAFT"
       : qcResult.passed
         ? "AWAITING_APPROVAL"
         : "VALIDATION_FAILED";
 
-    const offer = await prisma.merchantOffer.create({
-      data: {
-        merchantId: merchant.id,
-        title,
-        description: description ?? "",
-        shortDescription: shortDescription ?? null,
-        termsAndConditions: termsAndConditions ?? null,
-        imageUrls: imageUrls ?? [],
-        offerType,
-        discountValue,
-        discountMax: discountMax ?? null,
-        discountPercent: discountPercent ?? null,
-        minimumSpend: minimumSpend ?? null,
-        maxRedemptions: maxRedemptions ?? null,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        daysOfWeek: daysOfWeek ?? [0, 1, 2, 3, 4, 5, 6],
-        redemptionCode: redemptionCode ?? null,
-        redemptionInstructions: redemptionInstructions ?? null,
-        categoryId: categoryId ?? null,
-        replacesOfferId: replacesOfferId ?? null,
-        submissionNotes: submissionNotes ?? null,
-        isReplacement: !!replacesOfferId,
-        replacementReason: body.replacementReason ?? null,
-        validationErrors: qcResult.passed
-          ? Prisma.DbNull
-          : (qcResult.errors as any),
-        status: targetStatus,
-        submittedAt: saveAsDraft ? null : new Date(),
-      },
+    console.log('[MERCHANT OFFERS POST] targetStatus:', targetStatus);
+
+    // Auto-generate offer code for ONLINE_CODE type
+    let offerCodeValue: string | null = null;
+    if (redemptionType === 'ONLINE_CODE') {
+      offerCodeValue = await generateUniqueOfferCode();
+      console.log('** Generated offer code:', offerCodeValue);
+      
+      // Audit log for offer code generation
+      await createAuditLog({
+        actorType: 'merchant',
+        actorId: merchant.id,
+        action: "OFFER_CODE_GENERATED",
+        entityType: "MERCHANT_OFFER",
+        entityId: merchant.id, // Will be updated with offer.id after creation
+        metadata: {
+          offerCode: offerCodeValue,
+          redemptionType,
+        },
+      });
+    }
+
+    const offer = await prisma.$transaction(async (tx) => {
+      const created = await tx.merchantOffer.create({
+        data: {
+          merchantId: merchant.id,
+          categoryId: categoryId ?? null,
+          title,
+          offerType,
+          status: targetStatus,
+          startDate: new Date(startDate),
+          endDate: new Date(endDate),
+          submittedAt: saveAsDraft ? null : new Date(),
+          replacesOfferId: replacesOfferId ?? null,
+        },
+      });
+
+      await tx.offerContent.create({
+        data: {
+          offerId: created.id,
+          shortDescription: shortDescription ?? null,
+          description: description ?? null,
+          termsAndConditions: termsAndConditions ?? null,
+          imageUrls: imageUrls ?? [],
+          displayData: undefined,
+        },
+      });
+
+      const pricingConfig: Record<string, unknown> = {};
+      if (offerType === 'flat_rate') {
+        pricingConfig.amount = Number(discountValue) || 0;
+        if (minimumSpend != null) pricingConfig.minimumSpend = Number(minimumSpend);
+      } else if (offerType === 'percentage') {
+        pricingConfig.percent = Number(discountPercent) || 0;
+        if (discountMax != null) pricingConfig.maximumDiscount = Number(discountMax);
+        if (minimumSpend != null) pricingConfig.minimumSpend = Number(minimumSpend);
+      } else if (offerType === 'buy_x_get_y') {
+        pricingConfig.buyQuantity = Number(buyQuantity) || 0;
+        pricingConfig.buyItem = buyItem ?? '';
+        pricingConfig.getQuantity = Number(getQuantity) || 0;
+        pricingConfig.freeItem = freeItem ?? '';
+        if (maxFreeItems != null) pricingConfig.maxFreeItems = Number(maxFreeItems);
+      }
+
+      await tx.offerPricing.create({
+        data: {
+          offerId: created.id,
+          pricingType: offerType,
+          configuration: pricingConfig as any,
+        },
+      });
+
+      const redemptionConfig: Record<string, unknown> = {};
+      if (redemptionType === 'ONLINE_CODE') {
+        redemptionConfig.code = redemptionCode ?? offerCodeValue;
+        redemptionConfig.bookingUrl = bookingUrl ?? null;
+        redemptionConfig.instructions = redemptionInstructions ?? null;
+      } else if (redemptionType === 'BOOKING_LINK') {
+        redemptionConfig.bookingUrl = bookingUrl ?? null;
+        redemptionConfig.instructions = redemptionInstructions ?? null;
+      } else if (redemptionType === 'IN_STORE_QR') {
+        redemptionConfig.instructions = redemptionInstructions ?? null;
+      }
+
+      await tx.offerRedemption.create({
+        data: {
+          offerId: created.id,
+          redemptionType: redemptionType ?? null,
+          configuration: Object.keys(redemptionConfig).length > 0 ? (redemptionConfig as any) : null,
+          maxRedemptions: maxRedemptions ?? null,
+          currentRedemptions: 0,
+          daysOfWeek: daysOfWeek ?? [0, 1, 2, 3, 4, 5, 6],
+        },
+      });
+
+      await tx.offerReview.create({
+        data: {
+          offerId: created.id,
+          submissionNotes: submissionNotes ?? null,
+          replacementReason: replacementReason ?? null,
+          isReplacement: !!replacesOfferId,
+          validationErrors: qcResult.passed ? null : (qcResult.errors as any),
+        },
+      });
+
+      await tx.offerAnalytics.create({
+        data: {
+          offerId: created.id,
+          saveCount: 0,
+          viewCount: 0,
+        },
+      });
+
+      return created;
     });
     console.log('** Created offer with ID:', offer.id, 'Status:', offer.status);
+
+    if (!saveAsDraft && !qcResult.passed) {
+      const template = BUSINESS_NOTIFICATION_TEMPLATES.offerValidationFailed(title);
+      await publishBusinessNotification({
+        ...template,
+        recipients: [{ role: 'merchant', id: merchant.id }],
+        channels: channels('IN_APP'),
+        referenceType: 'merchant_offer',
+        referenceId: offer.id,
+        metadata: { validationErrors: qcResult.errors },
+      });
+    }
+
     // Post-creation actions for passing offers
     if (!saveAsDraft && qcResult.passed) {
       if (replacesOfferId) {
@@ -435,7 +616,7 @@ export async function POST(request: NextRequest) {
       } else {
         // Prevent duplicate queue items
         const existingItems = await prisma.actionQueueItem.findMany({
-          where: { referenceId: merchant.id, type: 'OFFER_APPROVAL', status: 'PENDING' },
+          where: { referenceId: merchant.id, type: 'FIRST_OFFER_APPROVAL', status: 'PENDING' },
         });
         const hasExisting = existingItems.some((i) => {
           const meta = i.metadata as Record<string, unknown> | null;
@@ -444,7 +625,7 @@ export async function POST(request: NextRequest) {
         if (!hasExisting) {
           await prisma.actionQueueItem.create({
             data: {
-              type: "OFFER_APPROVAL",
+              type: "FIRST_OFFER_APPROVAL",
               title: `Offer Approval: ${title}`,
               description: `Merchant ${merchant.businessName} submitted an offer for approval`,
               referenceId: merchant.id,
@@ -457,6 +638,14 @@ export async function POST(request: NextRequest) {
             },
           });
         }
+        const template = BUSINESS_NOTIFICATION_TEMPLATES.offerSubmitted(title);
+        await publishBusinessToAdmins({
+          ...template,
+          channels: channels('IN_APP', 'PUSH'),
+          referenceType: 'merchant_offer',
+          referenceId: offer.id,
+          metadata: { merchantId: merchant.id },
+        });
       }
       console.log('** Created action queue item for offer approval/replacement',);
       // Audit log
@@ -469,6 +658,8 @@ export async function POST(request: NextRequest) {
         metadata: {
           title,
           replacesOfferId: replacesOfferId ?? null,
+          redemptionType: redemptionType ?? null,
+          offerCode: offerCodeValue ?? null,
         },
       });
     }
@@ -489,7 +680,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const merchant = await getMerchantFromUser();
+    const merchant = await getMerchantFromSession();
     if (!merchant) return unauthorized();
 
     const { searchParams } = new URL(request.url);
@@ -509,7 +700,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const deletableStatuses = ['DRAFT', 'VALIDATION_FAILED', 'REJECTED', 'EXPIRED', 'REPLACED', 'AWAITING_APPROVAL','ARCHIVED'];
+    const deletableStatuses = ['DRAFT', 'VALIDATION_FAILED', 'REJECTED', 'EXPIRED', 'REPLACED', 'AWAITING_APPROVAL', 'ARCHIVED'];
 
     const offers = await prisma.merchantOffer.findMany({
       where: { id: { in: idList }, merchantId: merchant.id },
@@ -529,16 +720,16 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // If any of the offers are LIVE, archive those live offers first
-    if (offers.some((o) => o.status === 'LIVE')) {
-      await prisma.merchantOffer.updateMany({
-        where: { id: { in: idList }, merchantId: merchant.id, status: 'LIVE' },
-        data: { status: 'ARCHIVED' },
-      });
-    }
+    const offerIds = offers.map(o => o.id);
 
-    await prisma.merchantOffer.deleteMany({
-      where: { id: { in: idList }, merchantId: merchant.id },
+    // Soft delete all offers — set deletedAt, keep all data and storage assets intact
+    await prisma.merchantOffer.updateMany({
+      where: { id: { in: offerIds }, merchantId: merchant.id },
+      data: {
+        deletedAt: new Date(),
+        deletedById: merchant.id,
+        deletedByRole: 'merchant',
+      },
     });
 
     for (const offer of offers) {

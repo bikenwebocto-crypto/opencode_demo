@@ -41,7 +41,8 @@ interface RedemptionRow {
     id: string;
     title: string;
     offerType: string;
-    discountValue: number | string;
+    pricing?: { configuration?: Record<string, unknown> };
+    redemption?: { redemptionType?: string | null; configuration?: Record<string, unknown> };
   };
   branch: { id: string; name: string; branchType: string } | null;
   status: RedemptionStatus;
@@ -89,7 +90,7 @@ async function fetchRedemptions(params: URLSearchParams): Promise<ApiResponse> {
 }
 
 function formatCurrency(n: number | string) {
-  return `$${Number(n).toFixed(2)}`;
+  return `£${Number(n).toFixed(2)}`;
 }
 
 function formatDateTime(s: string) {

@@ -53,7 +53,11 @@ export default function MerchantBranchesPage() {
     return { all, active, inactive }
   }, [branches])
 
+  const [activating, setActivating] = useState(false)
+  const [deactivating, setDeactivating] = useState(false)
+
   async function handleActivate(id: string) {
+    setActivating(true)
     try {
       const res = await fetch(`/api/merchant/branches/${id}`, {
         method: 'PATCH',
@@ -67,10 +71,12 @@ export default function MerchantBranchesPage() {
     } catch (e: any) {
       showToast({ type: 'error', title: 'Failed to activate', description: e.message })
     }
+    setActivating(false)
     setConfirmActivate(null)
   }
 
   async function handleDeactivate(id: string) {
+    setDeactivating(true)
     try {
       const res = await fetch(`/api/merchant/branches/${id}`, {
         method: 'PATCH',
@@ -84,6 +90,7 @@ export default function MerchantBranchesPage() {
     } catch (e: any) {
       showToast({ type: 'error', title: 'Failed to deactivate', description: e.message })
     }
+    setDeactivating(false)
     setConfirmDeactivate(null)
   }
 
@@ -310,7 +317,7 @@ export default function MerchantBranchesPage() {
         title="Deactivate branch?"
         message={`${confirmDeactivate?.name} will be hidden from employees. You can re-activate it later.`}
         confirmLabel="Deactivate"
-        loading={false}
+        loading={deactivating}
         onConfirm={() => confirmDeactivate && handleDeactivate(confirmDeactivate.id)}
         onCancel={() => setConfirmDeactivate(null)}
       />
@@ -320,7 +327,7 @@ export default function MerchantBranchesPage() {
         message={`${confirmActivate?.name} will become visible to employees again.`}
         confirmLabel="Activate"
         variant="default"
-        loading={false}
+        loading={activating}
         onConfirm={() => confirmActivate && handleActivate(confirmActivate.id)}
         onCancel={() => setConfirmActivate(null)}
       />

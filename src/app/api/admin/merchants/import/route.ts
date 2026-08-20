@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     const results: { row: number; businessName: string; success: boolean; action: string; error?: string }[] = [];
     let imported = 0;
-    let skipped = 0;
+    const skipped = 0;
     let failed = 0;
 
     for (let i = 0; i < rows.length; i++) {

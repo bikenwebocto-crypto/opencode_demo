@@ -1,66 +1,66 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
+import { prisma } from '@/lib/prisma'
 
 export async function GET(request: Request) {
   try {
-    // Try to get token from Authorization header first
-    const authHeader = request.headers.get('Authorization')
-    let token = null
-    
-    if (authHeader?.startsWith('Bearer ')) {
-      token = authHeader.substring(7)
-    }
+    const middlewareEmail = request.headers.get('x-middleware-email')
 
-    let supabase
-    
-    if (token) {
-      // If token is provided, create client with token
-      supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-        {
-          cookies: {
-            getAll() { return [] },
-            setAll() {},
-          },
-          global: {
-            headers: { Authorization: `Bearer ${token}` }
-          },
-        }
-      )
+    let id: string
+    let email: string
+
+    if (middlewareEmail) {
+      email = middlewareEmail
+      const account = await prisma.account.findUnique({
+        where: { email },
+        select: { authUserId: true },
+      })
+      if (!account) {
+        return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+      }
+      id = account.authUserId
     } else {
-      // Otherwise use cookies
-      const cookieStore = await cookies()
-      supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-        {
-          cookies: {
-            getAll() { return cookieStore.getAll() },
-            setAll() {},
-          },
-        }
-      )
+      const authHeader = request.headers.get('Authorization')
+      let token = null
+      if (authHeader?.startsWith('Bearer ')) {
+        token = authHeader.substring(7)
+      }
+
+      let supabase
+      if (token) {
+        supabase = createServerClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+          {
+            cookies: { getAll() { return [] }, setAll() {} },
+            global: { headers: { Authorization: `Bearer ${token}` } },
+          }
+        )
+      } else {
+        const cookieStore = await cookies()
+        supabase = createServerClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+          {
+            cookies: { getAll() { return cookieStore.getAll() }, setAll() {} },
+          }
+        )
+      }
+
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      if (userError || !user) {
+        return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
+      }
+      id = user.id
+      email = user.email!
     }
 
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-
-    if (userError || !user) {
-      console.error('Auth error:', userError)
-      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 })
-    }
-
-    // Get role from database (using your existing DB connection)
-    // Import Prisma at the top if you have it
-    const { PrismaClient } = await import('@prisma/client')
-    const prisma = new PrismaClient()
-    
     let role = null
     try {
       const account = await prisma.account.findUnique({
-        where: { email: user.email! },
-        select: { role: true }
+        where: { email },
+        select: { role: true },
       })
       role = account?.role
     } catch (error) {
@@ -69,11 +69,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       authenticated: true,
-      user: {
-        id: user.id,
-        email: user.email,
-        role: role,
-      }
+      user: { id, email, role },
     })
   } catch (error) {
     console.error('Session error:', error)

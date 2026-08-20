@@ -1,26 +1,32 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { EmployeeLayout } from '@/components/employee/EmployeeLayout'
 import { RedemptionStatusBadge } from '@/components/employee/RedemptionStatusBadge'
+import { RedeemModal } from '@/components/employee/RedeemModal'
+import { type EmployeeOffer } from '@/components/employee/offers/employee-offer'
 import { METHOD_LABELS, type RedemptionStatus, type RedemptionMethod } from '@/lib/redemption-status'
-import { Search, ShoppingBag, Copy } from 'lucide-react'
-import { showToast } from '@/hooks/use-toast'
+import { Search, ShoppingBag, ExternalLink } from 'lucide-react'
 
 interface Redemption {
   id: string
-  redemptionCode: string
   discountAmount: number | string
   savingsAmount: number | string
   spentAmount: number | string | null
   redeemedAt: string
   branch: { id: string; name: string; branchType: string } | null
   branchId: string | null
-  offer: { id: string; title: string; offerType: string; discountValue: number | string }
+  offer: {
+    id: string
+    title: string
+    offerType: string
+    pricing?: { configuration?: Record<string, unknown> }
+    redemption?: { redemptionType?: string | null; configuration?: Record<string, unknown> }
+  }
   merchant: { id: string; businessName: string; logoUrl: string | null }
   company: { id: string; name: string }
   status: RedemptionStatus
@@ -40,7 +46,7 @@ async function fetchRedemptions(status?: string): Promise<{ data: Redemption[] }
 }
 
 function formatCurrency(n: number | string) {
-  return `$${Number(n).toFixed(2)}`
+  return `£${Number(n).toFixed(2)}`
 }
 
 const STATUS_FILTERS: { value: RedemptionStatus | ''; label: string }[] = [
@@ -54,6 +60,7 @@ const STATUS_FILTERS: { value: RedemptionStatus | ''; label: string }[] = [
 export default function EmployeeRedemptionsPage() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState<RedemptionStatus | ''>('CONFIRMED')
+  const [selectedOffer, setSelectedOffer] = useState<EmployeeOffer | null>(null)
   const { data, isLoading } = useQuery({
     queryKey: ['employee-redemptions', status],
     queryFn: () => fetchRedemptions(status || undefined),
@@ -63,18 +70,21 @@ export default function EmployeeRedemptionsPage() {
     if (!search) return true
     const q = search.toLowerCase()
     return (
-      r.redemptionCode.toLowerCase().includes(q) ||
       r.offer.title.toLowerCase().includes(q) ||
       r.merchant.businessName.toLowerCase().includes(q)
     )
   })
 
-  function copy(code: string) {
-    navigator.clipboard?.writeText(code).then(
-      () => showToast({ type: 'success', title: 'Code copied' }),
-      () => showToast({ type: 'error', title: 'Failed to copy' })
-    )
-  }
+  const handleViewOffer = useCallback(async (offerId: string) => {
+    try {
+      const res = await fetch(`/api/employee/offers/${offerId}`)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to load offer')
+      setSelectedOffer(json.data)
+    } catch {
+      setSelectedOffer(null)
+    }
+  }, [])
 
   return (
     <EmployeeLayout>
@@ -92,7 +102,7 @@ export default function EmployeeRedemptionsPage() {
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Search by code, offer, or merchant…"
+              placeholder="Search by offer or merchant…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-8"
@@ -127,11 +137,15 @@ export default function EmployeeRedemptionsPage() {
         ) : (
           <ul className="space-y-2">
             {rows.map((r) => (
-              <li key={r.id} className="rounded-md border bg-card p-3">
+              <li
+                key={r.id}
+                className="group cursor-pointer rounded-md border bg-card p-3 transition-colors hover:bg-accent/50"
+                onClick={() => handleViewOffer(r.offer.id)}
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="truncate font-medium">{r.offer.title}</p>
+                      <p className="truncate font-medium group-hover:text-primary">{r.offer.title}</p>
                       <RedemptionStatusBadge status={r.status} />
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">
@@ -140,13 +154,6 @@ export default function EmployeeRedemptionsPage() {
                       {r.method ? ` · ${METHOD_LABELS[r.method]}` : ''}
                     </p>
                     <div className="mt-2 flex items-center gap-3 text-xs">
-                      <button
-                        onClick={() => copy(r.redemptionCode)}
-                        className="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 font-mono text-[10px] hover:bg-muted/70"
-                        title="Click to copy"
-                      >
-                        <Copy className="h-3 w-3" /> {r.redemptionCode}
-                      </button>
                       <span className="text-muted-foreground">
                         {new Date(r.redeemedAt).toLocaleString()}
                       </span>
@@ -157,17 +164,26 @@ export default function EmployeeRedemptionsPage() {
                       </p>
                     )}
                   </div>
-                  <div className="text-right text-sm">
+                  <div className="flex flex-col items-end gap-1 text-right text-sm">
                     <p className="font-semibold">{formatCurrency(r.savingsAmount)} saved</p>
                     <p className="text-xs text-muted-foreground">
                       Discount {formatCurrency(r.discountAmount)}
                     </p>
+                    <ExternalLink className="mt-1 h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                   </div>
                 </div>
               </li>
             ))}
           </ul>
         )}
+
+        <RedeemModal
+          offer={selectedOffer}
+          open={!!selectedOffer}
+          onOpenChange={(o) => {
+            if (!o) setSelectedOffer(null)
+          }}
+        />
       </div>
     </EmployeeLayout>
   )

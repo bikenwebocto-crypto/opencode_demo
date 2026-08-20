@@ -9,6 +9,7 @@ import {
   hasDuplicateAddress,
 } from '@/lib/branch-helpers'
 import { createAuditLog } from '@/services/audit-log.service'
+import { channels, publishBusinessNotification } from '@/services/business-notification.service'
 
 function unauthorized() {
   return NextResponse.json(
@@ -224,6 +225,18 @@ export async function PATCH(
       changes: { before, after, requiresApproval } as any,
     })
 
+    await publishBusinessNotification({
+      type: 'SYSTEM',
+      title: `Branch updated: ${updated.name}`,
+      message: 'A branch on your merchant account was updated.',
+      priority: 'NORMAL',
+      recipients: [{ role: 'merchant', id: merchant.id }],
+      channels: channels('IN_APP'),
+      referenceType: 'merchant_branch',
+      referenceId: id,
+      metadata: { merchantId: merchant.id, changedFields: Object.keys(after) },
+    })
+
     if (updateData.status === 'ACTIVE' && existing.status !== 'ACTIVE') {
       await createAuditLog({
         actorType: 'merchant',
@@ -256,7 +269,7 @@ export async function PATCH(
           status: 'PENDING',
           priority: 2,
           metadata: {
-            queueType: 'PROFILE_CHANGE_APPROVAL',
+            queueType: 'PROFILE_EDIT_REQUEST',
             branchId: id,
             branchName: existing.name,
             changedFields: locationCheck.fields,
@@ -320,6 +333,18 @@ export async function DELETE(
       entityType: 'merchant_branch',
       entityId: id,
       changes: { branchName: existing.name, branchType: existing.branchType } as any,
+    })
+
+    await publishBusinessNotification({
+      type: 'SYSTEM',
+      title: `Branch deleted: ${existing.name}`,
+      message: 'A branch was removed from your merchant account.',
+      priority: 'NORMAL',
+      recipients: [{ role: 'merchant', id: merchant.id }],
+      channels: channels('IN_APP'),
+      referenceType: 'merchant_branch',
+      referenceId: id,
+      metadata: { merchantId: merchant.id },
     })
 
     await adjustMerchantStatusForBranchChange(merchant.id)

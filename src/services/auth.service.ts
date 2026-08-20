@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/prisma';
+import jwt from 'jsonwebtoken';
+import crypto from 'node:crypto';
 import type { AuthUser, JWTPayload, LoginRequest, LoginResponse, UserType } from '@/types';
 
 const JWT_SECRET = process.env.JWT_SECRET!;
@@ -7,13 +9,11 @@ const REFRESH_TOKEN_BYTES = 64;
 
 export class AuthService {
   generateAccessToken(payload: JWTPayload): string {
-    const jwt = require('jsonwebtoken');
     const { exp, ...claims } = payload;
     return jwt.sign(claims, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
   }
 
   generateRefreshToken(): string {
-    const crypto = require('crypto');
     return crypto.randomBytes(REFRESH_TOKEN_BYTES).toString('hex');
   }
 
@@ -24,7 +24,6 @@ export class AuthService {
 
   verifyAccessToken(token: string): JWTPayload | null {
     try {
-      const jwt = require('jsonwebtoken');
       return jwt.verify(token, JWT_SECRET) as JWTPayload;
     } catch {
       return null;

@@ -283,8 +283,8 @@ export function DataTable<T extends Record<string, unknown>>({
             <Button
               variant="outline"
             size="sm"
-              disabled={pagination.page <= 1}
-              onClick={() => pagination.onPageChange(pagination.page - 1)}
+               disabled={isLoading || pagination.page <= 1}
+               onClick={() => pagination.onPageChange(pagination.page - 1)}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -296,8 +296,8 @@ export function DataTable<T extends Record<string, unknown>>({
             <Button
                variant="outline"
             size="sm"
-              disabled={pagination.page >= totalPages}
-              onClick={() => pagination.onPageChange(pagination.page + 1)}
+               disabled={isLoading || pagination.page >= totalPages}
+               onClick={() => pagination.onPageChange(pagination.page + 1)}
             >
               <ChevronRight className="h-4 w-4" />
             </Button>

@@ -1,6 +1,8 @@
-import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/supabase/server'
+import { getAuthContext } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
 import { NextResponse } from 'next/server'
+import type { CompanyAdmin, Company } from '@prisma/client'
 
 export class CompanyInactiveError extends Error {
   code = 'COMPANY_INACTIVE'
@@ -10,29 +12,35 @@ export class CompanyInactiveError extends Error {
   }
 }
 
-export async function getCompanyAdmin() {
+export async function getCompanyAdmin(): Promise<{
+  company: Company
+  companyAdmin: CompanyAdmin
+  user: Awaited<ReturnType<typeof getCurrentUser>>
+}> {
   const user = await getCurrentUser()
   if (!user || user.userType !== 'company_admin') {
     throw new AuthError('Unauthorized')
   }
-
   if (!user.profileId) throw new AuthError('Unauthorized')
-  const companyAdmin = await prisma.companyAdmin.findUnique({
-    where: { id: user.profileId },
-  })
+
+  const companyAdmin = user.profile as unknown as CompanyAdmin | null
   if (!companyAdmin || !companyAdmin.isActive) {
     throw new AuthError('Company admin account not found or inactive')
   }
 
-  const company = await prisma.company.findUnique({
-    where: { id: companyAdmin.companyId },
-  })
+  let company: Company | null = null
+  try {
+    const ctx = getAuthContext()
+    company = ctx.company
+  } catch {
+    if (companyAdmin.companyId) {
+      company = await prisma.company.findUnique({ where: { id: companyAdmin.companyId } })
+    }
+  }
+
   if (!company || company.deletedAt || company.status === 'CANCELLED') {
     throw new AuthError('Company not found or inactive')
   }
-
-  // Non-payment cascade: if the company is paused or suspended, the
-  // company admin loses platform access.
   if (company.status === 'PAUSED' || company.status === 'SUSPENDED') {
     throw new CompanyInactiveError(company.status)
   }

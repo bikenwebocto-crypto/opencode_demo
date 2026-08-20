@@ -4,11 +4,34 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StatCard } from '@/components/shared/stat-card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { useDashboardStore } from '@/store/dashboard-store'
 import { useActionQueueStore } from '@/store/action-queue-store'
 import { useActionQueueStats } from '@/hooks/queries/use-action-queue'
 import Link from 'next/link'
-import { Store, Building2, ShoppingBag, AlertCircle, Clock, CheckCircle2, FileText, Tag, Shield, Bug, Bell } from 'lucide-react'
+import {
+  Store,
+  Building2,
+  ShoppingBag,
+  AlertCircle,
+  Clock,
+  CheckCircle2,
+  FileText,
+  Tag,
+  Shield,
+  Bug,
+  Bell,
+  ArrowRight,
+  TrendingUp,
+  TrendingDown,
+  Sparkles,
+  Activity,
+  Zap,
+  ChevronRight,
+  DollarSign,
+  Users,
+  BarChart3,
+} from 'lucide-react'
 
 export default function AdminDashboard() {
   const summary = useDashboardStore((s) => s.summary)
@@ -41,12 +64,19 @@ export default function AdminDashboard() {
     getData()
   }, [pendingCount])
 
-  if (loading || !summary) {           
+  if (loading || !summary) {
     return (
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {[...Array(4)].map((_, i) => (
-          <Skeleton key={i} className="h-32 rounded-lg" />
-        ))}
+      <div className="space-y-6">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-32 rounded-xl" />
+          ))}
+        </div>
+        <Skeleton className="h-48 rounded-xl" />
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Skeleton className="h-72 rounded-xl lg:col-span-2" />
+          <Skeleton className="h-72 rounded-xl" />
+        </div>
       </div>
     )
   }
@@ -54,182 +84,448 @@ export default function AdminDashboard() {
   const queueCards = [
     {
       title: 'Merchant Applications',
+      subtitle: 'New signups awaiting review',
       value: stats?.merchantApplications ?? 0,
       icon: FileText,
       href: '/admin/action-queue?tab=MERCHANT_APPROVAL',
-      color: 'text-blue-600',
-      bg: 'bg-blue-50',
+      gradient: 'from-blue-500 to-indigo-600',
+      bg: 'bg-blue-50 dark:bg-blue-950/30',
+      iconColor: 'text-blue-600 dark:text-blue-400',
     },
     {
       title: 'Offer Approvals',
+      subtitle: 'Offers & replacements',
       value: (stats?.offerApprovals ?? 0) + (stats?.offerReplacements ?? 0) + (stats?.profileChanges ?? 0),
       icon: Tag,
       href: '/admin/action-queue?tab=OFFER_APPROVALS',
-      color: 'text-purple-600',
-      bg: 'bg-purple-50',
+      gradient: 'from-violet-500 to-purple-600',
+      bg: 'bg-violet-50 dark:bg-violet-950/30',
+      iconColor: 'text-violet-600 dark:text-violet-400',
     },
     {
       title: 'Company Activations',
+      subtitle: 'Pending company onboarding',
       value: stats?.companyActivations ?? 0,
       icon: Shield,
       href: '/admin/action-queue?tab=COMPANY_ACTIVATION',
-      color: 'text-green-600',
-      bg: 'bg-green-50',
+      gradient: 'from-emerald-500 to-teal-600',
+      bg: 'bg-emerald-50 dark:bg-emerald-950/30',
+      iconColor: 'text-emerald-600 dark:text-emerald-400',
     },
     {
       title: 'Open Issues',
+      subtitle: 'Reported problems',
       value: stats?.openIssues ?? 0,
       icon: Bug,
       href: '/admin/action-queue?tab=ISSUES',
-      color: 'text-red-600',
-      bg: 'bg-red-50',
+      gradient: 'from-rose-500 to-red-600',
+      bg: 'bg-rose-50 dark:bg-rose-950/30',
+      iconColor: 'text-rose-600 dark:text-rose-400',
     },
     {
-      title: 'Alerts',
+      title: 'System Alerts',
+      subtitle: 'Renewals & missing perks',
       value: (stats?.renewalAlerts ?? 0) + (stats?.missingPerks ?? 0),
       icon: Bell,
       href: '/admin/action-queue?tab=ALERTS',
-      color: 'text-amber-600',
-      bg: 'bg-amber-50',
+      gradient: 'from-amber-500 to-orange-600',
+      bg: 'bg-amber-50 dark:bg-amber-950/30',
+      iconColor: 'text-amber-600 dark:text-amber-400',
     },
   ]
 
   const totalPending = queueCards.reduce((sum, c) => sum + c.value, 0)
+  const trend = summary.periodComparison?.redemptionsChange ?? 0
+  const isPositiveTrend = trend >= 0
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          title="Total Redemptions"
-          value={summary.totalRedemptions?.toLocaleString() ?? '0'}
-          trend={{ value: summary.periodComparison?.redemptionsChange ?? 0, isUp: true }}
-          icon={ShoppingBag}
-        />
-        <StatCard
-          title="Active Merchants"
-          value={summary.activeMerchants ?? 0}
-          description={`${summary.activeOffers ?? 0} active offers`}
-          icon={Store}
-        />
-        <StatCard
-          title="Active Companies"
-          value={summary.activeCompanies ?? 0}
-          icon={Building2}
-        />
-        <StatCard
-          title="Pending Reviews"
-          value={totalPending}
-          icon={AlertCircle}
-        />
+      {/* Welcome banner */}
+      <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-primary/5 to-background p-6">
+        <div className="absolute -right-12 -top-12 h-48 w-48 rounded-full bg-primary/10 blur-3xl" />
+        <div className="absolute -bottom-8 -left-8 h-32 w-32 rounded-full bg-primary/5 blur-2xl" />
+        <div className="relative flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" />
+              <p className="text-sm font-medium text-primary">Admin Overview</p>
+            </div>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight">Platform Health Dashboard</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Monitor activity, manage approvals, and keep your platform running smoothly.
+            </p>
+          </div>
+          {totalPending > 0 && (
+            <div className="flex items-center gap-2 rounded-full border bg-background/80 px-3 py-1.5 backdrop-blur">
+              <div className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-rose-500" />
+              </div>
+              <span className="text-sm font-medium">{totalPending} items need attention</span>
+              <Link href="/admin/action-queue">
+                <Button size="sm" variant="ghost" className="h-7 px-2">
+                  Review <ArrowRight className="ml-1 h-3 w-3" />
+                </Button>
+              </Link>
+            </div>
+          )}
+        </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Action Queue Summary</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {queueCards.map((card) => (
-              <Link key={card.title} href={card.href}>
-                <div className="flex items-center gap-3 rounded-lg border p-4 transition-colors hover:bg-muted/50 cursor-pointer">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-full ${card.bg}`}>
-                    <card.icon className={`h-5 w-5 ${card.color}`} />
+      {/* Top stats */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="relative overflow-hidden border-0 shadow-sm">
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-600" />
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">Total Redemptions</p>
+                <p className="text-3xl font-bold tracking-tight">
+                  {summary.totalRedemptions?.toLocaleString() ?? '0'}
+                </p>
+                {trend !== 0 && (
+                  <div className={`flex items-center gap-1 text-xs font-medium ${isPositiveTrend ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {isPositiveTrend ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                    <span>{Math.abs(trend)}% vs last period</span>
                   </div>
-                  <div>
-                    <p className="text-2xl font-bold">{card.value}</p>
-                    <p className="text-xs text-muted-foreground">{card.title}</p>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+                )}
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/15 to-indigo-600/15">
+                <ShoppingBag className="h-6 w-6 text-blue-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-lg">Pending Approvals</CardTitle>
+        <Card className="relative overflow-hidden border-0 shadow-sm">
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-600" />
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">Active Merchants</p>
+                <p className="text-3xl font-bold tracking-tight">{summary.activeMerchants ?? 0}</p>
+                <p className="text-xs text-muted-foreground">
+                  {summary.activeOffers ?? 0} active offers
+                </p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/15 to-teal-600/15">
+                <Store className="h-6 w-6 text-emerald-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="relative overflow-hidden border-0 shadow-sm">
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-violet-500 to-purple-600" />
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">Active Companies</p>
+                <p className="text-3xl font-bold tracking-tight">{summary.activeCompanies ?? 0}</p>
+                <p className="text-xs text-muted-foreground">Subscribed organizations</p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500/15 to-purple-600/15">
+                <Building2 className="h-6 w-6 text-violet-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="relative overflow-hidden border-0 shadow-sm">
+          <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-amber-500 to-orange-600" />
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">Pending Reviews</p>
+                <p className="text-3xl font-bold tracking-tight">{totalPending}</p>
+                <p className="text-xs text-muted-foreground">Across all queues</p>
+              </div>
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-amber-500/15 to-orange-600/15">
+                <AlertCircle className="h-6 w-6 text-amber-600" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Action Queue Summary */}
+      <Card className="overflow-hidden border-0 shadow-sm">
+        <CardHeader className="border-b bg-muted/30 pb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Zap className="h-5 w-5 text-primary" />
+                Action Queue
+              </CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Items waiting for your attention, organized by category
+              </p>
+            </div>
             <Link href="/admin/action-queue">
               <Button variant="outline" size="sm">
-                View All
-                <Clock className="ml-1 h-3 w-3" />
+                View Queue
+                <ArrowRight className="ml-1 h-3 w-3" />
               </Button>
             </Link>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {pendingApprovals.length > 0 ? (
-                pendingApprovals.map((item: any) => (
-                  <div key={item.id} className="flex items-center gap-3 rounded-md border p-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
-                      {item.priority >= 4 ? (
-                        <AlertCircle className="h-4 w-4 text-destructive" />
-                      ) : (
-                        <Clock className="h-4 w-4 text-muted-foreground" />
+          </div>
+        </CardHeader>
+        <CardContent className="p-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {queueCards.map((card) => {
+              const isUrgent = card.value > 0
+              return (
+                <Link key={card.title} href={card.href} className="group">
+                  <div className={`relative h-full overflow-hidden rounded-xl border bg-card p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md ${isUrgent ? 'border-amber-200/50 dark:border-amber-900/50' : ''}`}>
+                    <div className={`absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${card.gradient} opacity-60 transition-opacity group-hover:opacity-100`} />
+                    <div className="flex items-start justify-between">
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${card.bg}`}>
+                        <card.icon className={`h-5 w-5 ${card.iconColor}`} />
+                      </div>
+                      {isUrgent && (
+                        <Badge variant="pending" className="text-[9px] font-bold">
+                          ACTION
+                        </Badge>
                       )}
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{item.title ?? item.merchantName ?? 'Untitled'}</p>
-                      <p className="text-xs text-muted-foreground">{item.type?.replace(/_/g, ' ')} · {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : ''}</p>
+                    <div className="mt-3 space-y-0.5">
+                      <p className="text-2xl font-bold tracking-tight">{card.value}</p>
+                      <p className="text-sm font-medium leading-tight">{card.title}</p>
+                      <p className="text-[11px] text-muted-foreground">{card.subtitle}</p>
                     </div>
+                    <ChevronRight className="absolute bottom-3 right-3 h-4 w-4 text-muted-foreground/30 transition-colors group-hover:text-primary" />
                   </div>
-                ))
-              ) : (
-                <div className="py-8 text-center text-sm text-muted-foreground">No pending approvals</div>
-              )}
+                </Link>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Pending Approvals + Quick Stats */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="overflow-hidden border-0 shadow-sm lg:col-span-2">
+          <CardHeader className="border-b bg-muted/30 pb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Clock className="h-5 w-5 text-blue-600" />
+                  Pending Approvals
+                </CardTitle>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Latest items awaiting your decision
+                </p>
+              </div>
+              <Link href="/admin/action-queue">
+                <Button variant="outline" size="sm">
+                  View All
+                  <ArrowRight className="ml-1 h-3 w-3" />
+                </Button>
+              </Link>
             </div>
+          </CardHeader>
+          <CardContent className="p-2">
+            {pendingApprovals.length > 0 ? (
+              <div className="space-y-1">
+                {pendingApprovals.map((item: any) => {
+                  const isHigh = item.priority >= 4
+                  return (
+                    <Link
+                      key={item.id}
+                      href="/admin/action-queue"
+                      className="flex items-center gap-3 rounded-lg p-3 transition-colors hover:bg-muted/50"
+                    >
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${
+                        isHigh
+                          ? 'bg-rose-100 text-rose-600 dark:bg-rose-950/40'
+                          : 'bg-blue-100 text-blue-600 dark:bg-blue-950/40'
+                      }`}>
+                        {isHigh ? (
+                          <AlertCircle className="h-5 w-5" />
+                        ) : (
+                          <Clock className="h-5 w-5" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">
+                          {item.title ?? item.merchantName ?? 'Untitled'}
+                        </p>
+                        <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                          <span className="font-medium uppercase tracking-wide">
+                            {item.type?.replace(/_/g, ' ')}
+                          </span>
+                          <span>·</span>
+                          <span>
+                            {item.createdAt
+                              ? new Date(item.createdAt).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                })
+                              : ''}
+                          </span>
+                          {isHigh && (
+                            <>
+                              <span>·</span>
+                              <Badge variant="destructive" className="h-4 px-1.5 text-[9px]">
+                                HIGH
+                              </Badge>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground/40" />
+                    </Link>
+                  )
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40">
+                  <CheckCircle2 className="h-6 w-6" />
+                </div>
+                <p className="mt-3 text-sm font-medium">All caught up!</p>
+                <p className="mt-1 text-xs text-muted-foreground">No pending approvals at the moment</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Quick Overview</CardTitle>
+        <Card className="overflow-hidden border-0 shadow-sm">
+          <CardHeader className="border-b bg-muted/30 pb-4">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <BarChart3 className="h-5 w-5 text-primary" />
+              Platform Metrics
+            </CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">Key performance indicators</p>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between border-b pb-2">
-              <span className="text-sm text-muted-foreground">Total Savings</span>
-              <span className="text-sm font-semibold">${summary.totalSavings ? (summary.totalSavings / 1000).toFixed(1) : 0}K</span>
-            </div>
-            <div className="flex items-center justify-between border-b pb-2">
-              <span className="text-sm text-muted-foreground">Avg Discount</span>
-              <span className="text-sm font-semibold">${summary.totalDiscount && summary.totalRedemptions ? (summary.totalDiscount / summary.totalRedemptions).toFixed(2) : '0.00'}</span>
-            </div>
-            <div className="flex items-center justify-between border-b pb-2">
-              <span className="text-sm text-muted-foreground">Merchants</span>
-              <span className="text-sm font-semibold">{summary.activeMerchants ?? 0}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Companies</span>
-              <span className="text-sm font-semibold">{summary.activeCompanies ?? 0}</span>
+          <CardContent className="space-y-1 p-2">
+            <MetricRow
+              icon={DollarSign}
+              iconBg="bg-emerald-100 dark:bg-emerald-950/40"
+              iconColor="text-emerald-600"
+              label="Total Savings"
+              value={`£${summary.totalSavings ? (summary.totalSavings / 1000).toFixed(1) : 0}K`}
+              sublabel="Delivered to employees"
+            />
+            <MetricRow
+              icon={Tag}
+              iconBg="bg-violet-100 dark:bg-violet-950/40"
+              iconColor="text-violet-600"
+              label="Avg Discount"
+              value={`£${summary.totalDiscount && summary.totalRedemptions ? (summary.totalDiscount / summary.totalRedemptions).toFixed(2) : '0.00'}`}
+              sublabel="Per redemption"
+            />
+            <MetricRow
+              icon={Store}
+              iconBg="bg-blue-100 dark:bg-blue-950/40"
+              iconColor="text-blue-600"
+              label="Merchants"
+              value={summary.activeMerchants ?? 0}
+              sublabel="Currently active"
+            />
+            <MetricRow
+              icon={Building2}
+              iconBg="bg-amber-100 dark:bg-amber-950/40"
+              iconColor="text-amber-600"
+              label="Companies"
+              value={summary.activeCompanies ?? 0}
+              sublabel="Active subscriptions"
+            />
+            <div className="!mt-3 rounded-lg bg-gradient-to-br from-primary/5 to-primary/10 p-3">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-primary" />
+                <p className="text-xs font-medium text-primary">Engagement Rate</p>
+              </div>
+              <p className="mt-1.5 text-2xl font-bold">—</p>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">Available in detailed analytics</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Recent Activity</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {recentActivity.length > 0 ? (
-              recentActivity.map((item: any) => (
-                <div key={item.id} className="flex items-center gap-3">
-                  <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
-                  <div className="flex-1">
-                    <span className="text-sm">{item.action}</span>
-                    <span className="ml-1.5 text-sm font-medium">{item.user}</span>
-                  </div>
-                  <span className="text-xs text-muted-foreground">{item.time}</span>
-                </div>
-              ))
-            ) : (
-              <div className="py-8 text-center text-sm text-muted-foreground">No recent activity</div>
-            )}
+      {/* Recent Activity */}
+      <Card className="overflow-hidden border-0 shadow-sm">
+        <CardHeader className="border-b bg-muted/30 pb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Activity className="h-5 w-5 text-emerald-600" />
+                Recent Activity
+              </CardTitle>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Latest actions across the platform
+              </p>
+            </div>
+            <Link href="/admin/audit-logs">
+              <Button variant="ghost" size="sm">
+                View All
+                <ArrowRight className="ml-1 h-3 w-3" />
+              </Button>
+            </Link>
           </div>
+        </CardHeader>
+        <CardContent className="p-2">
+          {recentActivity.length > 0 ? (
+            <div className="space-y-1">
+              {recentActivity.map((item: any, idx: number) => (
+                <div
+                  key={item.id ?? idx}
+                  className="flex items-center gap-3 rounded-lg p-3 transition-colors hover:bg-muted/40"
+                >
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 text-emerald-600 dark:from-emerald-950/40 dark:to-teal-950/40">
+                    <CheckCircle2 className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">{item.action}</span>{' '}
+                      <span className="font-semibold">{item.user}</span>
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                    {item.time}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center px-4 py-12 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
+                <Activity className="h-6 w-6" />
+              </div>
+              <p className="mt-3 text-sm font-medium">No recent activity</p>
+              <p className="mt-1 text-xs text-muted-foreground">Platform actions will appear here</p>
+            </div>
+          )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+function MetricRow({
+  icon: Icon,
+  iconBg,
+  iconColor,
+  label,
+  value,
+  sublabel,
+}: {
+  icon: any
+  iconBg: string
+  iconColor: string
+  label: string
+  value: string | number
+  sublabel: string
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-lg p-2.5 transition-colors hover:bg-muted/30">
+      <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${iconBg}`}>
+        <Icon className={`h-4 w-4 ${iconColor}`} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className="text-xs text-muted-foreground/70">{sublabel}</p>
+      </div>
+      <p className="text-base font-bold tabular-nums">{value}</p>
     </div>
   )
 }

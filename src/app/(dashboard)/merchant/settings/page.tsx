@@ -5,6 +5,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/page-header'
 import { showToast } from '@/hooks/use-toast'
@@ -193,9 +194,9 @@ export default function MerchantSettingsPage() {
               </div>
             </div>
             {pwdError && <p className="text-xs text-destructive">{pwdError}</p>}
-            <Button type="submit" disabled={changePwd.isPending}>
-              {changePwd.isPending ? 'Changing…' : 'Change Password'}
-            </Button>
+            <LoadingButton type="submit" loading={changePwd.isPending} loadingText="Changing…">
+              Change Password
+            </LoadingButton>
           </form>
         </CardContent>
       </Card>
@@ -227,9 +228,9 @@ export default function MerchantSettingsPage() {
               />
             </div>
             {emailError && <p className="text-xs text-destructive">{emailError}</p>}
-            <Button type="submit" disabled={changeEmail.isPending}>
-              {changeEmail.isPending ? 'Updating…' : 'Change Email'}
-            </Button>
+            <LoadingButton type="submit" loading={changeEmail.isPending} loadingText="Updating…">
+              Change Email
+            </LoadingButton>
           </form>
         </CardContent>
       </Card>
@@ -261,13 +262,14 @@ export default function MerchantSettingsPage() {
                   <span>{label}</span>
                 </label>
               ))}
-              <Button
+              <LoadingButton
                 onClick={() => savePrefs.mutate(values)}
-                disabled={savePrefs.isPending}
+                loading={savePrefs.isPending}
+                loadingText="Saving…"
                 className="mt-2"
               >
-                {savePrefs.isPending ? 'Saving…' : 'Save Preferences'}
-              </Button>
+                Save Preferences
+              </LoadingButton>
             </div>
           )}
         </CardContent>

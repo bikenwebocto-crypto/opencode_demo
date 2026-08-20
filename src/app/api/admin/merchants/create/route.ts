@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { validateUserEmail, createAccountForProfile } from '@/services/user-validation.service';
+import { publishBusinessToAdmins } from '@/services/business-notification.service';
 
 function unauthorized() {
   return NextResponse.json(
@@ -14,12 +15,12 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      businessName, email, password, contactName, contactPhone,
+      businessName, email, contactName, contactPhone,
       categoryId, description, website,
       addressLine1, addressLine2, city, state, postalCode, country,
     } = body;
 
-    if (!businessName || !email || !password || !contactName) {
+    if (!businessName || !email ||  !contactName) {
       return NextResponse.json(
         { success: false, error: { code: 'VALIDATION', message: 'Missing required fields: businessName, email, password, contactName' } },
         { status: 400 },
@@ -81,6 +82,17 @@ export async function POST(request: NextRequest) {
       });
 
       return merchant;
+    });
+
+    await publishBusinessToAdmins({
+      type: 'SYSTEM',
+      title: `New merchant registration: ${result.businessName}`,
+      message: 'A merchant registration is waiting for review.',
+      priority: 'HIGH',
+      channels: ['IN_APP', 'PUSH'],
+      referenceType: 'merchant',
+      referenceId: result.id,
+      metadata: { merchantId: result.id },
     });
 
     return NextResponse.json(

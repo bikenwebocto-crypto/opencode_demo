@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { showToast } from '@/hooks/use-toast'
 import { BranchForm, valuesToPayload, type BranchFormValues } from '@/components/merchant/branches/BranchForm'
 import { useMerchantBranch, useUpdateBranch } from '@/hooks/queries/use-merchant-branches'
-import { DEFAULT_OPENING_HOURS } from '@/lib/branch-helpers'
+import { normalizeOpeningHours } from '@/lib/branch-helpers'
 
 export default function EditBranchPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
@@ -33,7 +33,7 @@ export default function EditBranchPage({ params }: { params: Promise<{ id: strin
       email: branch.email ?? '',
       latitude: branch.latitude ? Number(branch.latitude) : null,
       longitude: branch.longitude ? Number(branch.longitude) : null,
-      openingHours: branch.openingHours ?? DEFAULT_OPENING_HOURS,
+      openingHours: normalizeOpeningHours(branch.openingHours),
       isPrimary: Boolean(branch.isPrimary),
       branchType: branch.branchType ?? 'IN_STORE',
       deliveryRadiusKm: branch.deliveryRadiusKm ?? null,

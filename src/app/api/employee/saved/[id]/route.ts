@@ -23,8 +23,8 @@ export async function DELETE(
 
     await prisma.notificationEvent.delete({ where: { id: existing.id } })
 
-    await prisma.merchantOffer.update({
-      where: { id },
+    await prisma.offerAnalytics.update({
+      where: { offerId: id },
       data: { saveCount: { decrement: 1 } },
     }).catch(() => null)
 

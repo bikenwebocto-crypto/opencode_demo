@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
       ]
     }
 
-    const [rows, total, todayCount, weekCount, monthCount] = await Promise.all([
+    const [rows, total, todayCount, weekCount, monthCount, offerAgg, branchAgg] = await Promise.all([
       prisma.redemption.findMany({
         where,
         orderBy: { redeemedAt: 'desc' },
@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
         include: {
           employee: { select: { id: true, firstName: true, lastName: true } },
           company: { select: { id: true, name: true } },
-          offer: { select: { id: true, title: true, offerType: true, discountValue: true } },
+          offer: { select: { id: true, title: true, offerType: true }, include: { pricing: { select: { configuration: true } } } },
         },
       }),
       prisma.redemption.count({ where }),
@@ -109,6 +109,22 @@ export async function GET(request: NextRequest) {
           redeemedAt: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
         },
       }),
+      prisma.redemption.groupBy({
+        by: ['offerId'],
+        where: { merchantId: merchant.id },
+        _count: { _all: true },
+        _sum: { discountAmount: true, savingsAmount: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: 5,
+      }),
+      prisma.redemption.groupBy({
+        by: ['branchId'],
+        where: { merchantId: merchant.id, branchId: { not: null } },
+        _count: { _all: true },
+        _sum: { savingsAmount: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: 5,
+      }),
     ])
 
     const branchIds = Array.from(new Set(rows.map((r) => r.branchId).filter((b): b is string => !!b)))
@@ -127,14 +143,6 @@ export async function GET(request: NextRequest) {
       method: decodeMethod(r.merchantNotes) as RedemptionMethod | null,
     }))
 
-    const offerAgg = await prisma.redemption.groupBy({
-      by: ['offerId'],
-      where: { merchantId: merchant.id },
-      _count: { _all: true },
-      _sum: { discountAmount: true, savingsAmount: true },
-      orderBy: { _count: { id: 'desc' } },
-      take: 5,
-    })
     const topOfferIds = offerAgg.map((o) => o.offerId)
     const topOfferMeta = topOfferIds.length
       ? await prisma.merchantOffer.findMany({
@@ -151,14 +159,6 @@ export async function GET(request: NextRequest) {
       totalSavings: Number(o._sum.savingsAmount ?? 0),
     }))
 
-    const branchAgg = await prisma.redemption.groupBy({
-      by: ['branchId'],
-      where: { merchantId: merchant.id, branchId: { not: null } },
-      _count: { _all: true },
-      _sum: { savingsAmount: true },
-      orderBy: { _count: { id: 'desc' } },
-      take: 5,
-    })
     const topBranchIds = branchAgg.map((b) => b.branchId).filter((b): b is string => !!b)
     const topBranchMeta = topBranchIds.length
       ? await prisma.merchantBranch.findMany({

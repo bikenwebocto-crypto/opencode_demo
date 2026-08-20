@@ -1,21 +1,22 @@
 'use client'
 
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { EmployeeLayout } from '@/components/employee/EmployeeLayout'
-import { OfferCard, type OfferCardData } from '@/components/employee/OfferCard'
-import { RedeemModal, type RedeemModalOffer } from '@/components/employee/RedeemModal'
+import { OfferCard } from '@/components/employee/OfferCard'
+import { RedeemModal } from '@/components/employee/RedeemModal'
+import { type EmployeeOffer } from '@/components/employee/offers/employee-offer'
 import { Bookmark, Search, Heart } from 'lucide-react'
 import Link from 'next/link'
 
 interface SavedRow {
   savedAt: string
   notificationId: string
-  offer: OfferCardData
+  offer: EmployeeOffer
 }
 
 async function fetchSaved(): Promise<{ data: SavedRow[] }> {
@@ -25,11 +26,17 @@ async function fetchSaved(): Promise<{ data: SavedRow[] }> {
   return json
 }
 
+const SAVED_QUERY_KEY = ['employee-saved'] as const
+
 export default function EmployeeSavedPage() {
   const [search, setSearch] = useState('')
-  const [redeemOffer, setRedeemOffer] = useState<RedeemModalOffer | null>(null)
+  // The modal is derived from the live cache so Save / Redeem
+  // patches instantly reflect in the open modal.
+  const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+
   const { data, isLoading } = useQuery({
-    queryKey: ['employee-saved'],
+    queryKey: SAVED_QUERY_KEY,
     queryFn: fetchSaved,
   })
 
@@ -38,9 +45,19 @@ export default function EmployeeSavedPage() {
     const q = search.toLowerCase()
     return (
       r.offer.title.toLowerCase().includes(q) ||
-      r.offer.merchant.businessName.toLowerCase().includes(q)
+      r.offer.merchant?.businessName?.toLowerCase().includes(q)
     )
   })
+
+  const selectedOffer = useMemo<EmployeeOffer | null>(() => {
+    if (!selectedOfferId) return null
+    const cached = queryClient.getQueryData<{ data: SavedRow[] }>(SAVED_QUERY_KEY)
+    return (
+      cached?.data?.find((r) => r.offer.id === selectedOfferId)?.offer ??
+      rows.find((r) => r.offer.id === selectedOfferId)?.offer ??
+      null
+    )
+  }, [selectedOfferId, data, queryClient, rows])
 
   return (
     <EmployeeLayout>
@@ -88,16 +105,22 @@ export default function EmployeeSavedPage() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {rows.map((r) => (
-              <OfferCard key={r.notificationId} offer={r.offer} onRedeem={setRedeemOffer as any} />
+              <OfferCard
+                key={r.notificationId}
+                offer={r.offer}
+                onOpen={(offer) => setSelectedOfferId(offer.id)}
+              />
             ))}
           </div>
         )}
       </div>
 
       <RedeemModal
-        open={!!redeemOffer}
-        onClose={() => setRedeemOffer(null)}
-        offer={redeemOffer}
+        offer={selectedOffer}
+        open={!!selectedOffer}
+        onOpenChange={(o) => {
+          if (!o) setSelectedOfferId(null)
+        }}
       />
     </EmployeeLayout>
   )

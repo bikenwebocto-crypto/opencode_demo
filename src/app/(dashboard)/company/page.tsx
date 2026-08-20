@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Alert } from '@/components/ui/alert'
 import { useCompanyDashboard } from '@/hooks/queries/use-company-dashboard'
 import { useCompanyEmployees } from '@/hooks/queries/use-company-employees'
-import { Users, ShoppingBag, TrendingUp, CreditCard, ArrowRight, AlertCircle, Info, AlertTriangle } from 'lucide-react'
+import { Users, ShoppingBag, TrendingUp, CreditCard, ArrowRight, AlertCircle, Info, AlertTriangle, Ban } from 'lucide-react'
 
 const alertIcons: Record<string, React.ElementType> = {
   NO_EMPLOYEES: Info,
@@ -20,8 +20,10 @@ const alertIcons: Record<string, React.ElementType> = {
 
 export default function CompanyDashboard() {
   const router = useRouter()
-  const { data: dashboard, isLoading: dashLoading } = useCompanyDashboard()
-  const { data: employees } = useCompanyEmployees({ page: 1, pageSize: 5, sortBy: 'createdAt', sortOrder: 'desc' })
+  const { data: dashboard, isLoading: dashLoading, error: dashError, isError: dashIsError } = useCompanyDashboard()
+  const { data: employees, error: empError } = useCompanyEmployees({ page: 1, pageSize: 5, sortBy: 'createdAt', sortOrder: 'desc' })
+
+  const isInactive = (dashError as Error & { code?: string })?.code === 'COMPANY_INACTIVE'
 
   if (dashLoading) {
     return (
@@ -34,6 +36,42 @@ export default function CompanyDashboard() {
     )
   }
 
+  if (isInactive) {
+    const statusMsg = (dashError as any)?.message ?? 'Your company\'s access is currently inactive.'
+    return (
+      <div className="space-y-6">
+        <Alert
+          title="Account Inactive"
+          description={statusMsg}
+          variant="error"
+          icon={Ban}
+        />
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <Ban className="mb-3 h-10 w-10 text-muted-foreground/50" />
+            <h2 className="text-lg font-semibold">Access Restricted</h2>
+            <p className="mt-1 max-w-md text-sm text-muted-foreground">
+              {statusMsg} Please contact your account manager or support team to restore access.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (dashIsError && !dashboard) {
+    return (
+      <div className="space-y-6">
+        <Alert
+          title="Unable to load dashboard"
+          description={dashError instanceof Error ? dashError.message : 'An unexpected error occurred'}
+          variant="error"
+          icon={AlertCircle}
+        />
+      </div>
+    )
+  }
+
   const stats = dashboard ?? {
     enrolledEmployees: 0, activeThisMonth: 0, activationRate: 0, redemptionsThisMonth: 0,
     totalSavings: 0, nextBillingDate: null, estimatedRenewalAmount: 0, plan: 'Trial', billingStatus: 'ACTIVE', alerts: [],
@@ -41,6 +79,15 @@ export default function CompanyDashboard() {
 
   return (
     <div className="space-y-6">
+      {empError && (
+        <Alert
+          title="Employees Unavailable"
+          description="Could not load recent employees. Please try again later."
+          variant="warning"
+          icon={AlertCircle}
+        />
+      )}
+
       {/* Alerts */}
       {stats.alerts.length > 0 && (
         <div className="space-y-2">
@@ -65,7 +112,7 @@ export default function CompanyDashboard() {
         <StatCard title="Enrolled Employees" value={String(stats.enrolledEmployees)} icon={Users} />
         <StatCard title="Active This Month" value={String(stats.activeThisMonth)} trend={stats.activationRate ? { value: stats.activationRate, isUp: stats.activationRate >= 50 } : undefined} icon={TrendingUp} />
         <StatCard title="This Month Redemptions" value={String(stats.redemptionsThisMonth)} icon={ShoppingBag} />
-        <StatCard title="Next Billing" value={`$${stats.estimatedRenewalAmount.toLocaleString()}`} description={stats.nextBillingDate ? new Date(stats.nextBillingDate).toLocaleDateString() : 'N/A'} icon={CreditCard} />
+        <StatCard title="Next Billing" value={`£${stats.estimatedRenewalAmount.toLocaleString()}`} description={stats.nextBillingDate ? new Date(stats.nextBillingDate).toLocaleDateString() : 'N/A'} icon={CreditCard} />
       </div>
 
       {/* Content */}

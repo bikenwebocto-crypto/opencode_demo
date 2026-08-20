@@ -24,6 +24,11 @@ export const DEFAULT_OPENING_HOURS: BranchOpeningHour[] = [
   { day: 'SUNDAY', closed: true, open: '00:00', close: '00:00' },
 ]
 
+export function normalizeOpeningHours(value: unknown): BranchOpeningHour[] {
+  if (!Array.isArray(value)) return DEFAULT_OPENING_HOURS
+  return value
+}
+
 export const DAYS_OF_WEEK: BranchOpeningHour['day'][] = [
   'MONDAY',
   'TUESDAY',

@@ -8,7 +8,7 @@ import { StatusBadge } from '@/components/shared/status-badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Plus, ExternalLink, Trash2, Mail, UserCog, UserX } from 'lucide-react'
+import { Plus, ExternalLink, Trash2, Mail, UserCog, UserX, Users } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCompanies, useUpdateCompanyStatus, useDeleteCompany } from '@/hooks/queries/use-companies'
@@ -140,7 +140,17 @@ export default function CompaniesPage() {
       header: 'Status',
       render: (c: any) => <StatusBadge status={c.status} />,
     },
-    { key: 'employeeCount', header: 'Employees', align: 'center' },
+    {
+      key: 'employeeCount',
+      header: 'Employees',
+      align: 'center',
+      render: (c: any) => (
+        <span className="inline-flex items-center gap-1.5 text-sm">
+          <Users className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="font-medium tabular-nums">{c.employeeCount ?? 0}</span>
+        </span>
+      ),
+    },
     {
       key: 'joinedAt',
       header: 'Created',
@@ -151,21 +161,21 @@ export default function CompaniesPage() {
       header: '',
       sortable: false,
       render: (c: any) => (
-        <div className="flex items-center gap-2">
-          <Link
-            href={`/admin/companies/${c.id}`}
-            className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
-            onClick={(e) => e.stopPropagation()}
-          >
-            View <ExternalLink className="h-3 w-3" />
-          </Link>
-          <button
+        <div className="flex items-center gap-1.5">
+          <Button variant="outline" size="sm" asChild className="h-8 border-blue-200 text-blue-700 hover:bg-blue-50 hover:text-blue-800 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-950/50">
+            <Link href={`/admin/companies/${c.id}`} onClick={(e) => e.stopPropagation()} title="View company">
+              <ExternalLink className="h-3.5 w-3.5" /> View
+            </Link>
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={(e) => { e.stopPropagation(); handleDelete(c.id) }}
-            className="text-sm text-destructive hover:underline"
+            className="h-8 border-red-200 text-red-700 hover:bg-red-50 hover:text-red-800 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950/50"
             title="Delete company"
           >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+            <Trash2 className="h-3.5 w-3.5" /> Delete
+          </Button>
         </div>
       ),
     },

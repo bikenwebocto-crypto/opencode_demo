@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 import { ArrowLeft, Save, Upload } from 'lucide-react'
 import { CSVUploadDropzone } from '@/features/csv-uploads/components/csv-upload-dropzone'
 import { useCreateEmployee } from '@/hooks/queries/use-employees'
@@ -246,10 +247,10 @@ export function EmployeeForm() {
 
       <div className="flex items-center justify-end gap-3">
         <Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>
-        <Button type="submit" disabled={createEmployee.isPending}>
+        <LoadingButton type="submit" loading={createEmployee.isPending} loadingText="Saving...">
           <Save className="mr-1 h-4 w-4" />
-          {createEmployee.isPending ? 'Saving...' : 'Save Employee'}
-        </Button>
+          Save Employee
+        </LoadingButton>
       </div>
     </form>
   )

@@ -19,7 +19,7 @@ export default function EditMerchantPage({ params }: { params: Promise<{ id: str
       initialData={{
         businessName: merchant.businessName ?? '',
         email: merchant?.account?.email ?? '',
-        password: '',
+        // password: '',
         contactName: merchant.contactName ?? '',
         contactPhone: merchant.contactPhone ?? '',
         categoryId: merchant.categoryId ?? '',

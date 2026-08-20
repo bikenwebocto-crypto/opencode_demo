@@ -89,7 +89,7 @@ CREATE TABLE "company_billing" (
     "billingEmail" VARCHAR(255),
     "billingCycle" VARCHAR(20) NOT NULL DEFAULT 'monthly',
     "pricePerEmployee" DECIMAL(10,2) NOT NULL DEFAULT 5.0,
-    "currency" VARCHAR(3) NOT NULL DEFAULT 'USD',
+    "currency" VARCHAR(3) NOT NULL DEFAULT 'GBP',
     "stripeCustomerId" VARCHAR(255),
     "stripeSubscriptionId" VARCHAR(255),
     "currentPeriodStart" TIMESTAMP(3),

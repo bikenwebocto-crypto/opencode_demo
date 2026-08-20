@@ -6,9 +6,20 @@ import { StatusBadge } from '@/components/shared/status-badge'
 import { Badge } from '@/components/ui/badge'
 import type { ReviewComponentProps } from './types'
 
+function getPricingConfig(offer: any): Record<string, unknown> {
+  return (offer?.pricing?.configuration as Record<string, unknown>) ?? {}
+}
+
+function getRedemptionConfig(offer: any): Record<string, unknown> {
+  return (offer?.redemption?.configuration as Record<string, unknown>) ?? {}
+}
+
 function formatDiscount(offer: any): string {
-  if (offer?.discountPercent) return `${offer.discountPercent}% OFF`
-  if (offer?.discountValue) return `$${Number(offer.discountValue).toFixed(2)} OFF`
+  const config = getPricingConfig(offer)
+  const percent = config?.percent as number | undefined
+  const amount = config?.amount as number | undefined
+  if (percent) return `${percent}% OFF`
+  if (amount) return `£${Number(amount).toFixed(2)} OFF`
   return 'N/A'
 }
 
@@ -69,6 +80,11 @@ function FieldDiffRow({ row }: { row: FieldRow }) {
 function CompareTable({ current, next }: { current: any; next: any }) {
   if (!current || !next) return null
 
+  const currentConfig = getPricingConfig(current)
+  const nextConfig = getPricingConfig(next)
+  const currentRedemptionConfig = getRedemptionConfig(current)
+  const nextRedemptionConfig = getRedemptionConfig(next)
+
   const rows: FieldRow[] = [
     {
       key: 'title',
@@ -80,9 +96,9 @@ function CompareTable({ current, next }: { current: any; next: any }) {
     {
       key: 'description',
       label: 'Description',
-      current: current.description,
-      next: next.description,
-      changed: current.description !== next.description,
+      current: current.content?.description,
+      next: next.content?.description,
+      changed: (current.content?.description ?? '') !== (next.content?.description ?? ''),
     },
     {
       key: 'categoryId',
@@ -97,51 +113,51 @@ function CompareTable({ current, next }: { current: any; next: any }) {
       current: current,
       next: next,
       changed:
-        Number(current.discountValue) !== Number(next.discountValue) ||
-        Number(current.discountPercent ?? 0) !== Number(next.discountPercent ?? 0) ||
-        Number(current.discountMax ?? 0) !== Number(next.discountMax ?? 0) ||
-        Number(current.minimumSpend ?? 0) !== Number(next.minimumSpend ?? 0),
+        Number(currentConfig.amount ?? 0) !== Number(nextConfig.amount ?? 0) ||
+        Number(currentConfig.percent ?? 0) !== Number(nextConfig.percent ?? 0) ||
+        Number(currentConfig.maximumDiscount ?? 0) !== Number(nextConfig.maximumDiscount ?? 0) ||
+        Number(currentConfig.minimumSpend ?? 0) !== Number(nextConfig.minimumSpend ?? 0),
       render: (o: any) => formatDiscount(o),
     },
     {
       key: 'redemptionCode',
       label: 'Promo Code',
-      current: current.redemptionCode,
-      next: next.redemptionCode,
-      changed: (current.redemptionCode ?? '') !== (next.redemptionCode ?? ''),
+      current: currentRedemptionConfig.code,
+      next: nextRedemptionConfig.code,
+      changed: (currentRedemptionConfig.code ?? '') !== (nextRedemptionConfig.code ?? ''),
     },
     {
       key: 'redemptionInstructions',
       label: 'Redemption Instructions',
-      current: current.redemptionInstructions,
-      next: next.redemptionInstructions,
+      current: currentRedemptionConfig.instructions,
+      next: nextRedemptionConfig.instructions,
       changed:
-        (current.redemptionInstructions ?? '') !==
-        (next.redemptionInstructions ?? ''),
+        (currentRedemptionConfig.instructions ?? '') !==
+        (nextRedemptionConfig.instructions ?? ''),
     },
     {
       key: 'terms',
       label: 'Terms & Conditions',
-      current: current.termsAndConditions,
-      next: next.termsAndConditions,
+      current: current.content?.termsAndConditions,
+      next: next.content?.termsAndConditions,
       changed:
-        (current.termsAndConditions ?? '') !== (next.termsAndConditions ?? ''),
+        (current.content?.termsAndConditions ?? '') !== (next.content?.termsAndConditions ?? ''),
     },
     {
       key: 'images',
       label: 'Images',
-      current: current.imageUrls,
-      next: next.imageUrls,
-      changed: !imagesEqual(current.imageUrls, next.imageUrls),
+      current: current.content?.imageUrls,
+      next: next.content?.imageUrls,
+      changed: !imagesEqual(current.content?.imageUrls, next.content?.imageUrls),
       render: (v: string[]) =>
         (v ?? []).length > 0 ? `${v.length} image(s)` : 'None',
     },
     {
       key: 'daysOfWeek',
       label: 'Days of Week',
-      current: current.daysOfWeek,
-      next: next.daysOfWeek,
-      changed: !arraysEqual(current.daysOfWeek, next.daysOfWeek),
+      current: current.redemption?.daysOfWeek,
+      next: next.redemption?.daysOfWeek,
+      changed: !arraysEqual(current.redemption?.daysOfWeek, next.redemption?.daysOfWeek),
       render: (v: any) => {
         if (!Array.isArray(v)) return '—'
         const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -175,9 +191,9 @@ function CompareTable({ current, next }: { current: any; next: any }) {
     {
       key: 'maxRedemptions',
       label: 'Max Redemptions',
-      current: current.maxRedemptions,
-      next: next.maxRedemptions,
-      changed: (current.maxRedemptions ?? 0) !== (next.maxRedemptions ?? 0),
+      current: current.redemption?.maxRedemptions,
+      next: next.redemption?.maxRedemptions,
+      changed: (current.redemption?.maxRedemptions ?? 0) !== (next.redemption?.maxRedemptions ?? 0),
     },
   ]
 
@@ -244,8 +260,8 @@ function OfferSummary({ offer, label, accent }: { offer: any; label: string; acc
           <Clock className="h-3 w-3" />
           {formatDate(offer.startDate)} → {formatDate(offer.endDate)}
         </div>
-        {offer.description && (
-          <p className="line-clamp-3 text-xs text-muted-foreground">{offer.description}</p>
+        {offer.content?.description && (
+          <p className="line-clamp-3 text-xs text-muted-foreground">{offer.content.description}</p>
         )}
       </CardContent>
     </Card>
@@ -301,7 +317,7 @@ export function OfferReplacementReview({ entity, queueItem }: ReviewComponentPro
         </Card>
       )}
 
-      {newOffer?.reviewNotes && (
+      {newOffer?.review?.reviewNotes && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -310,7 +326,7 @@ export function OfferReplacementReview({ entity, queueItem }: ReviewComponentPro
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">{newOffer.reviewNotes}</p>
+            <p className="text-sm text-muted-foreground">{newOffer.review.reviewNotes}</p>
           </CardContent>
         </Card>
       )}

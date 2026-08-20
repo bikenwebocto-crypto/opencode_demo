@@ -1,13 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/page-header'
-import { Eye, Bookmark, ShoppingBag, TrendingUp, MapPin, Award } from 'lucide-react'
+import { AnalyticsKPICard } from '@/components/analytics/analytics-kpi-card'
+import { AnalyticsBarChart } from '@/components/analytics/analytics-bar-chart'
+import { AnalyticsPieChart } from '@/components/analytics/analytics-pie-chart'
+import { PIE_COLORS } from '@/components/analytics/analytics-charts'
+import { Eye, ShoppingBag, TrendingUp, Gift, Banknote, Award } from 'lucide-react'
 
 interface AnalyticsResponse {
   data: {
@@ -34,15 +38,12 @@ interface AnalyticsResponse {
   }
 }
 
-async function fetchAnalytics(params: URLSearchParams): Promise<AnalyticsResponse> {
-  const res = await fetch(`/api/merchant/analytics/summary?${params.toString()}`)
-  const json = await res.json()
-  if (!res.ok) throw new Error(json.error?.message ?? 'Failed to load analytics')
-  return json
+function formatCurrency(n: number) {
+  return `£${Number(n).toFixed(2)}`
 }
 
-function formatCurrency(n: number) {
-  return `$${Number(n).toFixed(2)}`
+const STATUS_LABELS: Record<string, string> = {
+  LIVE: 'Live', DRAFT: 'Draft', AWAITING_APPROVAL: 'Pending', EXPIRED: 'Expired', REJECTED: 'Rejected',
 }
 
 export default function MerchantAnalyticsPage() {
@@ -55,13 +56,42 @@ export default function MerchantAnalyticsPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['merchant-analytics', params.toString()],
-    queryFn: () => fetchAnalytics(params),
+    queryFn: async () => {
+      const res = await fetch(`/api/merchant/analytics/summary?${params.toString()}`)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to load analytics')
+      return json as AnalyticsResponse
+    },
   })
 
   const summary = data?.data.summary
   const topOffers = data?.data.topOffers ?? []
   const branches = data?.data.branchPerformance ?? []
   const trend = data?.data.redemptionTrend ?? []
+
+  const barData = useMemo(() => {
+    if (topOffers.length === 0) return []
+    return topOffers.map((o) => ({
+      name: o.title.length > 15 ? o.title.slice(0, 15) + '...' : o.title,
+      Views: o.views,
+      Redemptions: o.redemptions,
+    }))
+  }, [topOffers])
+
+  const pieData = useMemo(() => {
+    const counts: Record<string, number> = {}
+    topOffers.forEach((o) => {
+      const label = STATUS_LABELS[o.status] ?? o.status
+      counts[label] = (counts[label] || 0) + 1
+    })
+    return Object.entries(counts).map(([name, value]) => ({ name, value }))
+  }, [topOffers])
+
+  const totalViews = topOffers.reduce((sum, o) => sum + o.views, 0)
+  const totalRedemptions = summary?.totalRedemptions ?? 0
+  const conversionRate = totalViews > 0 ? ((totalRedemptions / totalViews) * 100).toFixed(1) : '0.0'
+
+  const loading = isLoading || !summary
 
   return (
     <div className="space-y-6">
@@ -74,79 +104,82 @@ export default function MerchantAnalyticsPage() {
         <CardContent className="flex flex-wrap items-end gap-3 p-4">
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">From</label>
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9" />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">To</label>
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9" />
           </div>
-          <Button
-            variant="outline"
-            onClick={() => {
-              setFrom('')
-              setTo('')
-            }}
-          >
+          <Button variant="outline" onClick={() => { setFrom(''); setTo('') }} className="h-9">
             Reset
           </Button>
         </CardContent>
       </Card>
 
-      {isLoading || !summary ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-        </div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardContent className="flex items-center gap-3 p-4">
-              <ShoppingBag className="h-8 w-8 text-blue-600" />
-              <div>
-                <p className="text-xs text-muted-foreground">Redemptions</p>
-                <p className="text-2xl font-bold">{summary.totalRedemptions}</p>
-                <p className="text-xs text-muted-foreground">
-                  All time: {summary.allTimeRedemptions}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-center gap-3 p-4">
-              <TrendingUp className="h-8 w-8 text-green-600" />
-              <div>
-                <p className="text-xs text-muted-foreground">Total Savings</p>
-                <p className="text-2xl font-bold">{formatCurrency(summary.totalSavings)}</p>
-                <p className="text-xs text-muted-foreground">
-                  All time: {formatCurrency(summary.allTimeSavings)}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-center gap-3 p-4">
-              <Eye className="h-8 w-8 text-purple-600" />
-              <div>
-                <p className="text-xs text-muted-foreground">Total Discount</p>
-                <p className="text-2xl font-bold">{formatCurrency(summary.totalDiscount)}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="flex items-center gap-3 p-4">
-              <Award className="h-8 w-8 text-amber-600" />
-              <div>
-                <p className="text-xs text-muted-foreground">Live Offers</p>
-                <p className="text-2xl font-bold">{summary.liveOffers}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <AnalyticsKPICard label="Total Views" value={totalViews.toLocaleString()} icon={Eye} iconBg="bg-blue-100 text-blue-600" accentColor="from-blue-500 to-indigo-600" loading={loading} />
+        <AnalyticsKPICard label="Total Redemptions" value={summary?.totalRedemptions ?? 0} icon={ShoppingBag} iconBg="bg-emerald-100 text-emerald-600" accentColor="from-emerald-500 to-teal-600" loading={loading} />
+        <AnalyticsKPICard label="Conversion Rate" value={`${conversionRate}%`} icon={TrendingUp} iconBg="bg-purple-100 text-purple-600" accentColor="from-purple-500 to-pink-600" loading={loading} />
+        <AnalyticsKPICard label="Campaign Expenditure" value={formatCurrency(summary?.totalSavings ?? 0)} icon={Banknote} iconBg="bg-amber-100 text-amber-600" accentColor="from-amber-500 to-orange-600" loading={loading} />
+        <AnalyticsKPICard label="Active Offers" value={summary?.liveOffers ?? 0} icon={Gift} iconBg="bg-rose-100 text-rose-600" accentColor="from-rose-500 to-red-600" loading={loading} />
+      </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100">
+                <TrendingUp className="h-3.5 w-3.5 text-blue-600" />
+              </div>
+              Views vs Redemptions
+            </CardTitle>
+            <CardDescription>Per-offer view and redemption comparison</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <Skeleton className="h-[300px] w-full" />
+            ) : (
+              <AnalyticsBarChart
+                data={barData}
+                xKey="name"
+                bars={[
+                  { key: 'Views', color: '#3b82f6', name: 'Views' },
+                  { key: 'Redemptions', color: '#22c55e', name: 'Redemptions' },
+                ]}
+                height={300}
+                emptyMessage="Offer data will appear here once your campaigns get engagement"
+              />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-100">
+                <Gift className="h-3.5 w-3.5 text-purple-600" />
+              </div>
+              Offer Status Distribution
+            </CardTitle>
+            <CardDescription>Current breakdown of your offer statuses</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <Skeleton className="h-[300px] w-full" />
+            ) : (
+              <AnalyticsPieChart
+                data={pieData}
+                height={300}
+                innerRadius={60}
+                outerRadius={100}
+                colors={PIE_COLORS}
+                showLegend
+                emptyMessage="Create offers to see your status distribution"
+              />
+            )}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
@@ -154,7 +187,7 @@ export default function MerchantAnalyticsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {loading ? (
               <Skeleton className="h-32 w-full" />
             ) : topOffers.length === 0 ? (
               <p className="text-sm text-muted-foreground">No offer data yet.</p>
@@ -169,15 +202,8 @@ export default function MerchantAnalyticsPage() {
                       <span className="rounded-full bg-muted px-2 py-0.5 text-xs">{o.status}</span>
                     </div>
                     <div className="mt-1 flex gap-4 text-xs text-muted-foreground">
-                      <span className="inline-flex items-center gap-1">
-                        <Eye className="h-3 w-3" /> {o.views} views
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <Bookmark className="h-3 w-3" /> {o.saves} saves
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <ShoppingBag className="h-3 w-3" /> {o.redemptions} redemptions
-                      </span>
+                      <span className="inline-flex items-center gap-1"><Eye className="h-3 w-3" /> {o.views} views</span>
+                      <span className="inline-flex items-center gap-1"><ShoppingBag className="h-3 w-3" /> {o.redemptions} redemptions</span>
                       <span>{o.conversionRate}% conv.</span>
                     </div>
                   </li>
@@ -190,11 +216,11 @@ export default function MerchantAnalyticsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <MapPin className="h-4 w-4" /> Branch Performance
+              <Award className="h-4 w-4" /> Branch Performance
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
+            {loading ? (
               <Skeleton className="h-32 w-full" />
             ) : branches.length === 0 ? (
               <p className="text-sm text-muted-foreground">No branches yet.</p>
@@ -220,29 +246,18 @@ export default function MerchantAnalyticsPage() {
           <CardTitle className="text-base">Redemption Trend</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <Skeleton className="h-32 w-full" />
+          {loading ? (
+            <Skeleton className="h-[200px] w-full" />
           ) : trend.length === 0 ? (
             <p className="text-sm text-muted-foreground">No redemptions in the selected period.</p>
           ) : (
-            <div className="space-y-1">
-              {trend.map((t) => {
-                const max = Math.max(...trend.map((x) => x.total))
-                const pct = max > 0 ? (t.total / max) * 100 : 0
-                return (
-                  <div key={t.date} className="flex items-center gap-2 text-sm">
-                    <span className="w-24 text-xs text-muted-foreground">{t.date}</span>
-                    <div className="h-6 flex-1 rounded bg-muted">
-                      <div
-                        className="h-full rounded bg-blue-500"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                    <span className="w-10 text-right text-xs">{t.total}</span>
-                  </div>
-                )
-              })}
-            </div>
+            <AnalyticsBarChart
+              data={trend.map((t) => ({ date: new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), Redemptions: t.total }))}
+              xKey="date"
+              bars={[{ key: 'Redemptions', color: '#3b82f6', name: 'Redemptions' }]}
+              height={200}
+              emptyMessage="No redemptions in the selected period."
+            />
           )}
         </CardContent>
       </Card>

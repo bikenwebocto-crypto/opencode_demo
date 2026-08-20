@@ -1,7 +1,12 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { MerchantStatus } from '@/types';
+import type {
+  MerchantDashboardFilters,
+  MerchantDashboardResponse,
+  MerchantHealth,
+  MerchantStatus,
+} from '@/types';
 
 // ============================================================
 // QUERY KEY FACTORY (stable — serialized filters)
@@ -233,12 +238,14 @@ export function useCreateMerchant() {
 
   return useMutation({
     mutationFn: async (data: Record<string, unknown>) => {
+      console.log('[useCreateMerchant] POST /api/admin/merchants/create:', data);
       const res = await fetch('/api/admin/merchants/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
       const json = await res.json();
+      console.log('[useCreateMerchant] Response:', json);
       if (!res.ok) throw new Error(json.error?.message ?? 'Failed to create merchant');
       return json;
     },
@@ -246,4 +253,168 @@ export function useCreateMerchant() {
       queryClient.invalidateQueries({ queryKey: merchantKeys.lists() });
     },
   });
+}
+
+// ============================================================
+// DASHBOARD HOOKS
+// ============================================================
+
+export const merchantDashboardKeys = {
+  all: ['merchant-dashboard'] as const,
+  lists: () => [...merchantDashboardKeys.all, 'list'] as const,
+  list: (filters: MerchantDashboardFilters) =>
+    [...merchantDashboardKeys.lists(), stableKey(filters)] as const,
+}
+
+export function useMerchantDashboard(filters: MerchantDashboardFilters = {}) {
+  return useQuery({
+    queryKey: merchantDashboardKeys.list(filters),
+    queryFn: async () => {
+      const params = new URLSearchParams()
+      const setIfPresent = (k: string, v: string | number | boolean | undefined) => {
+        if (v === undefined || v === null || v === '') return
+        params.set(k, String(v))
+      }
+      setIfPresent('status', filters.status)
+      setIfPresent('categoryId', filters.categoryId)
+      setIfPresent('city', filters.city)
+      setIfPresent('featured', filters.featured)
+      setIfPresent('homepage', filters.homepage)
+      setIfPresent('health', filters.health)
+      setIfPresent('hasLiveOffers', filters.hasLiveOffers)
+      setIfPresent('hasPendingOffers', filters.hasPendingOffers)
+      setIfPresent('priorityMin', filters.priorityMin)
+      setIfPresent('q', filters.q)
+      setIfPresent('sortBy', filters.sortBy)
+      setIfPresent('sortDir', filters.sortDir)
+      setIfPresent('page', filters.page)
+      setIfPresent('pageSize', filters.pageSize)
+
+      const url = `/api/admin/merchants/dashboard?${params.toString()}`
+      const res = await fetch(url, { cache: 'no-store' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to fetch merchant dashboard')
+      return json as { success: true; data: MerchantDashboardResponse['data']; summary: MerchantDashboardResponse['summary']; meta: MerchantDashboardResponse['meta'] }
+    },
+  })
+}
+
+export function useUpdateMerchantPriority() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (vars: { id: string; value: number }) => {
+      const res = await fetch(`/api/admin/merchants/${vars.id}/manage`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'priority', value: vars.value }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to update priority')
+      return json
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: merchantDashboardKeys.all })
+      queryClient.invalidateQueries({ queryKey: merchantKeys.lists() })
+    },
+  })
+}
+
+export function useToggleMerchantFeatured() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (vars: { id: string; value: boolean }) => {
+      const res = await fetch(`/api/admin/merchants/${vars.id}/manage`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'feature', value: vars.value }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to update feature flag')
+      return json
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: merchantDashboardKeys.all })
+      queryClient.invalidateQueries({ queryKey: merchantKeys.lists() })
+    },
+  })
+}
+
+export function useToggleMerchantHomepage() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (vars: { id: string; value: boolean }) => {
+      const res = await fetch(`/api/admin/merchants/${vars.id}/manage`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'homepage', value: vars.value }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to update homepage flag')
+      return json
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: merchantDashboardKeys.all })
+      queryClient.invalidateQueries({ queryKey: merchantKeys.lists() })
+    },
+  })
+}
+
+export function useSuspendMerchant() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (vars: { id: string; reason?: string }) => {
+      const res = await fetch(`/api/admin/merchants/${vars.id}/manage`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'suspend', reason: vars.reason }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to suspend merchant')
+      return json
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: merchantDashboardKeys.all })
+      queryClient.invalidateQueries({ queryKey: merchantKeys.lists() })
+    },
+  })
+}
+
+export function useActivateMerchant() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/admin/merchants/${id}/manage`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'activate' }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to activate merchant')
+      return json
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: merchantDashboardKeys.all })
+      queryClient.invalidateQueries({ queryKey: merchantKeys.lists() })
+    },
+  })
+}
+
+export function usePauseMerchant() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/admin/merchants/${id}/manage`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'pause' }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to pause merchant')
+      return json
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: merchantDashboardKeys.all })
+      queryClient.invalidateQueries({ queryKey: merchantKeys.lists() })
+    },
+  })
 }

@@ -1,5 +1,9 @@
 // Centralized business rules for the employee offer visibility flow.
-// Used by: /api/employee/offers, /api/employee/offers/[id], /api/employee/redeem
+// Used by:
+//   - GET /api/employee/offers               (inlined as evaluateVisibility)
+//   - POST /api/employee/redeem              (isOfferVisibleToEmployees)
+//   - POST /api/employee/redeem              (checkRedemptionEligibility)
+//   - verifyOfferQRToken                     (in-store QR validation)
 //
 // Rules:
 // 1. offer.status = 'LIVE'
@@ -21,8 +25,8 @@ export interface OfferVisibilityResult {
 export async function isOfferVisibleToEmployees(
   offerId: string
 ): Promise<OfferVisibilityResult> {
-  const offer = await prisma.merchantOffer.findUnique({
-    where: { id: offerId },
+  const offer = await prisma.merchantOffer.findFirst({
+    where: { id: offerId, deletedAt: null },
     include: {
       merchant: {
         include: {
@@ -57,6 +61,44 @@ export interface RedemptionEligibility {
   reason?: string
 }
 
+export interface QROwnerResult {
+  valid: boolean
+  reason?: string
+  offerId?: string
+  merchantId?: string
+}
+
+export async function verifyOfferQRToken(
+  offerId: string,
+  token: string
+): Promise<QROwnerResult> {
+  const offer = await prisma.merchantOffer.findFirst({
+    where: { id: offerId, deletedAt: null },
+    select: {
+      id: true,
+      merchantId: true,
+      redemption: { select: { redemptionType: true, configuration: true } },
+    },
+  })
+
+  if (!offer) {
+    return { valid: false, reason: 'Offer not found' }
+  }
+
+  if (offer.redemption?.redemptionType !== 'IN_STORE_QR') {
+    return { valid: false, reason: 'Offer is not an in-store QR offer' }
+  }
+
+  const config = (offer.redemption?.configuration as Record<string, unknown>) ?? {}
+  const storedToken = config.qrToken as string | undefined
+
+  if (!storedToken || storedToken !== token) {
+    return { valid: false, reason: 'Invalid or expired QR token' }
+  }
+
+  return { valid: true, offerId: offer.id, merchantId: offer.merchantId }
+}
+
 export async function checkRedemptionEligibility(
   offerId: string,
   employeeId: string
@@ -64,10 +106,20 @@ export async function checkRedemptionEligibility(
   const visibility = await isOfferVisibleToEmployees(offerId)
   if (!visibility.visible) return { eligible: false, reason: visibility.reason }
 
-  const offer = await prisma.merchantOffer.findUnique({ where: { id: offerId } })
+  const offer = await prisma.merchantOffer.findFirst({
+    where: { id: offerId, deletedAt: null },
+    select: {
+      id: true,
+      redemption: { select: { maxRedemptions: true, currentRedemptions: true } },
+    },
+  })
   if (!offer) return { eligible: false, reason: 'Offer not found' }
 
-  if (offer.maxRedemptions != null && offer.currentRedemptions >= offer.maxRedemptions) {
+  if (
+    offer.redemption?.maxRedemptions != null &&
+    offer.redemption?.maxRedemptions > 0 &&
+    (offer.redemption?.currentRedemptions ?? 0) >= offer.redemption!.maxRedemptions
+  ) {
     return { eligible: false, reason: 'Offer usage limit reached' }
   }
 
@@ -79,10 +131,4 @@ export async function checkRedemptionEligibility(
   }
 
   return { eligible: true }
-}
-
-export function generateRedemptionCode(): string {
-  const ts = Date.now().toString(36).toUpperCase()
-  const rand = Math.random().toString(36).slice(2, 8).toUpperCase()
-  return `RED-${ts}-${rand}`
 }

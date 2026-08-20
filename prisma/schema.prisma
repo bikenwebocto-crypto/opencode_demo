@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -26,6 +27,8 @@ model AdminUser {
   profileEditReqs      MerchantProfileEditRequest[] @relation("AdminProfileEdit")
   notifications        NotificationEvent[]          @relation("AdminNotification")
   offerReplacementReqs OfferReplacementRequest[]    @relation("AdminOfferReplacement")
+  escalatedComplaints  ComplaintEscalation[]
+  complaintActions     ComplaintAction[]            @relation("AdminComplaintActions")
 
   @@index([role])
   @@map("admin_users")
@@ -42,13 +45,12 @@ model Account {
   lastLoginAt DateTime?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
-  employees Employee[] @relation("EmployeeAccount")
+  employees   Employee[]    @relation("EmployeeAccount")
   merchants   Merchant[]
 
   @@index([role])
   @@index([status])
   @@map("accounts")
-  
 }
 
 model Company {
@@ -79,7 +81,7 @@ model Company {
   approvedById         String?                @db.Uuid
   deletedById          String?                @db.Uuid
   audits               AuditLog[]             @relation("CompanyAuditLogs")
-  categories           Category[]
+  // categories removed — categories are now global master data
   companyAdmins        CompanyAdmin[]
   billing              CompanyBilling?
   statusHistory        CompanyStatusHistory[]
@@ -87,6 +89,8 @@ model Company {
   employees            Employee[]
   mostPopularMerchants MostPopularMerchant[]
   redemptions          Redemption[]
+  complaints           Complaint[]
+  reviews              MerchantReview[]
 
   @@index([status])
   @@index([slug])
@@ -102,7 +106,7 @@ model CompanyBilling {
   billingEmail         String?       @db.VarChar(255)
   billingCycle         String        @default("monthly") @db.VarChar(20)
   pricePerEmployee     Decimal       @default(5.0) @db.Decimal(10, 2)
-  currency             String        @default("USD") @db.VarChar(3)
+  currency             String        @default("GBP") @db.VarChar(3)
   stripeCustomerId     String?       @db.VarChar(255)
   stripeSubscriptionId String?       @db.VarChar(255)
   currentPeriodStart   DateTime?
@@ -123,20 +127,22 @@ model CompanyBilling {
 }
 
 model CompanyAdmin {
-  id            String              @id @default(uuid()) @db.Uuid
-  companyId     String              @db.Uuid
-  firstName     String              @db.VarChar(100)
-  lastName      String              @db.VarChar(100)
-  isPrimary     Boolean             @default(false)
-  isActive      Boolean             @default(true)
-  lastLoginAt   DateTime?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  accountId     String?             @db.Uuid
-  company       Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  loginSessions LoginSession[]
-  notifications NotificationEvent[] @relation("CompanyAdminNotification")
-  auditLogs     AuditLog[]            @relation("CompanyAdminAuditLogs")
+  id               String                @id @default(uuid()) @db.Uuid
+  companyId        String                @db.Uuid
+  firstName        String                @db.VarChar(100)
+  lastName         String                @db.VarChar(100)
+  isPrimary        Boolean               @default(false)
+  isActive         Boolean               @default(true)
+  lastLoginAt      DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  accountId        String?               @db.Uuid
+  company          Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  loginSessions    LoginSession[]
+  notifications    NotificationEvent[]   @relation("CompanyAdminNotification")
+  auditLogs        AuditLog[]            @relation("CompanyAdminAuditLogs")
+  escalations      ComplaintEscalation[]
+  complaintActions ComplaintAction[]     @relation("CompanyAdminComplaintActions")
 
   @@index([companyId])
   @@map("company_admins")
@@ -146,31 +152,36 @@ model Employee {
   id        String @id @default(uuid()) @db.Uuid
   companyId String @db.Uuid
 
-  firstName     String              @db.VarChar(100)
-  lastName      String              @db.VarChar(100)
-  employeeId    String?             @db.VarChar(100)
-  department    String?             @db.VarChar(100)
-  jobTitle      String?             @db.VarChar(100)
-  phone         String?             @db.VarChar(50)
-  avatarUrl     String?             @db.VarChar(500)
-  status        EmployeeStatus      @default(INVITED)
-  invitedAt     DateTime?
-  invitedBy     String?             @db.Uuid
-  lastLoginAt   DateTime?
-  deletedAt     DateTime?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  joinMethod    String?             @db.VarChar(50)
-  approvedById  String?             @db.Uuid
-  deletedById   String?             @db.Uuid
-  accountId     String?             @db.Uuid
-  company       Company             @relation(fields: [companyId], references: [id])
-  reports       IssueReport[]
-  loginSessions LoginSession[]
-  notifications NotificationEvent[] @relation("EmployeeNotification")
-  redemptions   Redemption[]
-  auditLogs     AuditLog[]            @relation("EmployeeAuditLogs")
-  account Account? @relation("EmployeeAccount", fields: [accountId], references: [authUserId])
+  firstName        String              @db.VarChar(100)
+  lastName         String              @db.VarChar(100)
+  employeeId       String?             @db.VarChar(100)
+  department       String?             @db.VarChar(100)
+  jobTitle         String?             @db.VarChar(100)
+  phone            String?             @db.VarChar(50)
+  avatarUrl        String?             @db.VarChar(500)
+  status           EmployeeStatus      @default(INVITED)
+  invitedAt        DateTime?
+  invitedBy        String?             @db.Uuid
+  lastLoginAt      DateTime?
+  deletedAt        DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  joinMethod       String?             @db.VarChar(50)
+  approvedById     String?             @db.Uuid
+  deletedById      String?             @db.Uuid
+  accountId        String?             @db.Uuid
+  company          Company             @relation(fields: [companyId], references: [id])
+  reports          IssueReport[]
+  loginSessions    LoginSession[]
+  notifications    NotificationEvent[] @relation("EmployeeNotification")
+  redemptions      Redemption[]
+  offerViews       OfferView[]
+  auditLogs        AuditLog[]          @relation("EmployeeAuditLogs")
+  complaints       Complaint[]
+  complaintActions ComplaintAction[]   @relation("EmployeeComplaintActions")
+  reviews          MerchantReview[]
+  account          Account?            @relation("EmployeeAccount", fields: [accountId], references: [authUserId])
+
   @@index([companyId])
   @@index([status])
   @@index([companyId, status])
@@ -192,6 +203,8 @@ model Merchant {
   onboardingStep      MerchantOnboardingStep       @default(APPLICATION)
   isFeatured          Boolean                      @default(false)
   isTopRated          Boolean                      @default(false)
+  isHomepageMerchant  Boolean                      @default(false)
+  displayPriority     Int                          @default(0)
   averageRating       Decimal                      @default(0) @db.Decimal(3, 2)
   totalRedemptions    Int                          @default(0)
   totalSavings        Decimal                      @default(0) @db.Decimal(12, 2)
@@ -231,13 +244,20 @@ model Merchant {
   redemptions         Redemption[]
   weeklyPicks         WeeklyPick[]
 
-  account Account? @relation(fields: [accountId], references: [authUserId])
+  complaints       Complaint[]
+  complaintActions ComplaintAction[] @relation("MerchantComplaintActions")
+  reviews          MerchantReview[]
+  bannerBookings   BannerBooking[]
+  account          Account?          @relation(fields: [accountId], references: [authUserId])
 
   @@index([status])
   @@index([slug])
   @@index([categoryId])
   @@index([status, categoryId])
   @@index([status, deletedAt])
+  @@index([displayPriority])
+  @@index([isFeatured])
+  @@index([isHomepageMerchant])
   @@map("merchants")
 }
 
@@ -284,72 +304,59 @@ model MerchantBranch {
 
 model Category {
   id           String     @id @default(uuid()) @db.Uuid
-  companyId    String     @db.Uuid
   name         String     @db.VarChar(100)
-  slug         String     @db.VarChar(100)
+  slug         String     @unique @db.VarChar(100)
   description  String?    @db.VarChar(500)
   icon         String?    @db.VarChar(50)
   displayOrder Int        @default(0)
   isActive     Boolean    @default(true)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
-  company      Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
   merchants    Merchant[]
 
-  @@unique([companyId, slug])
-  @@index([companyId])
   @@map("categories")
 }
 
 model MerchantOffer {
-  id                     String                    @id @default(uuid()) @db.Uuid
-  merchantId             String                    @db.Uuid
-  title                  String                    @db.VarChar(255)
-  description            String
-  shortDescription       String?                   @db.VarChar(500)
-  termsAndConditions     String?
-  imageUrls              String[]                  @default([])
-  offerType              String                    @db.VarChar(50)
-  discountValue          Decimal                   @db.Decimal(10, 2)
-  discountMax            Decimal?                  @db.Decimal(10, 2)
-  discountPercent        Int?
-  minimumSpend           Decimal?                  @db.Decimal(10, 2)
-  maxRedemptions         Int?                      @default(0)
-  currentRedemptions     Int                       @default(0)
-  startDate              DateTime
-  endDate                DateTime
-  daysOfWeek             Int[]                     @default([0, 1, 2, 3, 4, 5, 6])
-  isFeatured             Boolean                   @default(false)
-  isExclusive            Boolean                   @default(false)
-  redemptionCode         String?                   @db.VarChar(100)
-  redemptionInstructions String?
-  status                 OfferStatus               @default(DRAFT)
-  rejectionReason        String?
-  reviewedBy             String?                   @db.Uuid
-  reviewedAt             DateTime?
-  submittedAt            DateTime?
-  liveAt                 DateTime?
-  expiresAt              DateTime?
-  sortOrder              Int                       @default(0)
-  metadata               Json?
-  createdAt              DateTime                  @default(now())
-  updatedAt              DateTime                  @updatedAt
-  saveCount              Int                       @default(0)
-  viewCount              Int                       @default(0)
-  categoryId             String?                   @db.Uuid
-  replacesOfferId        String?                   @db.Uuid
-  submissionNotes        String?
-  validationErrors       Json?
-  adminNote              String?
-  isReplacement          Boolean                   @default(false)
-  replacementReason      String?
-  reviewNotes            String?
-  merchant               Merchant                  @relation(fields: [merchantId], references: [id])
-  replacesOffer          MerchantOffer?            @relation("OfferReplacement", fields: [replacesOfferId], references: [id])
-  replacedBy             MerchantOffer[]           @relation("OfferReplacement")
-  replacementReqAsOld    OfferReplacementRequest[] @relation("CurrentOffer")
-  replacementReqAsNew    OfferReplacementRequest[] @relation("NewOffer")
-  redemptions            Redemption[]
+  id            String      @id @default(uuid()) @db.Uuid
+  merchantId    String      @db.Uuid
+  categoryId    String?     @db.Uuid
+  title         String      @db.VarChar(255)
+  offerType     String      @db.VarChar(50)
+  status        OfferStatus @default(DRAFT)
+  startDate     DateTime
+  endDate       DateTime
+  submittedAt   DateTime?
+  reviewedAt    DateTime?
+  liveAt        DateTime?
+  expiresAt     DateTime?
+  isFeatured    Boolean     @default(false)
+  isExclusive   Boolean     @default(false)
+  sortOrder     Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  deletedAt     DateTime?
+  deletedById   String?     @db.Uuid
+  deletedByRole String?     @db.VarChar(50)
+
+  merchant            Merchant                  @relation(fields: [merchantId], references: [id])
+  redemptions         Redemption[]
+  replacesOffer       MerchantOffer?            @relation("OfferReplacement", fields: [replacesOfferId], references: [id])
+  replacedBy          MerchantOffer[]           @relation("OfferReplacement")
+  replacementReqAsOld OfferReplacementRequest[] @relation("CurrentOffer")
+  replacementReqAsNew OfferReplacementRequest[] @relation("NewOffer")
+
+  replacesOfferId String? @db.Uuid
+
+  content        OfferContent?
+  pricing        OfferPricing?
+  redemption     OfferRedemption?
+  review         OfferReview?
+  analytics      OfferAnalytics?
+  dailyAnalytics DailyOfferAnalytics[]
+  views          OfferView[]
+  complaints     Complaint[]
+  reviews        MerchantReview[]
 
   @@index([merchantId])
   @@index([status])
@@ -357,7 +364,87 @@ model MerchantOffer {
   @@index([merchantId, status])
   @@index([status, startDate, endDate])
   @@index([replacesOfferId])
+  @@index([deletedAt])
   @@map("merchant_offers")
+}
+
+model OfferContent {
+  id                 String   @id @default(uuid()) @db.Uuid
+  offerId            String   @unique @db.Uuid
+  shortDescription   String?  @db.VarChar(500)
+  description        String?
+  termsAndConditions String?
+  imageUrls          String[] @default([])
+  displayData        Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  offer MerchantOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@map("offer_content")
+}
+
+model OfferPricing {
+  id            String   @id @default(uuid()) @db.Uuid
+  offerId       String   @unique @db.Uuid
+  pricingType   String   @db.VarChar(50)
+  configuration Json
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  offer MerchantOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@map("offer_pricing")
+}
+
+model OfferRedemption {
+  id                 String   @id @default(uuid()) @db.Uuid
+  offerId            String   @unique @db.Uuid
+  redemptionType     String?  @db.VarChar(50)
+  configuration      Json?
+  maxRedemptions     Int?     @default(0)
+  currentRedemptions Int      @default(0)
+  daysOfWeek         Int[]    @default([0, 1, 2, 3, 4, 5, 6])
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  offer MerchantOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@map("offer_redemptions")
+}
+
+model OfferReview {
+  id                String    @id @default(uuid()) @db.Uuid
+  offerId           String    @unique @db.Uuid
+  reviewedBy        String?   @db.Uuid
+  reviewedAt        DateTime?
+  rejectionReason   String?
+  reviewNotes       String?
+  adminNote         String?
+  submissionNotes   String?
+  replacementReason String?
+  isReplacement     Boolean   @default(false)
+  validationErrors  Json?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  offer MerchantOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@map("offer_reviews")
+}
+
+model OfferAnalytics {
+  id         String   @id @default(uuid()) @db.Uuid
+  offerId    String   @unique @db.Uuid
+  saveCount  Int      @default(0)
+  viewCount  Int      @default(0)
+  clickCount Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  offer MerchantOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@map("offer_analytics")
 }
 
 model OfferReplacementRequest {
@@ -400,27 +487,28 @@ model MerchantProfileEditRequest {
 }
 
 model Redemption {
-  id             String        @id @default(uuid()) @db.Uuid
-  merchantId     String        @db.Uuid
-  offerId        String        @db.Uuid
-  employeeId     String        @db.Uuid
-  companyId      String        @db.Uuid
-  redemptionCode String        @unique @db.VarChar(100)
-  discountAmount Decimal       @db.Decimal(10, 2)
-  spentAmount    Decimal?      @db.Decimal(10, 2)
-  savingsAmount  Decimal       @db.Decimal(10, 2)
-  branchId       String?       @db.Uuid
+  id             String          @id @default(uuid()) @db.Uuid
+  merchantId     String          @db.Uuid
+  offerId        String          @db.Uuid
+  employeeId     String          @db.Uuid
+  companyId      String          @db.Uuid
+  redemptionCode String?         @db.VarChar(100)
+  discountAmount Decimal         @db.Decimal(10, 2)
+  spentAmount    Decimal?        @db.Decimal(10, 2)
+  savingsAmount  Decimal         @db.Decimal(10, 2)
+  branchId       String?         @db.Uuid
   merchantNotes  String?
   employeeNotes  String?
-  isVerified     Boolean       @default(false)
-  verifiedBy     String?       @db.Uuid
+  isVerified     Boolean         @default(false)
+  verifiedBy     String?         @db.Uuid
   verifiedAt     DateTime?
-  redeemedAt     DateTime      @default(now())
-  createdAt      DateTime      @default(now())
-  company        Company       @relation(fields: [companyId], references: [id])
-  employee       Employee      @relation(fields: [employeeId], references: [id])
-  merchant       Merchant      @relation(fields: [merchantId], references: [id])
-  offer          MerchantOffer @relation(fields: [offerId], references: [id])
+  redeemedAt     DateTime        @default(now())
+  createdAt      DateTime        @default(now())
+  company        Company         @relation(fields: [companyId], references: [id])
+  employee       Employee        @relation(fields: [employeeId], references: [id])
+  merchant       Merchant        @relation(fields: [merchantId], references: [id])
+  offer          MerchantOffer   @relation(fields: [offerId], references: [id])
+  review         MerchantReview?
 
   @@index([merchantId])
   @@index([offerId])
@@ -431,6 +519,7 @@ model Redemption {
   @@index([companyId, redeemedAt])
   @@index([offerId, redeemedAt])
   @@index([redeemedAt, discountAmount, savingsAmount])
+  @@index([merchantId, redeemedAt, discountAmount, savingsAmount])
   @@map("redemptions")
 }
 
@@ -458,7 +547,7 @@ model RedemptionAnalytics {
 model IssueReport {
   id           String      @id @default(uuid()) @db.Uuid
   merchantId   String      @db.Uuid
-  employeeId   String      @db.Uuid
+  employeeId   String?     @db.Uuid
   redemptionId String?     @db.Uuid
   title        String      @db.VarChar(255)
   description  String
@@ -471,7 +560,7 @@ model IssueReport {
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
   admin        AdminUser?  @relation("AdminIssueReview", fields: [adminId], references: [id])
-  employee     Employee    @relation(fields: [employeeId], references: [id])
+  employee     Employee?   @relation(fields: [employeeId], references: [id])
   merchant     Merchant    @relation(fields: [merchantId], references: [id])
 
   @@index([merchantId])
@@ -599,26 +688,26 @@ model CSVRejectedRow {
 }
 
 model AuditLog {
-  id             String         @id @default(uuid()) @db.Uuid
-  actorType      String         @db.VarChar(50)
-  adminId        String?        @db.Uuid
-  merchantId     String?        @db.Uuid
-  companyId      String?        @db.Uuid
-  companyAdminId String?        @db.Uuid
-  employeeId     String?        @db.Uuid
-  action         String         @db.VarChar(100)
-  entityType     String         @db.VarChar(50)
-  entityId       String         @db.Uuid
+  id             String        @id @default(uuid()) @db.Uuid
+  actorType      String        @db.VarChar(50)
+  adminId        String?       @db.Uuid
+  merchantId     String?       @db.Uuid
+  companyId      String?       @db.Uuid
+  companyAdminId String?       @db.Uuid
+  employeeId     String?       @db.Uuid
+  action         String        @db.VarChar(100)
+  entityType     String        @db.VarChar(50)
+  entityId       String        @db.Uuid
   changes        Json?
   metadata       Json?
-  ipAddress      String?        @db.VarChar(45)
-  userAgent      String?        @db.VarChar(500)
-  createdAt      DateTime       @default(now())
-  admin          AdminUser?     @relation("AdminAuditLogs", fields: [adminId], references: [id])
-  company        Company?       @relation("CompanyAuditLogs", fields: [companyId], references: [id])
-  merchant       Merchant?      @relation("MerchantAuditLogs", fields: [merchantId], references: [id])
-  companyAdmin   CompanyAdmin?  @relation("CompanyAdminAuditLogs", fields: [companyAdminId], references: [id])
-  employee       Employee?      @relation("EmployeeAuditLogs", fields: [employeeId], references: [id])
+  ipAddress      String?       @db.VarChar(45)
+  userAgent      String?       @db.VarChar(500)
+  createdAt      DateTime      @default(now())
+  admin          AdminUser?    @relation("AdminAuditLogs", fields: [adminId], references: [id])
+  company        Company?      @relation("CompanyAuditLogs", fields: [companyId], references: [id])
+  merchant       Merchant?     @relation("MerchantAuditLogs", fields: [merchantId], references: [id])
+  companyAdmin   CompanyAdmin? @relation("CompanyAdminAuditLogs", fields: [companyAdminId], references: [id])
+  employee       Employee?     @relation("EmployeeAuditLogs", fields: [employeeId], references: [id])
 
   @@index([adminId])
   @@index([merchantId])
@@ -633,34 +722,103 @@ model AuditLog {
 }
 
 model NotificationEvent {
-  id             String               @id @default(uuid()) @db.Uuid
-  recipientType  String               @db.VarChar(50)
-  adminId        String?              @db.Uuid
-  merchantId     String?              @db.Uuid
-  companyAdminId String?              @db.Uuid
-  employeeId     String?              @db.Uuid
-  title          String               @db.VarChar(255)
+  id             String                 @id @default(uuid()) @db.Uuid
+  recipientType  String                 @db.VarChar(50)
+  adminId        String?                @db.Uuid
+  merchantId     String?                @db.Uuid
+  companyAdminId String?                @db.Uuid
+  employeeId     String?                @db.Uuid
+  title          String                 @db.VarChar(255)
   body           String?
-  channel        NotificationChannel  @default(IN_APP)
-  priority       NotificationPriority @default(NORMAL)
-  referenceType  String?              @db.VarChar(50)
-  referenceId    String?              @db.Uuid
-  isRead         Boolean              @default(false)
+  channel        NotificationChannel    @default(IN_APP)
+  priority       NotificationPriority   @default(NORMAL)
+  type           String?                @db.VarChar(50)
+  referenceType  String?                @db.VarChar(50)
+  referenceId    String?                @db.Uuid
+  isRead         Boolean                @default(false)
   readAt         DateTime?
   sentAt         DateTime?
   deliveredAt    DateTime?
-  createdAt      DateTime             @default(now())
-  admin          AdminUser?           @relation("AdminNotification", fields: [adminId], references: [id])
-  companyAdmin   CompanyAdmin?        @relation("CompanyAdminNotification", fields: [companyAdminId], references: [id])
-  employee       Employee?            @relation("EmployeeNotification", fields: [employeeId], references: [id])
-  merchant       Merchant?            @relation("MerchantNotification", fields: [merchantId], references: [id])
+  createdAt      DateTime               @default(now())
+  admin          AdminUser?             @relation("AdminNotification", fields: [adminId], references: [id])
+  companyAdmin   CompanyAdmin?          @relation("CompanyAdminNotification", fields: [companyAdminId], references: [id])
+  employee       Employee?              @relation("EmployeeNotification", fields: [employeeId], references: [id])
+  merchant       Merchant?              @relation("MerchantNotification", fields: [merchantId], references: [id])
+  deliveries     NotificationDelivery[]
 
   @@index([adminId])
   @@index([merchantId])
   @@index([companyAdminId])
   @@index([employeeId])
   @@index([createdAt])
+  @@index([type])
+  @@index([type, createdAt])
   @@map("notification_events")
+}
+
+model NotificationDelivery {
+  id             String                     @id @default(uuid()) @db.Uuid
+  notificationId String                     @db.Uuid
+  channel        NotificationChannel
+  status         NotificationDeliveryStatus @default(PENDING)
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  error          String?
+  createdAt      DateTime                   @default(now())
+  notification   NotificationEvent          @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId])
+  @@index([notificationId, channel])
+  @@map("notification_deliveries")
+}
+
+model NotificationPreference {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @db.Uuid
+  role             String   @db.VarChar(50)
+  notificationType String   @db.VarChar(50)
+  enableInApp      Boolean  @default(true)
+  enableEmail      Boolean  @default(true)
+  enablePush       Boolean  @default(true)
+  enableSms        Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([userId, role, notificationType])
+  @@index([userId, role])
+  @@map("notification_preferences")
+}
+
+model DeviceToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  role      String   @db.VarChar(50)
+  token     String   @unique @db.VarChar(500)
+  platform  String   @default("web") @db.VarChar(50)
+  deviceId  String?  @db.VarChar(255)
+  enabled   Boolean  @default(true)
+  lastSeen  DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@index([userId, role])
+  @@index([token])
+  @@map("device_tokens")
+}
+
+model OfferView {
+  id         String   @id @default(uuid()) @db.Uuid
+  offerId    String   @db.Uuid
+  employeeId String   @db.Uuid
+  viewedAt   DateTime @default(now())
+
+  offer    MerchantOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  employee Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([offerId, employeeId])
+  @@index([offerId])
+  @@index([employeeId])
+  @@index([viewedAt])
+  @@map("offer_views")
 }
 
 model LoginSession {
@@ -903,11 +1061,15 @@ enum ActionQueueStatus {
 }
 
 enum ActionQueueType {
-  MERCHANT_APPROVAL
-  OFFER_APPROVAL
+  NEW_MERCHANT_APPLICATION
+  FIRST_OFFER_APPROVAL
+
   OFFER_REPLACEMENT
+
   PROFILE_EDIT_REQUEST
-  COMPANY_APPROVAL
+
+  COMPANY_ACTIVATION
+
   ISSUE_REVIEW
   CSV_IMPORT
   BRANCH_EDIT_REQUEST
@@ -936,6 +1098,13 @@ enum NotificationPriority {
   URGENT
 }
 
+enum NotificationDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  SKIPPED
+}
+
 enum RealtimeEventType {
   REDEMPTION_CREATED
   REDEMPTION_UPDATED
@@ -958,4 +1127,262 @@ enum BranchStatus {
   ACTIVE
   INACTIVE
   CLOSED
+}
+
+// ─────────────────────────────────────────────────────────────
+// Complaint Management
+// ─────────────────────────────────────────────────────────────
+
+model Complaint {
+  id              String            @id @default(uuid()) @db.Uuid
+  offerId         String            @db.Uuid
+  employeeId      String            @db.Uuid
+  merchantId      String            @db.Uuid
+  companyId       String            @db.Uuid
+  complaintType   ComplaintType
+  description     String
+  evidenceUrls    Json?
+  status          ComplaintStatus   @default(OPEN)
+  priority        ComplaintPriority @default(MEDIUM)
+  escalationNote  String?
+  resolutionNotes String?
+  resolvedAt      DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  offer       MerchantOffer         @relation(fields: [offerId], references: [id])
+  employee    Employee              @relation(fields: [employeeId], references: [id])
+  merchant    Merchant              @relation(fields: [merchantId], references: [id])
+  company     Company               @relation(fields: [companyId], references: [id])
+  escalations ComplaintEscalation[]
+  actions     ComplaintAction[]
+
+  @@index([employeeId])
+  @@index([merchantId])
+  @@index([companyId])
+  @@index([offerId])
+  @@index([status])
+  @@index([companyId, status])
+  @@map("complaints")
+}
+
+model ComplaintEscalation {
+  id             String    @id @default(uuid()) @db.Uuid
+  complaintId    String    @db.Uuid
+  companyAdminId String    @db.Uuid
+  superAdminId   String?   @db.Uuid
+  reason         String
+  status         String    @default("PENDING") // PENDING, RESOLVED
+  resolvedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  complaint    Complaint    @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  companyAdmin CompanyAdmin @relation(fields: [companyAdminId], references: [id])
+  superAdmin   AdminUser?   @relation(fields: [superAdminId], references: [id])
+
+  @@index([complaintId])
+  @@map("complaint_escalations")
+}
+
+model ComplaintAction {
+  id             String   @id @default(uuid()) @db.Uuid
+  complaintId    String   @db.Uuid
+  actorType      String   @db.VarChar(50) // COMPANY_ADMIN, SUPER_ADMIN, MERCHANT, EMPLOYEE
+  adminId        String?  @db.Uuid
+  companyAdminId String?  @db.Uuid
+  employeeId     String?  @db.Uuid
+  merchantId     String?  @db.Uuid
+  actionType     String   @db.VarChar(50) // REVIEWED, CLARIFICATION_REQUESTED, ESCALATED, RESOLVED, REJECTED, RESPONDED
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  complaint    Complaint     @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  admin        AdminUser?    @relation("AdminComplaintActions", fields: [adminId], references: [id])
+  companyAdmin CompanyAdmin? @relation("CompanyAdminComplaintActions", fields: [companyAdminId], references: [id])
+  employee     Employee?     @relation("EmployeeComplaintActions", fields: [employeeId], references: [id])
+  merchant     Merchant?     @relation("MerchantComplaintActions", fields: [merchantId], references: [id])
+
+  @@index([complaintId])
+  @@map("complaint_actions")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Daily Offer Analytics (for per-day aggregation)
+// ─────────────────────────────────────────────────────────────
+
+model DailyOfferAnalytics {
+  id               String   @id @default(uuid()) @db.Uuid
+  offerId          String   @db.Uuid
+  date             DateTime @db.Date
+  views            Int      @default(0)
+  redemptions      Int      @default(0)
+  revenueGenerated Decimal  @default(0) @db.Decimal(12, 2)
+  conversionRate   Float?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  offer MerchantOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@unique([offerId, date])
+  @@index([offerId])
+  @@index([date])
+  @@map("daily_offer_analytics")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Banner Booking & Promotions
+// ─────────────────────────────────────────────────────────────
+
+model Banner {
+  id          String          @id @default(uuid()) @db.Uuid
+  name        String          @db.VarChar(255)
+  description String?         @db.VarChar(500)
+  position    String          @db.VarChar(50) // HOME_TOP, SIDEBAR, OFFERS_TOP
+  pricePerDay Decimal         @default(10.0) @db.Decimal(10, 2)
+  minDays     Int             @default(7)
+  maxDays     Int             @default(30)
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  bookings    BannerBooking[]
+
+  @@index([position])
+  @@index([isActive])
+  @@map("banners")
+}
+
+model BannerBooking {
+  id             String        @id @default(uuid()) @db.Uuid
+  bannerId       String        @db.Uuid
+  merchantId     String        @db.Uuid
+  startDate      DateTime      @db.Date
+  endDate        DateTime      @db.Date
+  totalPrice     Decimal       @default(0) @db.Decimal(12, 2)
+  status         BookingStatus @default(PENDING)
+  paid           Boolean       @default(false)
+  approvedBy     String?       @db.Uuid
+  approvedAt     DateTime?
+  rejectedReason String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  banner   Banner         @relation(fields: [bannerId], references: [id])
+  merchant Merchant       @relation(fields: [merchantId], references: [id])
+  content  BannerContent?
+
+  @@index([bannerId])
+  @@index([merchantId])
+  @@index([status])
+  @@index([status, paid, startDate, endDate])
+  @@map("banner_bookings")
+}
+
+model BannerContent {
+  id          String   @id @default(uuid()) @db.Uuid
+  bookingId   String   @unique @db.Uuid
+  imageUrl    String   @db.VarChar(500)
+  altText     String?  @db.VarChar(255)
+  redirectUrl String?  @db.VarChar(500)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  booking BannerBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("banner_contents")
+}
+
+enum ComplaintType {
+  MISLEADING
+  INVALID_TERMS
+  NON_FUNCTIONAL
+  POLICY_VIOLATION
+}
+
+enum ComplaintStatus {
+  OPEN
+  UNDER_REVIEW
+  CLARIFICATION_REQ
+  ESCALATED
+  RESOLVED
+  REJECTED
+}
+
+enum ComplaintPriority {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum BookingStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LoginBranding {
+  id String @id @default(uuid()) @db.Uuid
+
+  appName String?
+  tagline String?
+
+  heading     String?
+  description String?
+
+  logoUrl            String?
+  bannerUrl          String?
+  backgroundImageUrl String?
+
+  primaryColor   String?
+  secondaryColor String?
+  accentColor    String?
+  textColor      String?
+  cardBackground String?
+
+  // Future: migrate to LoginLayout enum (SPLIT_CARD, CENTER_CARD, FULLSCREEN_HERO)
+  layout String @default("SPLIT_CARD")
+
+  showLogo        Boolean @default(true)
+  showHeading     Boolean @default(true)
+  showDescription Boolean @default(true)
+  showBanner      Boolean @default(true)
+  showFooter      Boolean @default(true)
+
+  footerTitle       String?
+  footerDescription String?
+  copyright         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model MerchantReview {
+  id           String   @id @default(uuid()) @db.Uuid
+  employeeId   String   @db.Uuid
+  merchantId   String   @db.Uuid
+  companyId    String   @db.Uuid
+  offerId      String?  @db.Uuid
+  redemptionId String?  @unique @db.Uuid
+  rating       Int // 1-5
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  employee   Employee       @relation(fields: [employeeId], references: [id])
+  merchant   Merchant       @relation(fields: [merchantId], references: [id])
+  company    Company        @relation(fields: [companyId], references: [id])
+  offer      MerchantOffer? @relation(fields: [offerId], references: [id])
+  redemption Redemption?    @relation(fields: [redemptionId], references: [id])
+
+  @@unique([employeeId, merchantId])
+  @@index([merchantId])
+}
+
+model Theme {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(100)
+  slug      String   @unique @db.VarChar(100)
+  isActive  Boolean  @default(false)
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

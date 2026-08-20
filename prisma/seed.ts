@@ -217,21 +217,17 @@ async function main() {
   
   }
 
-  // ── Categories per Company ──────────────────────────
-  const catData: { companyId: string; name: string; slug: string; description?: string; icon?: string; displayOrder: number }[] = [];
-  const companies = [techCorp, globalSolutions, innovateX, northStar];
+  // ── Categories (global master data) ──────────────────
   const catNames = ['Food & Dining', 'Retail', 'Technology', 'Health & Fitness', 'Entertainment', 'Travel'];
-  for (const company of companies) {
-    catNames.forEach((name, i) => {
-      catData.push({
-        companyId: company.id,
-        name,
-        slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-        icon: ['utensils', 'shopping-bag', 'laptop', 'heart', 'film', 'plane'][i],
-        displayOrder: i,
-      });
+  const catData: { name: string; slug: string; description?: string; icon?: string; displayOrder: number }[] = [];
+  catNames.forEach((name, i) => {
+    catData.push({
+      name,
+      slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      icon: ['utensils', 'shopping-bag', 'laptop', 'heart', 'film', 'plane'][i],
+      displayOrder: i,
     });
-  }
+  });
   await prisma.category.createMany({ data: catData });
 
   const allCategories = await prisma.category.findMany();
@@ -298,7 +294,7 @@ async function main() {
   const merchantEmails = new Map<string, string>();
 
   for (const m of merchantInputs) {
-    const cat = allCategories.find((c) => c.name === m.category && c.companyId === techCorp.id);
+    const cat = allCategories.find((c) => c.name === m.category);
     const acct = await prisma.account.create({
       data: {
         email: m.email,
@@ -369,27 +365,51 @@ async function main() {
       const tmpl = offerTemplates[i]!;
       const startDate = new Date('2026-01-01');
       const endDate = new Date('2027-01-01');
+      const pricingConfig: Record<string, unknown> = {};
+      if (tmpl.offerType === 'flat_rate' || tmpl.offerType === 'fixed_amount') {
+        pricingConfig.amount = tmpl.discountValue;
+      } else if (tmpl.offerType === 'percentage') {
+        pricingConfig.percent = tmpl.discountPercent ?? tmpl.discountValue;
+      }
+      if ((tmpl as any).minimumSpend != null) {
+        pricingConfig.minimumSpend = (tmpl as any).minimumSpend;
+      }
       await prisma.merchantOffer.create({
         data: {
           merchantId: merchant.id,
           title: `${tmpl.title} at ${merchant.businessName}`,
-          description: tmpl.description,
-          shortDescription: tmpl.title,
           offerType: tmpl.offerType,
-          discountValue: tmpl.discountValue,
-          discountPercent: tmpl.discountPercent ?? null,
-          minimumSpend: (tmpl as any).minimumSpend ?? null,
-          maxRedemptions: 1000,
-          currentRedemptions: Math.floor(Math.random() * 200),
-          viewCount: Math.floor(Math.random() * 1500),
-          saveCount: Math.floor(Math.random() * 300),
           startDate,
           endDate,
-          daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
           isFeatured: i === 0,
           status: 'LIVE',
           submittedAt: startDate,
           liveAt: startDate,
+          content: {
+            create: {
+              shortDescription: tmpl.title,
+              description: tmpl.description,
+            },
+          },
+          pricing: {
+            create: {
+              pricingType: tmpl.offerType,
+              configuration: pricingConfig as any,
+            },
+          },
+          redemption: {
+            create: {
+              maxRedemptions: 1000,
+              currentRedemptions: Math.floor(Math.random() * 200),
+              daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+            },
+          },
+          analytics: {
+            create: {
+              viewCount: Math.floor(Math.random() * 1500),
+              saveCount: Math.floor(Math.random() * 300),
+            },
+          },
         },
       });
     }
@@ -402,15 +422,28 @@ async function main() {
       data: {
         merchantId: pendingMerchant.id,
         title: 'Free Personal Training Session',
-        description: 'New members get a free personal training session. Sign up today!',
         offerType: 'flat_rate',
-        discountValue: 0,
-        maxRedemptions: 500,
         startDate: new Date('2026-06-01'),
         endDate: new Date('2026-12-31'),
-        daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
         status: 'PENDING_APPROVAL',
         submittedAt: new Date('2026-05-27'),
+        redemption: {
+          create: {
+            maxRedemptions: 500,
+            daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+          },
+        },
+        content: {
+          create: {
+            description: 'New members get a free personal training session. Sign up today!',
+          },
+        },
+        pricing: {
+          create: {
+            pricingType: 'flat_rate',
+            configuration: { amount: 0 } as any,
+          },
+        },
       },
     });
   }
@@ -451,7 +484,7 @@ async function main() {
     const email = merchantEmails.get(pm.id) ?? '';
     await prisma.actionQueueItem.create({
       data: {
-        type: 'MERCHANT_APPROVAL',
+        type: 'NEW_MERCHANT_APPLICATION',
         title: `Approve merchant: ${pm.businessName}`,
         description: `New merchant registration from ${email} — review and approve their application.`,
         referenceId: pm.id,
@@ -471,7 +504,7 @@ async function main() {
     if (!merchant) continue;
     await prisma.actionQueueItem.create({
       data: {
-        type: 'OFFER_APPROVAL',
+        type: 'OFFER_REPLACEMENT',
         title: `Approve offer: ${po.title}`,
         description: `New offer submitted by ${merchant.businessName} — review and approve.`,
         referenceId: merchant.id,
@@ -497,7 +530,7 @@ async function main() {
   for (let i = 0; i < 20; i++) {
     const entry = auditActions[Math.floor(Math.random() * auditActions.length)]!;
     const refMerchant = createdMerchants[i % createdMerchants.length]!;
-    const refCompany = companies[i % companies.length]!;
+    const refCompany = [techCorp, globalSolutions, innovateX, northStar][i % 4]!;
     await prisma.auditLog.create({
       data: {
         actorType: 'admin',
@@ -559,7 +592,7 @@ async function main() {
       { key: 'general_platform_name', value: '"Employee Perks Platform"' },
       { key: 'general_support_email', value: '"support@perks.com"' },
       { key: 'general_max_redemptions_per_month', value: '10' },
-      { key: 'general_currency', value: '"USD"' },
+      { key: 'general_currency', value: '"GBP"' },
       { key: 'redemption_require_verification', value: 'true' },
       { key: 'notifications_admin_email', value: '"admin-alerts@perks.com"' },
       { key: 'csv_max_file_size_mb', value: '10' },

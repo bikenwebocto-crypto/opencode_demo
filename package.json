@@ -6,8 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint && eslint . --ext .ts,.tsx",
-    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit -p tsconfig.ci.json",
     "test": "vitest",
     "test:e2e": "playwright test",
     "test:integration": "vitest --config vitest.integration.config.ts",
@@ -23,7 +23,7 @@
     "analytics:aggregate": "tsx scripts/aggregate-analytics.ts",
     "vercel-build": "prisma generate && next build"
   },
-  "prisma" : {
+  "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
@@ -60,6 +60,8 @@
     "csv-stringify": "^6.5.1",
     "date-fns": "^4.1.0",
     "email": "^0.2.7",
+    "firebase": "^12.17.0",
+    "firebase-admin": "^14.2.0",
     "framer-motion": "^11.11.0",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.460.0",
@@ -67,6 +69,7 @@
     "nodemailer": "^9.0.1",
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",
+    "qrcode": "^1.5.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.53.2",
@@ -80,7 +83,7 @@
     "zustand": "^5.0.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.49.0",
+    "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.0.1",
     "@testing-library/user-event": "^14.5.2",
@@ -88,6 +91,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.9.0",
     "@types/nodemailer": "^8.0.1",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.0-rc-f1e5d9f9-20241017",
     "@types/react-dom": "^19.0.0-rc-f1e5d9f9-20241017",
     "@types/uuid": "^10.0.0",
@@ -108,5 +112,4 @@
     "typescript": "^5.6.3",
     "vitest": "^4.1.7"
   }
-
 }

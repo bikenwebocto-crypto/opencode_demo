@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
       entityType: 'REDEMPTION',
       entityId: redemption.id,
       metadata: {
-        redemptionCode: redemption.redemptionCode,
+        redemptionCode: redemption.redemptionCode ?? '',
         offerId: redemption.offerId,
         employeeId: redemption.employeeId,
         companyId: redemption.companyId,
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
       employeeFirstName: redemption.employee.firstName,
       offerTitle: redemption.offer.title,
       merchantName: redemption.offer.merchant.businessName,
-      redemptionCode: redemption.redemptionCode,
+      redemptionCode: redemption.redemptionCode ?? '',
       redeemedDate,
     })
 
@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
       employeeName: `${redemption.employee.firstName} ${redemption.employee.lastName}`,
       companyName: redemption.company.name,
       offerTitle: redemption.offer.title,
-      redemptionCode: redemption.redemptionCode,
+      redemptionCode: redemption.redemptionCode ?? '',
       redeemedDate,
     })
 

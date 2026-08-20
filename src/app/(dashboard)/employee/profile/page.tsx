@@ -5,6 +5,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { LoadingButton } from '@/components/ui/loading-button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmployeeLayout } from '@/components/employee/EmployeeLayout'
 import { showToast } from '@/hooks/use-toast'
@@ -203,10 +204,10 @@ export default function EmployeeProfilePage() {
           <Button type="button" variant="outline" onClick={() => setForm(null)} disabled={update.isPending}>
             Reset
           </Button>
-          <Button type="submit" disabled={update.isPending}>
+          <LoadingButton type="submit" loading={update.isPending} loadingText="Saving…">
             <Save className="mr-1 h-4 w-4" />
-            {update.isPending ? 'Saving…' : 'Save Profile'}
-          </Button>
+            Save Profile
+          </LoadingButton>
         </div>
       </form>
     </EmployeeLayout>

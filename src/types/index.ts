@@ -21,7 +21,7 @@ export type OfferStatus = 'DRAFT' | 'PENDING_APPROVAL' | 'LIVE' | 'VALIDATION_IN
 export type ReplacementStatus = 'PENDING' | 'AWAITING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'CLARIFICATION_REQUESTED';
 export type IssueStatus = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED' | 'REJECTED';
 export type ActionQueueStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'SKIPPED';
-export type ActionQueueType = 'MERCHANT_APPROVAL' | 'OFFER_APPROVAL' | 'OFFER_REPLACEMENT' | 'PROFILE_EDIT_REQUEST' | 'COMPANY_APPROVAL' | 'ISSUE_REVIEW' | 'CSV_IMPORT';
+export type ActionQueueType = 'NEW_MERCHANT_APPLICATION' | 'FIRST_OFFER_APPROVAL' | 'OFFER_REPLACEMENT' | 'PROFILE_EDIT_REQUEST' | 'COMPANY_ACTIVATION' | 'ISSUE_REVIEW' | 'CSV_IMPORT' | 'BRANCH_EDIT_REQUEST' | 'ASSET_REVIEW';
 export type CSVUploadStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'PARTIALLY_COMPLETED' | 'FAILED';
 export type NotificationChannel = 'IN_APP' | 'EMAIL' | 'PUSH' | 'SMS';
 export type NotificationPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
@@ -294,7 +294,7 @@ export interface OfferWithMerchant {
 
 export interface RedemptionWithDetails {
   id: string;
-  redemptionCode: string;
+  redemptionCode: string | null;
   discountAmount: number;
   spentAmount: number | null;
   savingsAmount: number;
@@ -464,4 +464,383 @@ export interface ColumnDef<T> {
   align?: 'left' | 'center' | 'right';
   width?: string;
   render?: (item: T) => React.ReactNode;
+}
+
+// ============================================================================
+// MERCHANT OPERATIONS DASHBOARD
+// ============================================================================
+
+export type MerchantHealth = 'HEALTHY' | 'WARNING' | 'CRITICAL';
+
+export interface MerchantOfferStats {
+  live: number;
+  pending: number;
+  archived: number;
+  rejected: number;
+  draft: number;
+  total: number;
+}
+
+export interface MerchantEngagement {
+  views: number;
+  saved: number;
+  redeemed: number;
+  conversion: number | null;
+}
+
+export interface MerchantRelations {
+  companies: number;
+  employees: number;
+  branches: number;
+  issueReports: number;
+  openIssues: number;
+}
+
+export interface MerchantDashboardRow {
+  id: string;
+  businessName: string;
+  slug: string;
+  email: string | null;
+  contactName: string;
+  contactPhone: string | null;
+  logoUrl: string | null;
+  city: string | null;
+  state: string | null;
+  category: { id: string; name: string; slug: string } | null;
+  status: MerchantStatus;
+  isFeatured: boolean;
+  isHomepageMerchant: boolean;
+  isTopRated: boolean;
+  displayPriority: number;
+  averageRating: number;
+  totalRedemptions: number;
+  createdAt: string;
+  updatedAt: string;
+  liveAt: string | null;
+  lastActivityAt: string | null;
+  stats: MerchantOfferStats;
+  engagement: MerchantEngagement;
+  relations: MerchantRelations;
+  health: MerchantHealth;
+}
+
+export interface MerchantDashboardSummary {
+  totalMerchants: number;
+  pendingApproval: number;
+  featured: number;
+  homepageMerchants: number;
+  liveOffers: number;
+  pendingOffers: number;
+  todaysRedemptions: number;
+  thisMonthRedemptions: number;
+}
+
+export interface MerchantDashboardResponse {
+  success: true;
+  data: MerchantDashboardRow[];
+  summary: MerchantDashboardSummary;
+  meta: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+}
+
+export interface MerchantDashboardFilters {
+  status?: MerchantStatus | 'ALL';
+  categoryId?: string;
+  city?: string;
+  featured?: boolean;
+  homepage?: boolean;
+  priorityMin?: number;
+  health?: MerchantHealth | 'ALL';
+  hasLiveOffers?: boolean;
+  hasPendingOffers?: boolean;
+  q?: string;
+  sortBy?: 'priority' | 'createdAt' | 'status' | 'redemptions' | 'views' | 'lastActivity';
+  sortDir?: 'asc' | 'desc';
+  page?: number;
+  pageSize?: number;
+}
+
+// ============================================================================
+// MERCHANT ANALYTICS (admin/analytics/merchants)
+// ============================================================================
+
+export interface MerchantAnalyticsStats {
+  totalOffers: number;
+  liveOffers: number;
+  draftOffers: number;
+  pendingOffers: number;
+  rejectedOffers: number;
+  expiredOffers: number;
+  totalViews: number;
+  totalSaves: number;
+  totalClicks: number;
+  totalRedemptions: number;
+  conversionRate: number | null;
+  averageSavings: number;
+  lastOfferCreated: string | null;
+}
+
+export interface MerchantAnalyticsRow {
+  id: string;
+  businessName: string;
+  logoUrl: string | null;
+  status: MerchantStatus;
+  category: { id: string; name: string; slug: string } | null;
+  city: string | null;
+  statistics: MerchantAnalyticsStats;
+}
+
+export type MerchantAnalyticsSortBy =
+  | 'redemptions'
+  | 'offers'
+  | 'views'
+  | 'saves'
+  | 'recent'
+  | 'alphabetical';
+
+export interface MerchantAnalyticsFilters {
+  q?: string;
+  status?: MerchantStatus | 'ALL';
+  categoryId?: string;
+  sortBy?: MerchantAnalyticsSortBy;
+  sortDir?: 'asc' | 'desc';
+  page?: number;
+  pageSize?: number;
+}
+
+export interface MerchantAnalyticsPagination {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
+export interface MerchantAnalyticsResponse {
+  success: true;
+  data: {
+    merchants: MerchantAnalyticsRow[];
+    pagination: MerchantAnalyticsPagination;
+  };
+}
+
+// ============================================================================
+// MERCHANT ANALYTICS DETAIL (admin/analytics/merchants/[merchantId])
+// ============================================================================
+
+export interface MerchantAnalyticsOverview {
+  totalOffers: number;
+  liveOffers: number;
+  draftOffers: number;
+  pendingOffers: number;
+  rejectedOffers: number;
+  expiredOffers: number;
+  views: number;
+  saves: number;
+  clicks: number;
+  redemptions: number;
+  conversionRate: number | null;
+  averageDiscount: number;
+  averageSavings: number;
+}
+
+export interface MerchantOfferPerformance {
+  id: string;
+  title: string;
+  status: string;
+  views: number;
+  saves: number;
+  clicks: number;
+  redemptions: number;
+  conversionRate: number | null;
+}
+
+export interface ChartSlice {
+  label: string;
+  value: number;
+  color?: string;
+}
+
+export interface MerchantChartData {
+  statusDistribution: ChartSlice[];
+  categoryDistribution: ChartSlice[];
+  dailyTrend: Array<{ date: string; redemptions: number; views: number; savings: number }>;
+  funnel: ChartSlice[];
+}
+
+export interface MerchantAnalyticsDetailResponse {
+  success: true;
+  data: {
+    merchant: {
+      id: string;
+      businessName: string;
+      slug: string;
+      logoUrl: string | null;
+      status: MerchantStatus;
+      isFeatured: boolean;
+      isHomepageMerchant: boolean;
+      displayPriority: number;
+      averageRating: number;
+      city: string | null;
+      state: string | null;
+      country: string | null;
+      category: { id: string; name: string; slug: string } | null;
+      createdAt: string;
+      liveAt: string | null;
+      totalRedemptions: number;
+    };
+    summary: {
+      totalOffers: number;
+      liveOffers: number;
+      draftOffers: number;
+      pendingOffers: number;
+      rejectedOffers: number;
+      expiredOffers: number;
+      views: number;
+      saves: number;
+      clicks: number;
+      redemptions: number;
+      conversionRate: number | null;
+      averageDiscount: number;
+      averageSavings: number;
+    };
+    offerPerformance: MerchantOfferPerformance[];
+    charts: MerchantChartData;
+  };
+}
+
+// ============================================================================
+// COMPANY ANALYTICS (admin/analytics/companies)
+// ============================================================================
+
+export interface CompanyTopCategory {
+  categoryId: string | null;
+  categoryName: string;
+  redemptions: number;
+}
+
+export interface CompanyAnalyticsStats {
+  activeEmployees: number;
+  inactiveEmployees: number;
+  neverLoggedIn: number;
+  offersViewed: number;
+  offersSaved: number;
+  offersClicked: number;
+  offersRedeemed: number;
+  averageSavings: number;
+  monthlySavings: number;
+  topCategory: CompanyTopCategory | null;
+}
+
+export interface CompanyAnalyticsRow {
+  id: string;
+  name: string;
+  logo: string | null;
+  status: string;
+  employeeCount: number;
+  statistics: CompanyAnalyticsStats;
+}
+
+export interface CompanyAnalyticsFilters {
+  status?: string;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: 'name' | 'redemptions' | 'savings' | 'employees';
+  sortDir?: 'asc' | 'desc';
+}
+
+export interface CompanyAnalyticsPagination {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+}
+
+export interface CompanyAnalyticsResponse {
+  success: true;
+  data: CompanyAnalyticsRow[];
+  pagination: CompanyAnalyticsPagination;
+}
+
+// ============================================================================
+// COMPANY ANALYTICS DETAIL (admin/analytics/companies/[companyId])
+// ============================================================================
+
+export interface CompanyAnalyticsOverviewStats {
+  employees: number;
+  active: number;
+  inactive: number;
+  neverLoggedIn: number;
+  views: number;
+  saves: number;
+  clicks: number;
+  redeemed: number;
+  averageSaving: number;
+  topCategory: CompanyTopCategory | null;
+}
+
+export interface CompanyActiveEmployee {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  avatarUrl: string | null;
+  status: string;
+  redemptions: number;
+  totalSavings: number;
+  lastActive: string | null;
+}
+
+export interface CompanyUsedMerchant {
+  id: string;
+  businessName: string;
+  logoUrl: string | null;
+  category: { id: string; name: string; slug: string } | null;
+  redemptions: number;
+  totalSavings: number;
+  totalSpent: number;
+  uniqueEmployees: number;
+  lastRedeemedAt: string | null;
+}
+
+export interface CompanyAnalyticsDetailCharts {
+  categoryPie: ChartSlice[];
+  merchantPie: ChartSlice[];
+  dailyRedemptionLine: Array<{ date: string; redemptions: number; savings: number }>;
+  employeeFunnel: ChartSlice[];
+}
+
+export interface CompanyAnalyticsDetailResponse {
+  success: true;
+  data: {
+    company: {
+      id: string;
+      name: string;
+      slug: string;
+      email: string;
+      logo: string | null;
+      status: string;
+      employeeCount: number;
+      city: string | null;
+      state: string | null;
+      country: string | null;
+      industry: string | null;
+      createdAt: string;
+      approvedAt: string | null;
+    };
+    overview: CompanyAnalyticsOverviewStats;
+    mostActiveEmployees: CompanyActiveEmployee[];
+    mostUsedMerchants: CompanyUsedMerchant[];
+    charts: CompanyAnalyticsDetailCharts;
+  };
 }

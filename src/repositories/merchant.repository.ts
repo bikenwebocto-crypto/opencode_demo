@@ -115,9 +115,9 @@ export class MerchantRepository extends BaseRepository<Merchant, MerchantCreateI
         prisma.redemption.count({
           where: { merchantId, redeemedAt: { gte: dateFrom, lte: dateTo } },
         }),
-        prisma.merchantOffer.count({ where: { merchantId } }),
+        prisma.merchantOffer.count({ where: { merchantId, deletedAt: null } }),
         prisma.merchantOffer.count({
-          where: { merchantId, status: 'LIVE', endDate: { gte: new Date() } },
+          where: { merchantId, deletedAt: null, status: 'LIVE', endDate: { gte: new Date() } },
         }),
         prisma.redemption.findMany({
           where: { merchantId, redeemedAt: { gte: dateFrom, lte: dateTo } },

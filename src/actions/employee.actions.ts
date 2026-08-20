@@ -16,12 +16,19 @@ export async function createRedemptionAction(formData: FormData) {
   const branchId = formData.get('branchId') as string | undefined;
 
   // Validate offer is live
-  const offer = await prisma.merchantOffer.findUnique({
-    where: { id: offerId, status: 'LIVE' },
+  const offer = await prisma.merchantOffer.findFirst({
+    where: { id: offerId, deletedAt: null, status: 'LIVE' },
+    include: {
+      pricing: { select: { configuration: true } },
+      redemption: { select: { maxRedemptions: true, currentRedemptions: true } },
+    },
   });
 
   if (!offer) throw new Error('Offer not found or no longer active');
-  if ((offer.maxRedemptions ?? 0) > 0 && (offer.currentRedemptions ?? 0) >= (offer.maxRedemptions ?? 0)) {
+  if (
+    (offer.redemption?.maxRedemptions ?? 0) > 0 &&
+    (offer.redemption?.currentRedemptions ?? 0) >= (offer.redemption?.maxRedemptions ?? 0)
+  ) {
     throw new Error('Offer has reached maximum redemptions');
   }
 
@@ -31,10 +38,8 @@ export async function createRedemptionAction(formData: FormData) {
   });
   if (!employee) throw new Error('Employee account is not active');
 
-  // Generate unique redemption code
-  const redemptionCode = `PRK-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-
-  const discountAmount = Number(offer.discountValue);
+  const pricingConfig = (offer.pricing?.configuration as Record<string, unknown>) ?? {}
+  const discountAmount = Number(pricingConfig.amount ?? pricingConfig.percent ?? 0);
   const savingsAmount = discountAmount;
 
   const redemption = await prisma.redemption.create({
@@ -43,7 +48,6 @@ export async function createRedemptionAction(formData: FormData) {
       offerId,
       employeeId,
       companyId,
-      redemptionCode,
       discountAmount,
       savingsAmount,
       branchId: branchId || null,
@@ -52,8 +56,8 @@ export async function createRedemptionAction(formData: FormData) {
   });
 
   // Increment offer redemption counter
-  await prisma.merchantOffer.update({
-    where: { id: offerId },
+  await prisma.offerRedemption.update({
+    where: { offerId },
     data: { currentRedemptions: { increment: 1 } },
   });
 
@@ -126,19 +130,22 @@ export async function getLiveOffersAction(companyId: string, page = 1, pageSize 
   const [offers, total] = await Promise.all([
     prisma.merchantOffer.findMany({
       where: {
+        deletedAt: null,
         status: 'LIVE',
         startDate: { lte: now },
         endDate: { gte: now },
         merchant: {
           status: 'ACTIVE',
           deletedAt: null,
-          category: { companyId },
         },
       },
       orderBy: [{ isFeatured: 'desc' }, { sortOrder: 'asc' }, { createdAt: 'desc' }],
       skip: (page - 1) * pageSize,
       take: pageSize,
       include: {
+        content: { select: { description: true, shortDescription: true, imageUrls: true } },
+        pricing: { select: { configuration: true } },
+        redemption: { select: { redemptionType: true, configuration: true } },
         merchant: {
           select: {
             id: true,
@@ -156,10 +163,11 @@ export async function getLiveOffersAction(companyId: string, page = 1, pageSize 
     }),
     prisma.merchantOffer.count({
       where: {
+        deletedAt: null,
         status: 'LIVE',
         startDate: { lte: now },
         endDate: { gte: now },
-        merchant: { status: 'ACTIVE', deletedAt: null, category: { companyId } },
+        merchant: { status: 'ACTIVE', deletedAt: null },
       },
     }),
   ]);

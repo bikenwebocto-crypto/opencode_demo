@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     const pageSize = Math.min(50, Math.max(1, parseInt(searchParams.get('pageSize') ?? '20')))
     const unreadOnly = searchParams.get('unreadOnly') === 'true'
 
-    const where: any = { companyAdminId: companyAdmin.id }
+    const where: any = { companyAdminId: companyAdmin.id, channel: 'IN_APP' }
     if (unreadOnly) where.isRead = false
 
     const [notifications, total, unreadCount] = await Promise.all([
@@ -21,13 +21,14 @@ export async function GET(request: NextRequest) {
         take: pageSize,
       }),
       prisma.notificationEvent.count({ where }),
-      prisma.notificationEvent.count({ where: { companyAdminId: companyAdmin.id, isRead: false } }),
+      prisma.notificationEvent.count({ where: { companyAdminId: companyAdmin.id, channel: 'IN_APP', isRead: false } }),
     ])
 
     return NextResponse.json({
       success: true,
       data: notifications,
-      meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize), unreadCount },
+      unread: unreadCount,
+      meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize), unreadCount, unread: unreadCount },
     })
   } catch (error) {
     return handleApiError(error)
@@ -39,7 +40,7 @@ export async function POST() {
     const { companyAdmin } = await getCompanyAdmin()
 
     const result = await prisma.notificationEvent.updateMany({
-      where: { companyAdminId: companyAdmin.id, isRead: false },
+      where: { companyAdminId: companyAdmin.id, channel: 'IN_APP', isRead: false },
       data: { isRead: true, readAt: new Date() },
     })
 

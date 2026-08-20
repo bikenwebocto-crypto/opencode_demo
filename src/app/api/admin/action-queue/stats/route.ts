@@ -3,23 +3,15 @@ import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/supabase/server'
 import { ActionQueueStatus, ActionQueueType } from '@prisma/client'
 
-// Map categories to your actual Prisma enum values
+// Map categories to actual Prisma ActionQueueType enum values
 const CATEGORY_TO_QUEUE_TYPE = {
-  merchantApplications: 'MERCHANT_APPROVAL',
-  offerApprovals: 'OFFER_APPROVAL',
+  merchantApplications: 'NEW_MERCHANT_APPLICATION',
+  offerApprovals: 'FIRST_OFFER_APPROVAL',
   offerReplacements: 'OFFER_REPLACEMENT',
   profileChanges: 'PROFILE_EDIT_REQUEST',
-  companyActivations: 'COMPANY_APPROVAL',
-  setupLinks: 'SETUP_LINK_EXPIRED', // You may need to add this to your enum
+  companyActivations: 'COMPANY_ACTIVATION',
   openIssues: 'ISSUE_REVIEW',
-  renewalAlerts: 'RENEWAL_GAMING_ALERT', // You may need to add this to your enum
-  missingPerks: 'MERCHANT_MISSING_PERK', // You may need to add this to your enum
 } as const
-
-// If setupLinks, renewalAlerts, missingPerks don't exist in your enum,
-// you need to either:
-// 1. Add them to your Prisma schema, or
-// 2. Map them to existing enum values temporarily
 
 export async function GET(_request: NextRequest) {
   try {
@@ -41,18 +33,18 @@ export async function GET(_request: NextRequest) {
     })
     
     
-    // Count by type
-    const merchantApplications = allPendingItems.filter(i => i.type === 'MERCHANT_APPROVAL').length
-    const offerApprovals = allPendingItems.filter(i => i.type === 'OFFER_APPROVAL').length
+    // Count by type using actual ActionQueueType enum values
+    const merchantApplications = allPendingItems.filter(i => i.type === 'NEW_MERCHANT_APPLICATION').length
+    const offerApprovals = allPendingItems.filter(i => i.type === 'FIRST_OFFER_APPROVAL').length
     const offerReplacements = allPendingItems.filter(i => i.type === 'OFFER_REPLACEMENT').length
     const profileChanges = allPendingItems.filter(i => i.type === 'PROFILE_EDIT_REQUEST').length
-    const companyActivations = allPendingItems.filter(i => i.type === 'COMPANY_APPROVAL').length
+    const companyActivations = allPendingItems.filter(i => i.type === 'COMPANY_ACTIVATION').length
     const openIssues = allPendingItems.filter(i => i.type === 'ISSUE_REVIEW').length
     
-    // For types that don't exist in your enum yet
-    const setupLinks = 0 // Add to enum or map to something else
-    const renewalAlerts = 0 // Add to enum or map to something else
-    const missingPerks = 0 // Add to enum or map to something else
+    // Types not yet in the Prisma enum default to 0
+    const setupLinks = 0
+    const renewalAlerts = 0
+    const missingPerks = 0
     
     // Get counts by status
     const [totalPending, totalInProgress, totalCompleted, totalFailed, totalSkipped] = await Promise.all([
@@ -87,7 +79,7 @@ export async function GET(_request: NextRequest) {
         byTab: {
           ALL: totalPending + totalInProgress,
           MERCHANT_APPROVAL: merchantApplications,
-          OFFER_APPROVALS: totalOfferApprovals,
+          OFFER_APPROVAL: totalOfferApprovals,
           COMPANY_ACTIVATION: companyActivations,
           ISSUES: openIssues,
           ALERTS: totalAlerts,
