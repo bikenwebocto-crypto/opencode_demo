@@ -112,6 +112,9 @@ jobs:
   #           vars.SUPABASE_PROJECT_REF_STAGING }}
 
 
+          docker push \
+            "$ECR_REGISTRY/$ECR_REPOSITORY:staging-latest"
+  
   # ============================================================
   # DOCKER BUILD & PUSH - STAGING
   # ============================================================
