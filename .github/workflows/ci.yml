@@ -229,17 +229,17 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PRODUCTION }}:production-latest
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_PRODUCTION }}:${{ github.sha }}
           secrets: |
-            database_url=${{ secrets.PRODUCTION_DATABASE_URL }}
-            next_public_supabase_url=${{ secrets.PRODUCTION_NEXT_PUBLIC_SUPABASE_URL }}
-            next_public_supabase_publishable_key=${{ secrets.PRODUCTION_NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
-            next_public_app_url=${{ secrets.PRODUCTION_NEXT_PUBLIC_APP_URL }}
-            next_public_google_maps_api_key=${{ secrets.PRODUCTION_NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
-            next_public_google_maps_map_id=${{ secrets.PRODUCTION_NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }}
-            next_public_firebase_api_key=${{ secrets.PRODUCTION_NEXT_PUBLIC_FIREBASE_API_KEY }}
-            next_public_firebase_auth_domain=${{ secrets.PRODUCTION_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
-            next_public_firebase_project_id=${{ secrets.PRODUCTION_NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
-            next_public_firebase_storage_bucket=${{ secrets.PRODUCTION_NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
-            next_public_firebase_messaging_sender_id=${{ secrets.PRODUCTION_NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
-            next_public_firebase_app_id=${{ secrets.PRODUCTION_NEXT_PUBLIC_FIREBASE_APP_ID }}
-            next_public_firebase_measurement_id=${{ secrets.PRODUCTION_NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID }}
-            next_public_firebase_vapid_key=${{ secrets.PRODUCTION_NEXT_PUBLIC_FIREBASE_VAPID_KEY }}
+            database_url=${{ secrets.DATABASE_URL }}
+            next_public_supabase_url=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+            next_public_supabase_publishable_key=${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+            next_public_app_url=${{ secrets.NEXT_PUBLIC_APP_URL }}
+            next_public_google_maps_api_key=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}
+            next_public_google_maps_map_id=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID }}
+            next_public_firebase_api_key=${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+            next_public_firebase_auth_domain=${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+            next_public_firebase_project_id=${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+            next_public_firebase_storage_bucket=${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+            next_public_firebase_messaging_sender_id=${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+            next_public_firebase_app_id=${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+            next_public_firebase_measurement_id=${{ secrets.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID }}
+            next_public_firebase_vapid_key=${{ secrets.NEXT_PUBLIC_FIREBASE_VAPID_KEY }}
