@@ -11,8 +11,28 @@ async function hashPassword(password: string): Promise<string> {
 async function main() {
   console.log('🌱 Seeding database...');
 
-  // Clean existing data in dependency order
+  // Clean existing data in dependency order (children before parents)
   await prisma.$transaction([
+    // Complaints (children first)
+    prisma.complaintAction.deleteMany(),
+    prisma.complaintEscalation.deleteMany(),
+    prisma.complaint.deleteMany(),
+
+    // Banners
+    prisma.bannerContent.deleteMany(),
+    prisma.bannerBooking.deleteMany(),
+    prisma.banner.deleteMany(),
+
+    // Reviews & offer-adjacent
+    prisma.merchantReview.deleteMany(),
+    prisma.offerView.deleteMany(),
+    prisma.dailyOfferAnalytics.deleteMany(),
+
+    // Notifications
+    prisma.notificationDelivery.deleteMany(),
+    prisma.notificationPreference.deleteMany(),
+    prisma.deviceToken.deleteMany(),
+
     prisma.renewalGamingAlert.deleteMany(),
     prisma.realtimeEvent.deleteMany(),
     prisma.emailVerificationToken.deleteMany(),
@@ -31,7 +51,7 @@ async function main() {
     prisma.redemption.deleteMany(),
     prisma.offerReplacementRequest.deleteMany(),
     prisma.merchantProfileEditRequest.deleteMany(),
-    prisma.merchantOffer.deleteMany(),
+    prisma.merchantOffer.deleteMany(), // cascades content/pricing/redemption/review/analytics
     prisma.merchantBranch.deleteMany(),
     prisma.merchantStatusHistory.deleteMany(),
     prisma.merchant.deleteMany(),
@@ -44,6 +64,10 @@ async function main() {
     prisma.account.deleteMany(),
     prisma.category.deleteMany(),
     prisma.platformSettings.deleteMany(),
+
+    // Standalone (no FK dependents elsewhere)
+    prisma.loginBranding.deleteMany(),
+    prisma.theme.deleteMany(),
   ]);
 
   const pw = await hashPassword('Test@123456');
@@ -87,6 +111,44 @@ async function main() {
       lastName: 'Admin',
       role: 'FINANCE_ADMIN',
       isActive: true,
+    },
+  });
+
+  // ── Login Branding ────────────────────────────────────
+  await prisma.loginBranding.create({
+    data: {
+      appName: 'Employee Perks Platform',
+      tagline: 'Exclusive perks for your team',
+      heading: 'Welcome back',
+      description: 'Sign in to access your employee perks and offers.',
+      logoUrl: null,
+      bannerUrl: null,
+      backgroundImageUrl: null,
+      primaryColor: '#4F46E5',
+      secondaryColor: '#818CF8',
+      accentColor: '#F59E0B',
+      textColor: '#111827',
+      cardBackground: '#FFFFFF',
+      layout: 'SPLIT_CARD',
+      showLogo: true,
+      showHeading: true,
+      showDescription: true,
+      showBanner: true,
+      showFooter: true,
+      footerTitle: 'Employee Perks Platform',
+      footerDescription: 'Save more, every day.',
+      copyright: `© ${new Date().getFullYear()} Employee Perks Platform. All rights reserved.`,
+    },
+  });
+  console.log('Created default LoginBranding');
+
+  // ── Theme ──────────────────────────────────────────────
+  await prisma.theme.create({
+    data: {
+      name: 'Default',
+      slug: 'default',
+      isActive: true,
+      settings: {},
     },
   });
 

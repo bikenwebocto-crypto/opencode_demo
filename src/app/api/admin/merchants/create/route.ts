@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
     const {
       businessName, email, contactName, contactPhone,
       categoryId, description, website,
+      logoUrl, coverImageUrl,
       addressLine1, addressLine2, city, state, postalCode, country,
     } = body;
 
@@ -69,6 +70,8 @@ export async function POST(request: NextRequest) {
           categoryId: categoryId || null,
           description: description || null,
           website: website || null,
+          logoUrl: logoUrl || null,
+          coverImageUrl: coverImageUrl || null,
           addressLine1: addressLine1 || null,
           addressLine2: addressLine2 || null,
           city: city || null,

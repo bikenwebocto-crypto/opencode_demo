@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { safeQuery } from '@/lib/prisma/safe-query'
 
 export interface ThemeSettings {
   sidebarBg: string
@@ -114,17 +115,19 @@ export async function getActiveTheme(): Promise<ThemeSettings> {
     return cachedTheme.settings
   }
 
-  try {
-    await ensureDefaultThemesExist()
-    const theme = await prisma.theme.findFirst({ where: { isActive: true } })
-    if (!theme) return DEFAULT_SETTINGS
-    const settings = theme.settings as unknown as ThemeSettings
-    cachedTheme = { slug: theme.slug, settings }
-    cacheTimestamp = now
-    return settings
-  } catch {
-    return DEFAULT_SETTINGS
-  }
+  return safeQuery(
+    async () => {
+      await ensureDefaultThemesExist()
+      const theme = await prisma.theme.findFirst({ where: { isActive: true } })
+      if (!theme) return DEFAULT_SETTINGS
+      const settings = theme.settings as unknown as ThemeSettings
+      cachedTheme = { slug: theme.slug, settings }
+      cacheTimestamp = now
+      return settings
+    },
+    DEFAULT_SETTINGS,
+    { context: 'Theme.getActiveTheme' },
+  )
 }
 
 export function invalidateThemeCache(): void {
@@ -133,13 +136,25 @@ export function invalidateThemeCache(): void {
 }
 
 export async function getAllThemes() {
-  await ensureDefaultThemesExist()
-  return prisma.theme.findMany({ orderBy: { createdAt: 'desc' } })
+  return safeQuery(
+    async () => {
+      await ensureDefaultThemesExist()
+      return prisma.theme.findMany({ orderBy: { createdAt: 'desc' } })
+    },
+    [],
+    { context: 'Theme.findMany:getAllThemes' },
+  )
 }
 
 export async function getThemeBySlug(slug: string) {
-  await ensureThemeExists(slug)
-  return prisma.theme.findUnique({ where: { slug } })
+  return safeQuery(
+    async () => {
+      await ensureThemeExists(slug)
+      return prisma.theme.findUnique({ where: { slug } })
+    },
+    null,
+    { context: 'Theme.findUnique:getThemeBySlug' },
+  )
 }
 
 export async function updateThemeSettings(slug: string, settings: Partial<ThemeSettings>) {

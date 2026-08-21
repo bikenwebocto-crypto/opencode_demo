@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getEmployeeFromSession, unauthorized, internalError, companyInactive } from '@/lib/employee-session'
 import { mapOfferRow } from '@/services/offer-mapper.service'
+import { safeQuery } from '@/lib/prisma/safe-query'
 
 export async function GET(_request: NextRequest) {
   try {
@@ -12,25 +13,35 @@ export async function GET(_request: NextRequest) {
     const now = new Date()
 
     const [bannerRows, categories, offerRows] = await Promise.all([
-      prisma.bannerBooking.findMany({
-        where: {
-          status: 'APPROVED',
-          paid: true,
-          startDate: { lte: now },
-          endDate: { gte: now },
-        },
-        include: {
-          content: true,
-          banner: { select: { name: true, position: true } },
-          merchant: { select: { businessName: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-      }),
-      prisma.category.findMany({
-        where: { isActive: true },
-        orderBy: { displayOrder: 'asc' },
-        select: { id: true, name: true, icon: true },
-      }),
+      safeQuery(
+        () =>
+          prisma.bannerBooking.findMany({
+            where: {
+              status: 'APPROVED',
+              paid: true,
+              startDate: { lte: now },
+              endDate: { gte: now },
+            },
+            include: {
+              content: true,
+              banner: { select: { name: true, position: true } },
+              merchant: { select: { businessName: true } },
+            },
+            orderBy: { createdAt: 'desc' },
+          }),
+        [],
+        { context: 'BannerBooking.findMany:offers-grouped' },
+      ),
+      safeQuery(
+        () =>
+          prisma.category.findMany({
+            where: { isActive: true },
+            orderBy: { displayOrder: 'asc' },
+            select: { id: true, name: true, icon: true },
+          }),
+        [],
+        { context: 'Category.findMany:offers-grouped' },
+      ),
       prisma.merchantOffer.findMany({
         where: {
           status: 'LIVE',
@@ -39,7 +50,7 @@ export async function GET(_request: NextRequest) {
           merchant: {
             status: 'ACTIVE',
             deletedAt: null,
-            branches: { some: { isActive: true, status: 'ACTIVE', deletedAt: null } },
+            branches: { some: { isActive: true, status: 'ACTIVE', deletedAt: null, city: employee.city } },
           },
         },
         orderBy: [{ isFeatured: 'desc' }, { createdAt: 'desc' }],

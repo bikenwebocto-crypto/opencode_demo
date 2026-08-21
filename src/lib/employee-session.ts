@@ -15,6 +15,7 @@ export interface EmployeeSession {
   phone: string | null
   employeeId: string | null
   companyStatus?: string
+  city?: string
 }
 
 export interface InactiveCompanySentinel {
@@ -58,6 +59,7 @@ export async function getEmployeeFromSession(): Promise<EmployeeSessionResult> {
     phone: (profile.phone as string) ?? null,
     employeeId: (profile.employeeId as string) ?? null,
     companyStatus,
+    city: (user.city as string) ?? null,
   }
 }
 

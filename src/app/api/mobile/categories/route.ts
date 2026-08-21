@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { internalError } from '@/lib/employee-helpers'
 import { getAuthenticatedMobileEmployee } from '@/lib/mobile-auth'
+import { safeQuery } from '@/lib/prisma/safe-query'
 
 // GET /api/mobile/categories
 //
@@ -13,17 +14,22 @@ export async function GET(request: NextRequest) {
     const auth = await getAuthenticatedMobileEmployee(request)
     if (!auth.ok) return auth.response
 
-    const categories = await prisma.category.findMany({
-      where: { isActive: true },
-      orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        description: true,
-        icon: true,
-      },
-    })
+    const categories = await safeQuery(
+      () =>
+        prisma.category.findMany({
+          where: { isActive: true },
+          orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            description: true,
+            icon: true,
+          },
+        }),
+      [],
+      { context: 'Category.findMany:mobile-active' },
+    )
 
     return NextResponse.json({ success: true, data: categories })
   } catch (error) {

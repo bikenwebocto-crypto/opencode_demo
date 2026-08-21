@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getEmployeeFromSession, unauthorized, internalError, companyInactive, notFound, badRequest } from '@/lib/employee-session'
 import { mapOfferRow } from '@/services/offer-mapper.service'
+import { safeQuery } from '@/lib/prisma/safe-query'
 
 export async function GET(request: NextRequest) {
   try {
@@ -109,20 +110,25 @@ export async function GET(request: NextRequest) {
     ])
 
     const offerIds = rows.map((o) => o.id)
-    const bannerRows = await prisma.bannerBooking.findMany({
-      where: {
-        status: 'APPROVED',
-        paid: true,
-        startDate: { lte: now },
-        endDate: { gte: now },
-      },
-      include: {
-        content: true,
-        banner: { select: { name: true, position: true } },
-        merchant: { select: { businessName: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
+    const bannerRows = await safeQuery(
+      () =>
+        prisma.bannerBooking.findMany({
+          where: {
+            status: 'APPROVED',
+            paid: true,
+            startDate: { lte: now },
+            endDate: { gte: now },
+          },
+          include: {
+            content: true,
+            banner: { select: { name: true, position: true } },
+            merchant: { select: { businessName: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+      [],
+      { context: 'BannerBooking.findMany:employee-offers' },
+    )
     const banners = bannerRows.map((row) => ({
       id: row.id,
       image_url: row.content?.imageUrl,

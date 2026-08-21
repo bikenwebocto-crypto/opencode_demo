@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/supabase/server'
+import { safeQuery } from '@/lib/prisma/safe-query'
 
 function unauthorized() {
   return NextResponse.json(
@@ -22,19 +23,24 @@ export async function GET() {
     const user = await getCurrentUser()
     if (!user) return unauthorized()
 
-    const positions = await prisma.banner.findMany({
-      where: { isActive: true },
-      select: {
-        id: true,
-        name: true,
-        position: true,
-        pricePerDay: true,
-        minDays: true,
-        maxDays: true,
-        description: true,
-      },
-      orderBy: { name: 'asc' },
-    })
+    const positions = await safeQuery(
+      () =>
+        prisma.banner.findMany({
+          where: { isActive: true },
+          select: {
+            id: true,
+            name: true,
+            position: true,
+            pricePerDay: true,
+            minDays: true,
+            maxDays: true,
+            description: true,
+          },
+          orderBy: { name: 'asc' },
+        }),
+      [],
+      { context: 'Banner.findMany:positions-active' },
+    )
 
     return NextResponse.json({ success: true, data: positions })
   } catch (error) {

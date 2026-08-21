@@ -16,6 +16,7 @@
  */
 
 import { prisma } from '@/lib/prisma'
+import { safeQuery } from '@/lib/prisma/safe-query'
 
 const PEAK_KEY_PREFIX = 'company:'
 const PEAK_KEY_SUFFIX = ':peak30d'
@@ -32,9 +33,14 @@ export interface PeakRecord {
 export async function readPeak(
   companyId: string,
 ): Promise<PeakRecord | null> {
-  const row = await prisma.platformSettings.findUnique({
-    where: { key: peakKey(companyId) },
-  })
+  const row = await safeQuery(
+    () =>
+      prisma.platformSettings.findUnique({
+        where: { key: peakKey(companyId) },
+      }),
+    null,
+    { context: 'PlatformSettings.findUnique:peak-headcount' },
+  )
   if (!row) return null
   const v = row.value as Partial<PeakRecord> | null
   if (!v || typeof v.peak !== 'number') return null
