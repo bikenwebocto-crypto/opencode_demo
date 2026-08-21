@@ -11,7 +11,7 @@ env:
   AWS_REGION: "us-east-1"
   # Two separate repo names — staging and production live in different
   # AWS accounts / registries, so don't share one ECR_REPOSITORY var.
-  ECR_REPOSITORY_STAGING: "employee_perk_platform"      # <-- confirm this matches the real ECR repo name
+  ECR_REPOSITORY_STAGING: "employee_perk_platform"      # confirmed via IAM denial error message
   ECR_REPOSITORY_PRODUCTION: "bikenwebocto-crypto/emp-perk-platform"
 
 jobs:
@@ -130,6 +130,12 @@ jobs:
 
     if: github.ref == 'refs/heads/dev'
 
+    # Required so this job can read secrets stored under the "staging_env"
+    # GitHub Environment. Without this, environment secrets resolve to
+    # empty even if they exist — they're only exposed to jobs that
+    # explicitly declare this environment.
+    environment: staging_env
+
     permissions:
       contents: read
       id-token: write
@@ -163,7 +169,7 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_STAGING }}:staging-latest
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_STAGING }}:${{ github.sha }}
           secrets: |
-            database_url=${{ secrets.STAGING_DATABASE_URL }}
+            database_url=${{ secrets.DATABASE_URL }}
             next_public_supabase_url=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
             next_public_supabase_publishable_key=${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
             next_public_app_url=${{ secrets.NEXT_PUBLIC_APP_URL }}
@@ -191,6 +197,7 @@ jobs:
       - aws-auth
 
     if: github.ref == 'refs/heads/main'
+    environment: production_env
 
     permissions:
       contents: read
