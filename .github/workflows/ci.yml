@@ -9,7 +9,7 @@ on:
 env:
   NODE_VERSION: "20"
   AWS_REGION: "us-east-1"
-  ECR_REPOSITORY: "emp-perk-platform"
+  ECR_REPOSITORY: "bikenwebocto-crypto/emp-perk-platform"
 
 jobs:
 
