@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { seedLimassolMerchants } from './seed-limassol-merchants';
 
 const prisma = new PrismaClient();
 const SALT_ROUNDS = 10;
@@ -280,13 +281,13 @@ async function main() {
   }
 
   // ── Categories (global master data) ──────────────────
-  const catNames = ['Food & Dining', 'Retail', 'Technology', 'Health & Fitness', 'Entertainment', 'Travel'];
+  const catNames = ['Food & Dining', 'Retail', 'Technology', 'Health & Fitness', 'Entertainment', 'Travel', 'Fashion', 'Shopping Malls', 'Family & Kids', 'Home Improvement', 'Toys & Games'];
   const catData: { name: string; slug: string; description?: string; icon?: string; displayOrder: number }[] = [];
   catNames.forEach((name, i) => {
     catData.push({
       name,
       slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-      icon: ['utensils', 'shopping-bag', 'laptop', 'heart', 'film', 'plane'][i],
+      icon: ['utensils', 'shopping-bag', 'laptop', 'heart', 'film', 'plane', 'shirt', 'building', 'users', 'wrench', 'gamepad'][i],
       displayOrder: i,
     });
   });
@@ -411,6 +412,9 @@ async function main() {
       },
     });
   }
+
+  // ── Limassol Merchants (Cyprus) ───────────────────────
+  await seedLimassolMerchants(prisma);
 
   // ── Merchant Offers ──────────────────────────────────
   const activeMerchants = createdMerchants.filter((m) => m.status === 'ACTIVE');
