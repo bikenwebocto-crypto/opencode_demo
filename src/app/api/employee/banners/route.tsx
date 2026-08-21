@@ -5,6 +5,7 @@ import {
   unauthorized,
   internalError,
 } from "@/lib/employee-session";
+import { safeQuery } from "@/lib/prisma/safe-query";
 
 export async function GET(_request: NextRequest) {
   try {
@@ -14,20 +15,25 @@ export async function GET(_request: NextRequest) {
 
     const now = new Date();
 
-    const rows = await prisma.bannerBooking.findMany({
-  where: {
-    status: 'APPROVED',
-    paid: true,
-    startDate: { lte: new Date() },
-    endDate: { gte: new Date() },
-  },
-  include: {
-    content: true,
-    banner: { select: { name: true, position: true } },
-    merchant: { select: { businessName: true } },
-  },
-  orderBy: { createdAt: 'desc' },
-});
+    const rows = await safeQuery(
+      () =>
+        prisma.bannerBooking.findMany({
+          where: {
+            status: 'APPROVED',
+            paid: true,
+            startDate: { lte: new Date() },
+            endDate: { gte: new Date() },
+          },
+          include: {
+            content: true,
+            banner: { select: { name: true, position: true } },
+            merchant: { select: { businessName: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        }),
+      [],
+      { context: 'BannerBooking.findMany:employee-home' },
+    );
     console.log('[BANNER BOOKINGS] Retrieved rows:', rows.length, rows);
     // Transform to match the expected response shape
     const formattedRows = rows.map((row) => ({

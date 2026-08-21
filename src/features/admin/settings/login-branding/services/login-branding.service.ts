@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { safeQuery } from '@/lib/prisma/safe-query'
 
 export type PublicBranding = {
   appName: string | null
@@ -30,6 +31,30 @@ const CACHE_TTL = 5 * 60 * 1000
 
 function isCacheValid(): boolean {
   return cachedBranding !== null && Date.now() - cacheTimestamp < CACHE_TTL
+}
+
+const DEFAULT_BRANDING: PublicBranding = {
+  appName: 'PerksGo',
+  tagline: null,
+  heading: 'Welcome Back',
+  description: 'Sign in to continue to your dashboard.',
+  logoUrl: null,
+  bannerUrl: null,
+  primaryColor: null,
+  secondaryColor: null,
+  accentColor: null,
+  textColor: null,
+  cardBackground: null,
+  layout: 'SPLIT_CARD',
+  showLogo: true,
+  showHeading: true,
+  showDescription: true,
+  showBanner: true,
+  showFooter: true,
+  footerTitle: null,
+  footerDescription: null,
+  copyright: null,
+  backgroundImageUrl: null,
 }
 
 function mapBrandingToPublic(row: {
@@ -85,33 +110,15 @@ export async function getPublicBranding(): Promise<PublicBranding> {
     return cachedBranding!
   }
 
-  const row = await prisma.loginBranding.findFirst({ orderBy: { createdAt: 'desc' } })
+  const row = await safeQuery(
+    () => prisma.loginBranding.findFirst({ orderBy: { createdAt: 'desc' } }),
+    null,
+    { context: 'LoginBranding.findFirst' },
+  )
 
   const result = row
     ? mapBrandingToPublic(row)
-    : {
-        appName: 'PerksGo',
-        tagline: null,
-        heading: 'Welcome Back',
-        description: 'Sign in to continue to your dashboard.',
-        logoUrl: null,
-        bannerUrl: null,
-        primaryColor: null,
-        secondaryColor: null,
-        accentColor: null,
-        textColor: null,
-        cardBackground: null,
-        layout: 'SPLIT_CARD',
-        showLogo: true,
-        showHeading: true,
-        showDescription: true,
-        showBanner: true,
-        showFooter: true,
-        footerTitle: null,
-        footerDescription: null,
-        copyright: null,
-        backgroundImageUrl: null,
-      }
+    : DEFAULT_BRANDING
 
   cachedBranding = result
   cacheTimestamp = Date.now()
@@ -120,8 +127,11 @@ export async function getPublicBranding(): Promise<PublicBranding> {
 }
 
 export async function getAdminBranding() {
-  const row = await prisma.loginBranding.findFirst({ orderBy: { createdAt: 'desc' } })
-  return row
+  return safeQuery(
+    () => prisma.loginBranding.findFirst({ orderBy: { createdAt: 'desc' } }),
+    null,
+    { context: 'LoginBranding.findFirst:getAdminBranding' },
+  )
 }
 
 export async function upsertBranding(data: Record<string, unknown>) {

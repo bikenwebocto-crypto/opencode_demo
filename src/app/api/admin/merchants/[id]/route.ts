@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { createAuditLog, fromCurrentUser } from '@/services/audit-log.service';
+import { deleteImage } from '@/lib/upload/image';
 
 export async function GET(
   _request: NextRequest,
@@ -89,6 +90,8 @@ export async function PATCH(
       "description",
       "website",
       "categoryId",
+      "logoUrl",
+      "coverImageUrl",
       "addressLine1",
       "addressLine2",
       "city",
@@ -122,16 +125,49 @@ export async function PATCH(
     }
 
     // Handle email change via Account
+    // Step 1: check if an Account with this email already exists.
+    // Step 2: if not, insert directly into the Account table (Prisma
+    //         generates authUserId itself via @default(uuid())).
+    // Step 3: set data.accountId so the merchant.update() below writes the link.
     const bodyEmail = body.email as string | undefined;
     if (bodyEmail !== undefined) {
       const newEmail = bodyEmail.trim().toLowerCase();
+
       if (newEmail && merchant.accountId) {
+        // Merchant already has an account — just update its email.
         await prisma.account.update({
           where: { authUserId: merchant.accountId },
           data: { email: newEmail },
         });
+      } else if (newEmail && !merchant.accountId) {
+        // Step 1: is this email already taken by another account?
+        const existingAccount = await prisma.account.findUnique({ where: { email: newEmail } });
+        if (existingAccount) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: { code: "EMAIL_IN_USE", message: "This email is already linked to another account." },
+            },
+            { status: 409 },
+          );
+        }
+
+        // Step 2: not present — insert a new Account row directly.
+        const account = await prisma.account.create({
+          data: {
+            email: newEmail,
+            role: "MERCHANT",
+            profileType: "MERCHANT",
+            status: "ACTIVE",
+            createdBy: user.id,
+          },
+        });
+
+        // Step 3: link the new account's id onto the merchant update payload.
+        data.accountId = account.authUserId;
       }
     }
+
     const updated = await prisma.merchant.update({
       where: { id },
       data: data as any,
@@ -153,6 +189,14 @@ export async function PATCH(
         },
       },
     });
+
+    // Clean up replaced logo/cover files from storage
+    if (data.logoUrl && data.logoUrl !== merchant.logoUrl && merchant.logoUrl) {
+      deleteImage(merchant.logoUrl, { bucket: 'offer-images' }).catch(() => {});
+    }
+    if (data.coverImageUrl && data.coverImageUrl !== merchant.coverImageUrl && merchant.coverImageUrl) {
+      deleteImage(merchant.coverImageUrl, { bucket: 'offer-images' }).catch(() => {});
+    }
 
     await createAuditLog(fromCurrentUser(user, 'MERCHANT_UPDATED', 'merchant', id, {
       changes: Object.keys(data),

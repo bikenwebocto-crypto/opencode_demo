@@ -25,6 +25,8 @@ export default function EditMerchantPage({ params }: { params: Promise<{ id: str
         categoryId: merchant.categoryId ?? '',
         description: merchant.description ?? '',
         website: merchant.website ?? '',
+        logoUrl: merchant.logoUrl ?? '',
+        coverImageUrl: merchant.coverImageUrl ?? '',
         addressLine1: merchant.addressLine1 ?? '',
         addressLine2: merchant.addressLine2 ?? '',
         city: merchant.city ?? '',

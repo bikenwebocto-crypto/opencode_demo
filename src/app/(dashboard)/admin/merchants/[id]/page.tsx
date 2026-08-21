@@ -2,13 +2,16 @@
 import { use, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Package, Pencil, Trash2, MapPin, BarChart3 } from 'lucide-react'
+import {
+  ArrowLeft, Package, Pencil, Trash2, MapPin, BarChart3,
+  Image as ImageIcon, Phone, Mail, Globe, Store,
+} from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { DataTable } from '@/components/shared/data-table'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { StoreMap } from '@/components/shared/store-map'
 import { useMerchantById, useMerchantOffers, useDeleteMerchant } from '@/hooks/queries/use-merchants'
 import { useAdminMerchantStoreMap } from '@/hooks/queries/use-store-map'
@@ -104,6 +107,10 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
       : []),
   ]
 
+  // Build a readable address line from whatever fields are present
+  const addressParts = [merchant.address, merchant.city, merchant.country].filter(Boolean)
+  const fullAddress = addressParts.length ? addressParts.join(', ') : null
+
   const offerColumns: ColumnDef<any>[] = [
     { key: 'title', header: 'Offer', sortable: true },
     {
@@ -140,27 +147,12 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
   return (
     <div className="space-y-6 py-6">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/admin/merchants">
-            <Button type="button" variant="ghost" size="icon">
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          </Link>
-          <div className="flex items-center gap-3">
-          <Avatar className="h-10 w-10">
-            <AvatarFallback className="text-sm">{(merchant.businessName ?? '?').charAt(0)}</AvatarFallback>
-          </Avatar>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold tracking-tight">{merchant.businessName}</h1>
-              <StatusBadge status={merchant.status} />
-            </div>
-            <p className="text-sm text-muted-foreground">{merchant.email} &middot; {merchant.category?.name ?? 'No category'}</p>
-            {merchant.adminNote && <p className="mt-1 text-xs text-amber-600">Note: {merchant.adminNote}</p>}
-          </div>
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
+        <Link href="/admin/merchants">
+          <Button type="button" variant="ghost" size="icon">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+        </Link>
+        <div className="flex items-center gap-2">
           <Link href={`/admin/merchants/${id}/edit`}>
             <Button variant="outline" size="sm"><Pencil className="mr-1 h-4 w-4" />Edit</Button>
           </Link>
@@ -169,6 +161,99 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
           </Button>
         </div>
       </div>
+
+      {/* ─── Profile header: banner + logo ─── */}
+      <Card className="overflow-hidden pt-0">
+        <div className="relative h-40 w-full overflow-hidden bg-gradient-to-r from-primary/20 via-primary/10 to-muted sm:h-48">
+          {merchant.coverImageUrl ? (
+            <img
+              src={merchant.coverImageUrl}
+              alt="Cover"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <ImageIcon className="h-12 w-12 text-muted-foreground/30" />
+            </div>
+          )}
+          <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/20 to-transparent" />
+        </div>
+
+        {/*
+          Only the avatar overlaps the cover now (via its own negative margin).
+          The text block below stays in normal flow so it never collides with
+          the banner art or gets clipped/illegible over busy cover images.
+        */}
+        <div className="px-6 pb-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <Avatar className="-mt-10 h-20 w-20 shrink-0 overflow-hidden rounded-full border-[3px] border-background bg-muted shadow-xl sm:-mt-12 sm:h-24 sm:w-24">
+              {merchant.logoUrl ? (
+                <AvatarImage
+                  src={merchant.logoUrl}
+                  alt={merchant.businessName}
+                  className="h-full w-full object-cover"
+                />
+              ) : null}
+              <AvatarFallback className="text-xl font-bold sm:text-2xl">
+                {merchant.businessName?.charAt(0)?.toUpperCase() ?? '?'}
+              </AvatarFallback>
+            </Avatar>
+
+            <div className="min-w-0 flex-1 pt-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{merchant.businessName}</h1>
+                <StatusBadge status={merchant.status} />
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {merchant.category?.name ?? 'No category'}
+              </p>
+
+              {/* Contact / location details */}
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                {merchant.email && (
+                  <span className="flex items-center gap-1">
+                    <Mail className="h-3.5 w-3.5" />
+                    {merchant.email}
+                  </span>
+                )}
+                {merchant.phoneNumber && (
+                  <span className="flex items-center gap-1">
+                    <Phone className="h-3.5 w-3.5" />
+                    {merchant.phoneNumber}
+                  </span>
+                )}
+                {fullAddress && (
+                  <span className="flex items-center gap-1">
+                    <MapPin className="h-3.5 w-3.5" />
+                    {fullAddress}
+                  </span>
+                )}
+                {merchant.website && (
+                  <a
+                    href={merchant.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 hover:text-foreground hover:underline"
+                  >
+                    <Globe className="h-3.5 w-3.5" />
+                    {merchant.website.replace(/^https?:\/\//, '')}
+                  </a>
+                )}
+              </div>
+
+              {merchant.adminNote && (
+                <p className="mt-1 text-xs text-amber-600">Note: {merchant.adminNote}</p>
+              )}
+            </div>
+          </div>
+
+          {merchant.description && (
+            <p className="mt-4 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+              {merchant.description}
+            </p>
+          )}
+        </div>
+      </Card>
 
       <div className="flex gap-1 rounded-lg border bg-muted/30 p-1">
         {tabs.map((tab) => (
@@ -199,6 +284,48 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
               </Card>
             ))}
           </div>
+
+          {/* Branches summary */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Store className="h-5 w-5" /> Branches ({storeBranches.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {storeLoading ? (
+                <div className="space-y-3">
+                  {[...Array(2)].map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
+                </div>
+              ) : storeBranches.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-center">
+                  <Store className="mb-2 h-8 w-8 text-muted-foreground/50" />
+                  <p className="text-sm text-muted-foreground">No branches added yet</p>
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {storeBranches.map((branch: any) => (
+                    <button
+                      key={branch.id}
+                      type="button"
+                      onClick={() => setActiveTab('store-map')}
+                      className="flex items-start gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50"
+                    >
+                      <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {branch.name ?? branch.branchName ?? 'Branch'}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {[branch.address, branch.city].filter(Boolean).join(', ') || 'No address on file'}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
 
@@ -248,7 +375,6 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
           showDistance={false}
           showCurrentLocation={false}
           showEditLink
-    
         />
       )}
 

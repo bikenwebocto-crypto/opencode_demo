@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getCurrentUser } from '@/lib/supabase/server'
+import { safeQuery } from '@/lib/prisma/safe-query'
 
 function unauthorized() {
   return NextResponse.json(
@@ -34,13 +35,18 @@ export async function GET(request: NextRequest) {
     const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get('pageSize') ?? '20')))
 
     const [banners, total] = await Promise.all([
-      prisma.banner.findMany({
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: { _count: { select: { bookings: true } } },
-      }),
-      prisma.banner.count(),
+      safeQuery(
+        () =>
+          prisma.banner.findMany({
+            orderBy: { createdAt: 'desc' },
+            skip: (page - 1) * pageSize,
+            take: pageSize,
+            include: { _count: { select: { bookings: true } } },
+          }),
+        [],
+        { context: 'Banner.findMany:admin-list' },
+      ),
+      safeQuery(() => prisma.banner.count(), 0, { context: 'Banner.count:admin-list' }),
     ])
 
     return NextResponse.json({

@@ -48,6 +48,7 @@ export interface CurrentUser {
   profileType: string;
   profileId: string | null;
   profile: Record<string, unknown> | null;
+  city?: string | null;
 }
 
 function getCompanyName(ctx: { profileType: string; profile: any; company: any }): string | null {
@@ -69,6 +70,7 @@ function currentUserFromContext(ctx: any): CurrentUser {
     role: ctx.account.role,
     userType: userTypeMap[ctx.account.role] ?? 'employee',
     companyId: ctx.companyId,
+    city: ctx.city,
     companyName: getCompanyName(ctx),
     companyStatus: ctx.companyStatus,
     profileType: ctx.profileType,

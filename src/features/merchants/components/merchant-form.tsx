@@ -5,11 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { LoadingButton } from '@/components/ui/loading-button'
-import { ArrowLeft, Save, Upload } from 'lucide-react'
+import { ArrowLeft, Save, Upload, Image as ImageIcon } from 'lucide-react'
 import { CSVUploadDropzone } from '@/features/csv-uploads/components/csv-upload-dropzone'
 import { useCreateMerchant, useUpdateMerchant } from '@/hooks/queries/use-merchants'
 import { showToast } from '@/hooks/use-toast'
 import { useCategories } from '@/hooks/queries/use-categories'
+import { ImageUploader } from '@/components/shared/ImageUploader'
+import type { DeferredFile } from '@/components/shared/ImageUploader'
+import { uploadImage, MERCHANT_LOGO_OPTIONS, MERCHANT_COVER_OPTIONS } from '@/lib/upload/image'
 
 interface FormData {
   businessName: string
@@ -20,6 +23,8 @@ interface FormData {
   categoryId: string
   description: string
   website: string
+  logoUrl?: string
+  coverImageUrl?: string
   addressLine1: string
   addressLine2: string
   city: string
@@ -44,6 +49,9 @@ export function MerchantForm({ merchantId, initialData }: MerchantFormProps) {
   const updateMerchant = useUpdateMerchant()
   const [errors, setErrors] = useState<FormErrors>({})
   const [showBulk, setShowBulk] = useState(false)
+  const [pendingLogoFile, setPendingLogoFile] = useState<DeferredFile | null>(null)
+  const [pendingCoverFile, setPendingCoverFile] = useState<DeferredFile | null>(null)
+  const [uploadingImages, setUploadingImages] = useState(false)
   const { data: categories } = useCategories()
 
   const [form, setForm] = useState<FormData>(initialData ?? {
@@ -97,8 +105,42 @@ export function MerchantForm({ merchantId, initialData }: MerchantFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!validate()) return
-    console.log('Submitting form:', form)
+
+    let uploadedLogoUrl: string | null = null
+    let uploadedCoverUrl: string | null = null
+
+    if (pendingLogoFile || pendingCoverFile) {
+      setUploadingImages(true)
+      try {
+        const uploads: Promise<void>[] = []
+        if (pendingLogoFile) {
+          uploads.push(
+            uploadImage(pendingLogoFile.file, MERCHANT_LOGO_OPTIONS).then((url) => {
+              uploadedLogoUrl = url
+            })
+          )
+        }
+        if (pendingCoverFile) {
+          uploads.push(
+            uploadImage(pendingCoverFile.file, MERCHANT_COVER_OPTIONS).then((url) => {
+              uploadedCoverUrl = url
+            })
+          )
+        }
+        await Promise.all(uploads)
+      } catch (err: any) {
+        setUploadingImages(false)
+        showToast({ type: 'error', title: 'Image upload failed', description: err.message || 'Failed to upload images. Please try again.' })
+        return
+      }
+      setUploadingImages(false)
+    }
+
     const body = { ...form } as Record<string, unknown>
+    if (uploadedLogoUrl) body.logoUrl = uploadedLogoUrl
+    if (uploadedCoverUrl) body.coverImageUrl = uploadedCoverUrl
+    if (typeof body.logoUrl === 'string' && !body.logoUrl.trim()) delete body.logoUrl
+    if (typeof body.coverImageUrl === 'string' && !body.coverImageUrl.trim()) delete body.coverImageUrl
     if (!body.password) delete body.password
     if (isEdit) body.id = merchantId
     console.log('Mutation body:', body)
@@ -312,9 +354,61 @@ export function MerchantForm({ merchantId, initialData }: MerchantFormProps) {
         </Card>
       </div>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <ImageIcon className="h-5 w-5" /> Branding
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-muted-foreground">
+                Logo
+              </label>
+              <ImageUploader
+                uploadMode="deferred"
+                onFilesSelected={(files) => { setPendingLogoFile(files[0] ?? null) }}
+                currentCount={form.logoUrl ? 1 : 0}
+                uploadOptions={MERCHANT_LOGO_OPTIONS}
+                acceptedTypes={['image/jpeg', 'image/png', 'image/svg+xml', 'image/webp']}
+                maxFileSize={5 * 1024 * 1024}
+                maxFiles={5}
+                allowMultiple={false}
+                placeholder="Drop logo here"
+                showRemaining={false}
+                currentImageUrl={pendingLogoFile ? null : (form.logoUrl ?? null)}
+                previewClassName="h-20 w-20 rounded-full border-2 border-primary/20 object-cover shadow-sm"
+                previewHint="512×512 · Square"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="block text-xs font-medium text-muted-foreground">
+                Cover Image
+              </label>
+              <ImageUploader
+                uploadMode="deferred"
+                onFilesSelected={(files) => { setPendingCoverFile(files[0] ?? null) }}
+                currentCount={form.coverImageUrl ? 1 : 0}
+                uploadOptions={MERCHANT_COVER_OPTIONS}
+                acceptedTypes={['image/jpeg', 'image/png', 'image/webp']}
+                maxFileSize={5 * 1024 * 1024}
+                maxFiles={5}
+                allowMultiple={false}
+                placeholder="Drop cover image here"
+                showRemaining={false}
+                currentImageUrl={pendingCoverFile ? null : (form.coverImageUrl ?? null)}
+                previewClassName="h-24 w-full rounded-lg border object-cover shadow-sm"
+                previewHint="1200×400 · Landscape"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="flex items-center justify-end gap-3">
         <Button type="button" variant="outline" onClick={() => router.back()}>Cancel</Button>
-        <LoadingButton type="submit" loading={mutation.isPending} loadingText="Saving...">
+        <LoadingButton type="submit" loading={mutation.isPending || uploadingImages} loadingText="Saving...">
           <Save className="mr-1 h-4 w-4" />
           {isEdit ? 'Update Merchant' : 'Save Merchant'}
         </LoadingButton>

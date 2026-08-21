@@ -19,9 +19,11 @@ export async function GET(request: NextRequest) {
     const featured = searchParams.get('featured') === 'true'
     const page = Math.max(1, Number(searchParams.get('page') ?? '1'))
     const pageSize = Math.min(50, Math.max(1, Number(searchParams.get('pageSize') ?? '20')))
-
+     const now = new Date()
     const where: Record<string, unknown> = {
       status: 'LIVE',
+      startDate: { lte: now },
+      endDate: { gt: now },
       merchant: {
         status: 'ACTIVE',
         deletedAt: null,

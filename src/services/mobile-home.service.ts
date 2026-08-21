@@ -32,6 +32,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { haversineKm, branchCoordinate } from '@/lib/distance'
+import { safeQuery } from '@/lib/prisma/safe-query'
 
 // Minimal employee shape required by this service. Decoupled from
 // `EmployeeSession` (from `@/lib/employee-session`) so the service can
@@ -303,21 +304,26 @@ async function buildDiscover(now: Date): Promise<MobileHomeOffer[]> {
 }
 
 async function buildBanners(now: Date): Promise<MobileHomeBanner[]> {
-  const rows = await prisma.bannerBooking.findMany({
-    where: {
-      status: 'APPROVED',
-      paid: true,
-      startDate: { lte: now },
-      endDate: { gte: now },
-    },
-    include: {
-      content: true,
-      banner: { select: { name: true, position: true } },
-      merchant: { select: { businessName: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-    take: SECTION_LIMITS.banner,
-  })
+  const rows = await safeQuery(
+    () =>
+      prisma.bannerBooking.findMany({
+        where: {
+          status: 'APPROVED',
+          paid: true,
+          startDate: { lte: now },
+          endDate: { gte: now },
+        },
+        include: {
+          content: true,
+          banner: { select: { name: true, position: true } },
+          merchant: { select: { businessName: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: SECTION_LIMITS.banner,
+      }),
+    [],
+    { context: 'BannerBooking.findMany:mobile-home' },
+  )
   return rows.map((row) => ({
     id: row.id,
     imageUrl: row.content?.imageUrl ?? '',

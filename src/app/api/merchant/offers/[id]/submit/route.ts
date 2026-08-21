@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { getMerchantFromSession } from '@/lib/merchant-session'
 import { createAuditLog } from '@/services/audit-log.service';
 import { BUSINESS_NOTIFICATION_TEMPLATES, channels, publishBusinessNotification, publishBusinessToAdmins } from '@/services/business-notification.service';
+import { OfferStatus } from '@prisma/client';
 
 function unauthorized() {
   return NextResponse.json(
@@ -25,6 +26,13 @@ function forbidden(msg: string) {
   );
 }
 
+function conflict(msg: string) {
+  return NextResponse.json(
+    { success: false, error: { code: 'CONFLICT', message: msg } },
+    { status: 409 },
+  );
+}
+
 function internalError(error: unknown) {
   console.error('Merchant offer submit error:', error);
   return NextResponse.json(
@@ -34,6 +42,9 @@ function internalError(error: unknown) {
 }
 
 const ALLOWED_IMAGE_FORMATS = ['jpg', 'jpeg', 'png', 'webp'];
+const SUBMITTABLE_STATUSES: OfferStatus[] = [
+  'DRAFT', 'VALIDATION_FAILED', 'CHANGES_REQUESTED', 'ARCHIVED', 'AWAITING_APPROVAL',
+];
 
 function runQualityChecks(body: any): { passed: boolean; errors: Record<string, string> } {
   const errors: Record<string, string> = {};
@@ -80,13 +91,121 @@ function runQualityChecks(body: any): { passed: boolean; errors: Record<string, 
   return { passed: Object.keys(errors).length === 0, errors };
 }
 
+/**
+ * Everything here is side-effect / notification work that the merchant does
+ * NOT need to wait for. Called without `await` from the handler — errors are
+ * caught and logged here so they never bubble up and never affect the
+ * response that's already been sent to the client.
+ */
+async function firePostSubmitSideEffects(params: {
+  qcPassed: boolean;
+  qcErrors: Record<string, string>;
+  finalOfferId: string;
+  finalOfferTitle: string;
+  merchantId: string;
+  merchantBusinessName: string;
+  replacesOfferId: string | null;
+}) {
+  const {
+    qcPassed, qcErrors, finalOfferId, finalOfferTitle,
+    merchantId, merchantBusinessName, replacesOfferId,
+  } = params;
+
+  try {
+    if (!qcPassed) {
+      const template = BUSINESS_NOTIFICATION_TEMPLATES.offerValidationFailed(finalOfferTitle);
+      await publishBusinessNotification({
+        ...template,
+        recipients: [{ role: 'merchant', id: merchantId }],
+        channels: channels('IN_APP'),
+        referenceType: 'merchant_offer',
+        referenceId: finalOfferId,
+        metadata: { validationErrors: qcErrors },
+      });
+      return;
+    }
+
+    if (!replacesOfferId) {
+      const template = BUSINESS_NOTIFICATION_TEMPLATES.offerSubmitted(finalOfferTitle);
+      await publishBusinessToAdmins({
+        ...template,
+        channels: channels('IN_APP', 'PUSH'),
+        referenceType: 'merchant_offer',
+        referenceId: finalOfferId,
+        metadata: { merchantId },
+      });
+    }
+
+    if (replacesOfferId) {
+      const currentLive = await prisma.merchantOffer.findUnique({ where: { id: replacesOfferId } });
+
+      if (currentLive?.status === 'LIVE') {
+        await prisma.offerReplacementRequest.create({
+          data: {
+            currentOfferId: replacesOfferId,
+            newOfferId: finalOfferId,
+            status: 'AWAITING_APPROVAL',
+          },
+        });
+
+        await prisma.actionQueueItem.create({
+          data: {
+            type: 'FIRST_OFFER_APPROVAL',
+            title: `Offer Approval: ${finalOfferTitle}`,
+            description: `Merchant ${merchantBusinessName} submitted an offer for approval`,
+            referenceId: merchantId,
+            referenceType: 'MERCHANT',
+            status: 'PENDING',
+            priority: 1,
+            metadata: { currentOfferId: replacesOfferId, newOfferId: finalOfferId },
+          },
+        });
+      }
+    } else {
+      const existingItems = await prisma.actionQueueItem.findMany({
+        where: { referenceId: merchantId, type: 'FIRST_OFFER_APPROVAL', status: 'PENDING' },
+      });
+      const hasExisting = existingItems.some((i) => {
+        const meta = i.metadata as Record<string, unknown> | null;
+        return meta?.offerId === finalOfferId;
+      });
+      if (!hasExisting) {
+        await prisma.actionQueueItem.create({
+          data: {
+            type: 'FIRST_OFFER_APPROVAL',
+            title: `Offer Approval: ${finalOfferTitle}`,
+            description: `Merchant ${merchantBusinessName} submitted an offer for approval`,
+            referenceId: merchantId,
+            referenceType: 'MERCHANT',
+            status: 'PENDING',
+            priority: 1,
+            metadata: { offerId: finalOfferId },
+          },
+        });
+      }
+    }
+
+    await createAuditLog({
+      actorType: 'merchant',
+      actorId: merchantId,
+      action: 'OFFER_SUBMITTED_FOR_APPROVAL',
+      entityType: 'MERCHANT_OFFER',
+      entityId: finalOfferId,
+      metadata: { title: finalOfferTitle, replacesOfferId: replacesOfferId ?? null },
+    });
+  } catch (err) {
+    // Never let a notification/audit failure surface to the client —
+    // the offer record itself already saved and committed successfully.
+    console.error('[SUBMIT OFFER] Post-submit side effect failed:', err);
+  }
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const merchant = await getMerchantFromSession();
-
     if (!merchant) {
       return unauthorized();
     }
@@ -94,11 +213,7 @@ export async function POST(
     const { id } = await params;
 
     const offer = await prisma.merchantOffer.findFirst({
-      where: {
-        id,
-        merchantId: merchant.id,
-        deletedAt: null,
-      },
+      where: { id, merchantId: merchant.id, deletedAt: null },
       include: {
         content: { select: { description: true, shortDescription: true, termsAndConditions: true, imageUrls: true } },
         pricing: { select: { configuration: true } },
@@ -122,7 +237,7 @@ export async function POST(
       hasQrCodeUrl: !!qrCodeUrl,
     });
 
-    if (!['DRAFT', 'VALIDATION_FAILED', 'CHANGES_REQUESTED', 'ARCHIVED', 'AWAITING_APPROVAL'].includes(offer.status)) {
+    if (!SUBMITTABLE_STATUSES.includes(offer.status)) {
       console.log('[SUBMIT OFFER] ❌ Cannot submit, current status:', offer.status);
       return forbidden(
         'Only draft, validation-failed, or changes-requested offers can be submitted',
@@ -143,13 +258,8 @@ export async function POST(
       termsAndConditions: body.termsAndConditions ?? offer.content?.termsAndConditions,
       imageUrls: body.imageUrls ?? offer.content?.imageUrls,
       offerType: body.offerType ?? offer.offerType,
-      discountValue:
-        body.discountValue
-        ?? pricingConfig.amount
-        ?? pricingConfig.percent,
-      discountPercent:
-        body.discountPercent
-        ?? pricingConfig.percent,
+      discountValue: body.discountValue ?? pricingConfig.amount ?? pricingConfig.percent,
+      discountPercent: body.discountPercent ?? pricingConfig.percent,
       buyQuantity: body.buyQuantity ?? pricingConfig.buyQuantity,
       buyItem: body.buyItem ?? pricingConfig.buyItem,
       getQuantity: body.getQuantity ?? pricingConfig.getQuantity,
@@ -157,13 +267,12 @@ export async function POST(
     });
     console.log('[SUBMIT OFFER] qcResult.passed:', qcResult.passed);
 
-    const targetStatus = qcResult.passed
-      ? 'AWAITING_APPROVAL'
-      : 'VALIDATION_FAILED';
+    const targetStatus = qcResult.passed ? 'AWAITING_APPROVAL' : 'VALIDATION_FAILED';
     console.log('[SUBMIT OFFER] targetStatus:', targetStatus);
 
-    const finalOffer = await prisma.$transaction(async (tx) => {
-      // Persist content if the body includes content fields
+    // ── Step 1: persist the record. Nothing here is optional — if this
+    // fails, the client correctly gets an error.
+    const offerId = await prisma.$transaction(async (tx) => {
       if (
         body.shortDescription !== undefined ||
         body.description !== undefined ||
@@ -188,7 +297,6 @@ export async function POST(
         });
       }
 
-      // Persist pricing if the body includes pricing fields
       if (
         body.offerType !== undefined ||
         body.discountValue !== undefined ||
@@ -202,32 +310,31 @@ export async function POST(
         body.maxFreeItems !== undefined
       ) {
         const config = (offer.pricing?.configuration as Record<string, unknown>) ?? {};
-        const pricingConfig: Record<string, unknown> = { ...config };
-        if (body.discountValue !== undefined) pricingConfig.amount = body.discountValue === null || body.discountValue === '' ? config.amount : Number(body.discountValue);
-        if (body.discountPercent !== undefined) pricingConfig.percent = body.discountPercent === null || body.discountPercent === '' ? config.percent : Number(body.discountPercent);
-        if (body.discountMax !== undefined) pricingConfig.maximumDiscount = body.discountMax === null || body.discountMax === '' ? config.maximumDiscount : Number(body.discountMax);
-        if (body.minimumSpend !== undefined) pricingConfig.minimumSpend = body.minimumSpend === null || body.minimumSpend === '' ? config.minimumSpend : Number(body.minimumSpend);
-        if (body.buyQuantity !== undefined) pricingConfig.buyQuantity = body.buyQuantity === null || body.buyQuantity === '' ? config.buyQuantity : Number(body.buyQuantity);
-        if (body.buyItem !== undefined) pricingConfig.buyItem = body.buyItem === null || body.buyItem === '' ? config.buyItem : body.buyItem;
-        if (body.getQuantity !== undefined) pricingConfig.getQuantity = body.getQuantity === null || body.getQuantity === '' ? config.getQuantity : Number(body.getQuantity);
-        if (body.freeItem !== undefined) pricingConfig.freeItem = body.freeItem === null || body.freeItem === '' ? config.freeItem : body.freeItem;
-        if (body.maxFreeItems !== undefined) pricingConfig.maxFreeItems = body.maxFreeItems === null || body.maxFreeItems === '' ? config.maxFreeItems : Number(body.maxFreeItems);
+        const newPricingConfig: Record<string, unknown> = { ...config };
+        if (body.discountValue !== undefined) newPricingConfig.amount = body.discountValue === null || body.discountValue === '' ? config.amount : Number(body.discountValue);
+        if (body.discountPercent !== undefined) newPricingConfig.percent = body.discountPercent === null || body.discountPercent === '' ? config.percent : Number(body.discountPercent);
+        if (body.discountMax !== undefined) newPricingConfig.maximumDiscount = body.discountMax === null || body.discountMax === '' ? config.maximumDiscount : Number(body.discountMax);
+        if (body.minimumSpend !== undefined) newPricingConfig.minimumSpend = body.minimumSpend === null || body.minimumSpend === '' ? config.minimumSpend : Number(body.minimumSpend);
+        if (body.buyQuantity !== undefined) newPricingConfig.buyQuantity = body.buyQuantity === null || body.buyQuantity === '' ? config.buyQuantity : Number(body.buyQuantity);
+        if (body.buyItem !== undefined) newPricingConfig.buyItem = body.buyItem === null || body.buyItem === '' ? config.buyItem : body.buyItem;
+        if (body.getQuantity !== undefined) newPricingConfig.getQuantity = body.getQuantity === null || body.getQuantity === '' ? config.getQuantity : Number(body.getQuantity);
+        if (body.freeItem !== undefined) newPricingConfig.freeItem = body.freeItem === null || body.freeItem === '' ? config.freeItem : body.freeItem;
+        if (body.maxFreeItems !== undefined) newPricingConfig.maxFreeItems = body.maxFreeItems === null || body.maxFreeItems === '' ? config.maxFreeItems : Number(body.maxFreeItems);
 
         await tx.offerPricing.upsert({
           where: { offerId: id },
           create: {
             offerId: id,
             pricingType: body.offerType ?? offer.offerType,
-            configuration: pricingConfig as any,
+            configuration: newPricingConfig as any,
           },
           update: {
             ...(body.offerType !== undefined && { pricingType: body.offerType }),
-            configuration: pricingConfig as any,
+            configuration: newPricingConfig as any,
           },
         });
       }
 
-      // Persist redemption if the body includes redemption fields
       if (
         body.redemptionType !== undefined ||
         body.redemptionCode !== undefined ||
@@ -237,24 +344,24 @@ export async function POST(
         body.daysOfWeek !== undefined
       ) {
         const config = (offer.redemption?.configuration as Record<string, unknown>) ?? {};
-        const redemptionConfig: Record<string, unknown> = { ...config };
-        if (body.redemptionCode !== undefined) redemptionConfig.code = body.redemptionCode;
-        if (body.redemptionInstructions !== undefined) redemptionConfig.instructions = body.redemptionInstructions;
-        if (body.bookingUrl !== undefined) redemptionConfig.bookingUrl = body.bookingUrl;
+        const newRedemptionConfig: Record<string, unknown> = { ...config };
+        if (body.redemptionCode !== undefined) newRedemptionConfig.code = body.redemptionCode;
+        if (body.redemptionInstructions !== undefined) newRedemptionConfig.instructions = body.redemptionInstructions;
+        if (body.bookingUrl !== undefined) newRedemptionConfig.bookingUrl = body.bookingUrl;
 
         await tx.offerRedemption.upsert({
           where: { offerId: id },
           create: {
             offerId: id,
             redemptionType: body.redemptionType ?? null,
-            configuration: Object.keys(redemptionConfig).length > 0 ? (redemptionConfig as any) : null,
+            configuration: Object.keys(newRedemptionConfig).length > 0 ? (newRedemptionConfig as any) : null,
             maxRedemptions: body.maxRedemptions ?? null,
             currentRedemptions: 0,
             daysOfWeek: body.daysOfWeek ?? [0, 1, 2, 3, 4, 5, 6],
           },
           update: {
             ...(body.redemptionType !== undefined && { redemptionType: body.redemptionType }),
-            ...(Object.keys(redemptionConfig).length > 0 && { configuration: redemptionConfig as any }),
+            ...(Object.keys(newRedemptionConfig).length > 0 && { configuration: newRedemptionConfig as any }),
             ...(body.maxRedemptions !== undefined && { maxRedemptions: body.maxRedemptions === null || body.maxRedemptions === '' ? null : Number(body.maxRedemptions) }),
             ...(body.daysOfWeek !== undefined && {
               daysOfWeek: Array.isArray(body.daysOfWeek) ? body.daysOfWeek : [0, 1, 2, 3, 4, 5, 6],
@@ -263,7 +370,6 @@ export async function POST(
         });
       }
 
-      // Persist core offer fields (dates, category, type)
       const merchantOfferUpdatable: Record<string, unknown> = {};
       if (body.startDate) merchantOfferUpdatable.startDate = new Date(body.startDate);
       if (body.endDate) merchantOfferUpdatable.endDate = new Date(body.endDate);
@@ -278,139 +384,64 @@ export async function POST(
         });
       }
 
-      // Update review with validation errors
       await tx.offerReview.upsert({
         where: { offerId: id },
-        create: {
-          offerId: id,
-          validationErrors: qcResult.passed ? null : (qcResult.errors as any),
-        },
-        update: {
-          validationErrors: qcResult.passed ? null : (qcResult.errors as any),
-        },
+        create: { offerId: id, validationErrors: qcResult.passed ? null : (qcResult.errors as any) },
+        update: { validationErrors: qcResult.passed ? null : (qcResult.errors as any) },
       });
 
-      // Update status
-      const updated = await tx.merchantOffer.update({
-        where: { id },
-        data: {
-          status: targetStatus,
-          submittedAt: new Date(),
-        },
-        include: {
-          _count: { select: { redemptions: true } },
-          content: true,
-          pricing: true,
-          redemption: true,
-          review: true,
-          analytics: true,
-        },
+      const statusUpdate = await tx.merchantOffer.updateMany({
+        where: { id, status: { in: SUBMITTABLE_STATUSES } },
+        data: { status: targetStatus, submittedAt: new Date() },
       });
 
-      return updated;
-    });
-
-    if (!qcResult.passed) {
-      const template = BUSINESS_NOTIFICATION_TEMPLATES.offerValidationFailed(finalOffer.title);
-      await publishBusinessNotification({
-        ...template,
-        recipients: [{ role: 'merchant', id: merchant.id }],
-        channels: channels('IN_APP'),
-        referenceType: 'merchant_offer',
-        referenceId: finalOffer.id,
-        metadata: { validationErrors: qcResult.errors },
-      });
-    } else if (!offer.replacesOfferId) {
-      const template = BUSINESS_NOTIFICATION_TEMPLATES.offerSubmitted(finalOffer.title);
-      await publishBusinessToAdmins({
-        ...template,
-        channels: channels('IN_APP', 'PUSH'),
-        referenceType: 'merchant_offer',
-        referenceId: finalOffer.id,
-        metadata: { merchantId: merchant.id },
-      });
-    }
-
-    // Post-submission actions for passing offers
-    if (qcResult.passed) {
-      if (offer.replacesOfferId) {
-        const currentLive = await prisma.merchantOffer.findUnique({
-          where: { id: offer.replacesOfferId },
-        });
-
-        if (currentLive?.status === 'LIVE') {
-          await prisma.offerReplacementRequest.create({
-            data: {
-              currentOfferId: offer.replacesOfferId,
-              newOfferId: offer.id,
-              status: 'AWAITING_APPROVAL',
-            },
-          });
-
-          await prisma.actionQueueItem.create({
-            data: {
-              type: 'FIRST_OFFER_APPROVAL',
-              title: `Offer Approval: ${offer.title}`,
-              description: `Merchant ${merchant.businessName} submitted an offer for approval`,
-              referenceId: merchant.id,
-              referenceType: 'MERCHANT',
-              status: 'PENDING',
-              priority: 1,
-              metadata: {
-                currentOfferId: offer.replacesOfferId,
-                newOfferId: offer.id,
-              },
-            },
-          });
-        }
-      } else {
-        // Prevent duplicate queue items
-        const existingItems = await prisma.actionQueueItem.findMany({
-          where: { referenceId: merchant.id, type: 'FIRST_OFFER_APPROVAL', status: 'PENDING' },
-        });
-        const hasExisting = existingItems.some((i) => {
-          const meta = i.metadata as Record<string, unknown> | null;
-          return meta?.offerId === offer.id;
-        });
-        if (!hasExisting) {
-          await prisma.actionQueueItem.create({
-            data: {
-              type: 'FIRST_OFFER_APPROVAL',
-              title: `Offer Approval: ${offer.title}`,
-              description: `Merchant ${merchant.businessName} submitted an offer for approval`,
-              referenceId: merchant.id,
-              referenceType: 'MERCHANT',
-              status: 'PENDING',
-              priority: 1,
-              metadata: {
-                offerId: offer.id,
-              },
-            },
-          });
-        }
+      if (statusUpdate.count === 0) {
+        throw new Error('CONCURRENT_SUBMIT');
       }
 
-      // Audit log
-      await createAuditLog({
-        actorType: 'merchant',
-        actorId: merchant.id,
-        action: 'OFFER_SUBMITTED_FOR_APPROVAL',
-        entityType: 'MERCHANT_OFFER',
-        entityId: offer.id,
-        metadata: {
-          title: offer.title,
-          replacesOfferId: offer.replacesOfferId ?? null,
-        },
-      });
-    }
+      return id;
+    }, { timeout: 15000, maxWait: 5000 });
 
-    return NextResponse.json({
+    // ── Step 2: re-fetch the full record for the response payload.
+    const finalOffer = await prisma.merchantOffer.findUniqueOrThrow({
+      where: { id: offerId },
+      include: {
+        _count: { select: { redemptions: true } },
+        content: true,
+        pricing: true,
+        redemption: true,
+        review: true,
+        analytics: true,
+      },
+    });
+
+    // ── Step 3: build the response NOW. Everything below this point is
+    // side-effect work the client doesn't need to wait on.
+    const response = NextResponse.json({
       success: true,
       data: finalOffer,
       qualityCheck: qcResult.passed ? 'PASSED' : 'FAILED',
       validationErrors: qcResult.errors,
     });
+
+    // ── Step 4: fire notifications + audit log WITHOUT awaiting.
+    // Intentionally not `await`ed — errors are caught internally and never
+    // affect the response already built above.
+    void firePostSubmitSideEffects({
+      qcPassed: qcResult.passed,
+      qcErrors: qcResult.errors,
+      finalOfferId: finalOffer.id,
+      finalOfferTitle: finalOffer.title,
+      merchantId: merchant.id,
+      merchantBusinessName: merchant.businessName,
+      replacesOfferId: offer.replacesOfferId,
+    });
+
+    return response;
   } catch (error) {
+    if (error instanceof Error && error.message === 'CONCURRENT_SUBMIT') {
+      return conflict('This offer is already being submitted. Please refresh and try again.');
+    }
     return internalError(error);
   }
 }
