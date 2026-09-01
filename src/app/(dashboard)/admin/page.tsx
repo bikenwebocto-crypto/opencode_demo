@@ -403,7 +403,7 @@ export default function AdminDashboard() {
               iconBg="bg-emerald-100 dark:bg-emerald-950/40"
               iconColor="text-emerald-600"
               label="Total Savings"
-              value={`£${summary.totalSavings ? (summary.totalSavings / 1000).toFixed(1) : 0}K`}
+              value={`€${summary.totalSavings ? (summary.totalSavings / 1000).toFixed(1) : 0}K`}
               sublabel="Delivered to employees"
             />
             <MetricRow
@@ -411,7 +411,7 @@ export default function AdminDashboard() {
               iconBg="bg-violet-100 dark:bg-violet-950/40"
               iconColor="text-violet-600"
               label="Avg Discount"
-              value={`£${summary.totalDiscount && summary.totalRedemptions ? (summary.totalDiscount / summary.totalRedemptions).toFixed(2) : '0.00'}`}
+              value={`€${summary.totalDiscount && summary.totalRedemptions ? (summary.totalDiscount / summary.totalRedemptions).toFixed(2) : '0.00'}`}
               sublabel="Per redemption"
             />
             <MetricRow

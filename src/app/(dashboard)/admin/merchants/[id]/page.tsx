@@ -17,6 +17,7 @@ import { useMerchantById, useMerchantOffers, useDeleteMerchant } from '@/hooks/q
 import { useAdminMerchantStoreMap } from '@/hooks/queries/use-store-map'
 import { showToast } from '@/hooks/use-toast'
 import { ConfirmDialog } from '@/components/shared/confirm-dialog'
+import { BusinessOverview } from '@/components/shared/business-overview'
 import type { ColumnDef } from '@/types'
 
 type Tab = 'overview' | 'offers' | 'store-map'
@@ -101,14 +102,13 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
     { label: 'Total Offers', value: merchant._count?.offers ?? 0 },
     { label: 'Active Branches', value: merchant._count?.branches ?? 0 },
     { label: 'Redemptions', value: merchant._count?.redemptions ?? 0 },
-    { label: 'Rating', value: `${Number(merchant.averageRating ?? 0).toFixed(1)} ★` },
     ...(merchant.liveAt
       ? [{ label: 'Live Since', value: new Date(merchant.liveAt).toLocaleDateString() }]
       : []),
   ]
 
   // Build a readable address line from whatever fields are present
-  const addressParts = [merchant.address, merchant.city, merchant.country].filter(Boolean)
+  const addressParts = [merchant.addressLine1, merchant.city, merchant.country].filter(Boolean)
   const fullAddress = addressParts.length ? addressParts.join(', ') : null
 
   const offerColumns: ColumnDef<any>[] = [
@@ -123,7 +123,7 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
       header: 'Value',
       render: (o: any) => {
         if (o.offerType === 'PERCENTAGE' || o.discountPercent) return `${o.discountPercent ?? 0}%`
-        return `£${Number(o.discountValue ?? 0).toFixed(2)}`
+        return `€${Number(o.discountValue ?? 0).toFixed(2)}`
       },
     },
     {
@@ -210,16 +210,11 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
 
               {/* Contact / location details */}
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                {merchant.email && (
-                  <span className="flex items-center gap-1">
-                    <Mail className="h-3.5 w-3.5" />
-                    {merchant.email}
-                  </span>
-                )}
-                {merchant.phoneNumber && (
+              
+                {merchant.contactPhone  && (
                   <span className="flex items-center gap-1">
                     <Phone className="h-3.5 w-3.5" />
-                    {merchant.phoneNumber}
+                    {merchant.contactPhone}
                   </span>
                 )}
                 {fullAddress && (
@@ -284,6 +279,9 @@ export default function MerchantDetailPage({ params }: { params: Promise<{ id: s
               </Card>
             ))}
           </div>
+
+          {/* ─── Business Overview (Redemptions & Revenue / Offer Capacity / Offer Expiry / Banner Bookings) ─── */}
+          <BusinessOverview merchantId={id} scope="admin" />
 
           {/* Branches summary */}
           <Card>

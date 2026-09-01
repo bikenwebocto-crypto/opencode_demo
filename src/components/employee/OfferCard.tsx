@@ -90,7 +90,7 @@ export function OfferCard({ offer, onRedeem, onOpen }: Props) {
       case "flat_rate":
       case "fixed_amount":
       case "FLAT":
-        return `£${Number(flatOffer.discountValue).toFixed(2)} OFF`;
+        return `€${Number(flatOffer.discountValue).toFixed(2)} OFF`;
       default:
         return "";
     }
@@ -218,7 +218,7 @@ export function OfferCard({ offer, onRedeem, onOpen }: Props) {
             <p className="truncate text-xs font-semibold">
               {offer.merchant?.businessName ?? "—"}
             </p>
-            <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            {/* <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
               <Star className="h-2.5 w-2.5 fill-yellow-400 text-yellow-400" />
               <span>
                 {Number(offer.merchant?.averageRating ?? 0).toFixed(1)}
@@ -229,7 +229,7 @@ export function OfferCard({ offer, onRedeem, onOpen }: Props) {
                 {offer.merchant?.city ?? "—"}
                 {offer.merchant?.state ? `, ${offer.merchant.state}` : ""}
               </span>
-            </div>
+            </div> */}
           </div>
         </div>
 

@@ -185,7 +185,7 @@ export default function CompanyEmployeesPage() {
         open={!!editingEmployee}
         onClose={() => setEditingEmployee(null)}
         employee={editingEmployee ?? { id: '' }}
-        scope="admin"
+        scope="company"
         saving={updateEmployee.isPending}
         onSave={async (data: Record<string, unknown>) => {
           if (!editingEmployee?.id) return

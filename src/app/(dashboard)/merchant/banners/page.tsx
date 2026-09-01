@@ -206,7 +206,7 @@ export default function MerchantBannersPage() {
                   >
                     {positionsData.data.map((slot) => (
                       <option key={slot.id} value={slot.id}>
-                        {slot.name} ({POSITION_LABELS[slot.position] ?? slot.position}) - £{Number(slot.pricePerDay).toFixed(2)}/day
+                        {slot.name} ({POSITION_LABELS[slot.position] ?? slot.position}) - €{Number(slot.pricePerDay).toFixed(2)}/day
                       </option>
                     ))}
                   </select>
@@ -233,9 +233,9 @@ export default function MerchantBannersPage() {
                 {days > 0 && (
                   <div className="rounded-md bg-primary/10 p-3 text-sm">
                     <p className="font-medium">
-                      {days} day{days !== 1 ? 's' : ''} × £{Number(selectedSlot?.pricePerDay ?? 0).toFixed(2)}/day
+                      {days} day{days !== 1 ? 's' : ''} × €{Number(selectedSlot?.pricePerDay ?? 0).toFixed(2)}/day
                     </p>
-                    <p className="text-lg font-bold">Total: £{totalPrice.toFixed(2)}</p>
+                    <p className="text-lg font-bold">Total: €{totalPrice.toFixed(2)}</p>
                   </div>
                 )}
 
@@ -328,7 +328,7 @@ export default function MerchantBannersPage() {
                       <div className="flex items-center gap-2">
                         {statusBadge(b.status)}
                         {derivedBadges(b)}
-                        <span className="font-semibold">£{Number(b.totalPrice).toFixed(2)}</span>
+                        <span className="font-semibold">€{Number(b.totalPrice).toFixed(2)}</span>
                       </div>
                     </div>
                     <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">

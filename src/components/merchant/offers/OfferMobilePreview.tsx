@@ -74,7 +74,7 @@ export function OfferMobilePreview({
     if (offerType === 'BUY_X_GET_Y' || offerType === 'buy_x_get_y') {
       return { text: 'BOGO', suffix: 'FREE' }
     }
-    return { text: `£${val.toFixed(0)}`, suffix: 'OFF' }
+    return { text: `€${val.toFixed(0)}`, suffix: 'OFF' }
   }
 
   const discount = discountLabel()

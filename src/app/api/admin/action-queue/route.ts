@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createAuditLog, fromCurrentUser } from "@/services/audit-log.service";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { QUEUE_TYPE_MAP, getPriorityLabel } from "@/lib/action-queue-types";
+import { getStaleOfferQueueItemIds } from "@/lib/action-queue-stale";
 import { publishBusinessToAdmins } from '@/services/business-notification.service';
 
 function unauthorized() {
@@ -132,8 +133,14 @@ export async function GET(request: NextRequest) {
         where.AND = [qFilter];
       }
     }
+    // Soft-delete guard: PENDING/IN_PROGRESS offer-type items whose
+    // referenced offer was deleted by the merchant must not appear in the
+    // queue (list, total, status/priority/tab counts). Acting on them 404s.
+    const staleItemIds = await getStaleOfferQueueItemIds();
+    const staleFilter = staleItemIds.length > 0 ? { id: { notIn: staleItemIds } } : {};
+
     const actionQueueItem = prisma.actionQueueItem.findMany({
-          where: where as any,
+          where: { ...(where as any), ...staleFilter },
           orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
           skip: (page - 1) * pageSize,
           take: pageSize,
@@ -144,7 +151,7 @@ export async function GET(request: NextRequest) {
     const [items, total, statusCounts, priorityCounts, typeCounts] =
       await Promise.all([
         prisma.actionQueueItem.findMany({
-          where: where as any,
+          where: { ...(where as any), ...staleFilter },
           orderBy: [{ priority: "desc" }, { createdAt: "desc" }],
           skip: (page - 1) * pageSize,
           take: pageSize,
@@ -152,7 +159,7 @@ export async function GET(request: NextRequest) {
             merchant: { select: { id: true, businessName: true } },
           },
         }),
-        prisma.actionQueueItem.count({ where: where as any }),
+        prisma.actionQueueItem.count({ where: { ...(where as any), ...staleFilter } }),
         prisma.actionQueueItem.groupBy({
           by: ["status"],
           _count: { _all: true },
@@ -160,16 +167,18 @@ export async function GET(request: NextRequest) {
             status: {
               in: ["PENDING", "IN_PROGRESS", "COMPLETED", "FAILED", "SKIPPED"],
             },
+            ...staleFilter,
           },
         }),
         prisma.actionQueueItem.groupBy({
           by: ["priority"],
           _count: { _all: true },
-          where: { status: { in: ["PENDING", "IN_PROGRESS"] } },
+          where: { status: { in: ["PENDING", "IN_PROGRESS"] }, ...staleFilter },
         }),
         prisma.actionQueueItem.count({
           where: {
             status: { in: ["PENDING", "IN_PROGRESS"] },
+            ...staleFilter,
           },
         }),
       ]);
@@ -180,6 +189,7 @@ export async function GET(request: NextRequest) {
         status: {
           in: ["PENDING", "IN_PROGRESS"],
         },
+        ...staleFilter,
       },
       select: {
         type: true,

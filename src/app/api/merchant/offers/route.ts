@@ -350,7 +350,7 @@ export async function GET(request: NextRequest) {
           _count: { select: { redemptions: true } },
           replacesOffer: { select: { id: true, title: true } },
           pricing: { select: { configuration: true } },
-          redemption: { select: { currentRedemptions: true, maxRedemptions: true } },
+          capacity: { select: { redeemedCount: true, maxRedemptions: true } },
           content: { select: { imageUrls: true } }
         },
       }),
@@ -617,6 +617,14 @@ export async function POST(request: NextRequest) {
           maxRedemptions: maxRedemptions ?? null,
           currentRedemptions: 0,
           daysOfWeek: daysOfWeek ?? [0, 1, 2, 3, 4, 5, 6],
+        },
+      });
+
+      await tx.offerRedemptionCapacity.create({
+        data: {
+          offerId: created.id,
+          maxRedemptions: maxRedemptions ?? null,
+          redeemedCount: 0,
         },
       });
 

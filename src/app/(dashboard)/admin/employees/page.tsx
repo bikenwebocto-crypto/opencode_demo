@@ -72,6 +72,7 @@ export default function EmployeesPage() {
       status: e.status,
       totalRedemptions: e._count?.redemptions ?? 0,
       joinedAt: e.createdAt,
+      avatarUrl: e.avatarUrl ?? '',
     })),
   [employees])
 

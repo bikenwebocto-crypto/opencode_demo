@@ -34,7 +34,7 @@ interface OverviewResponse {
 }
 
 function formatCurrency(n: number) {
-  return `£${Number(n).toFixed(2)}`
+  return `€${Number(n).toFixed(2)}`
 }
 
 export default function AdminAnalyticsPage() {

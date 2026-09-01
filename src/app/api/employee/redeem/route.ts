@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-// import { createAuditLog } from '@/services/audit-log.service'
 import {
   getEmployeeFromSession,
   unauthorized,
@@ -9,11 +9,21 @@ import {
   notFound,
   badRequest,
 } from "@/lib/employee-session";
-// import { checkRedemptionEligibility } from '@/lib/offer-visibility'
+import { normalizeOfferCode } from "@/lib/offer-code";
 import {
-  encodeMethod,
+  AlreadyRedeemedError,
+  OfferLimitReachedError,
+  OfferNotActiveError,
+  claimAttempt,
+  ensureCapacityRow,
+  linkAttemptToRedemption,
+  releaseCapacity,
+  reserveCapacity,
+} from "@/lib/redemption-tracking";
+import {
   deriveStatus,
-  type RedemptionMethod,
+  encodeMethod,
+  RedemptionMethod,
 } from "@/lib/redemption-status";
 
 export async function GET(request: NextRequest) {
@@ -28,8 +38,20 @@ export async function GET(request: NextRequest) {
     if (status) {
       if (status === "PENDING") {
         where.isVerified = false;
-        where.merchantNotes = { not: { startsWith: "REJECTED:" } };
-        where.employeeNotes = { not: { startsWith: "CANCELLED:" } };
+        where.AND = [
+          {
+            OR: [
+              { merchantNotes: null },
+              { merchantNotes: { not: { startsWith: "REJECTED:" } } },
+            ],
+          },
+          {
+            OR: [
+              { employeeNotes: null },
+              { employeeNotes: { not: { startsWith: "CANCELLED:" } } },
+            ],
+          },
+        ];
       } else if (status === "CONFIRMED") {
         where.isVerified = true;
       } else if (status === "REJECTED") {
@@ -80,6 +102,11 @@ export async function GET(request: NextRequest) {
       discountAmount: r.discountAmount,
       spentAmount: r.spentAmount,
       savingsAmount: r.savingsAmount,
+      billAmount: r.billAmount,
+      loggedSavingAmount: r.loggedSavingAmount,
+      savingMethod: r.savingMethod,
+      savingLoggedAt: r.savingLoggedAt,
+      savingEditedAt: r.savingEditedAt,
       branchId: r.branchId,
       merchantNotes: r.merchantNotes,
       employeeNotes: r.employeeNotes,
@@ -110,42 +137,36 @@ export async function POST(request: NextRequest) {
     const employee = await getEmployeeFromSession();
     if (!employee) return unauthorized();
     if ("inactive" in employee) return companyInactive(employee.companyStatus);
+
     const body = await request.json();
-    const { offerId, branchId, notes, spentAmount } = body;
+    const { offerId, branchId, notes, spentAmount, code } = body ?? {};
 
     if (!offerId) return badRequest("offerId is required");
 
-    // const eligibility = await checkRedemptionEligibility(offerId, employee.id)
-    // if (!eligibility.eligible) {
-    //   return badRequest(eligibility.reason ?? 'Not eligible to redeem this offer')
-    // }`
-    await prisma.offerAnalytics.upsert({
-      where: {
-        offerId,
-      },
-      create: {
-        offerId,
-        clickCount: 1,
-      },
-      update: {
-        clickCount: { increment: 1 },
-      },
-    });
     const offer = await prisma.merchantOffer.findFirst({
       where: { id: offerId, deletedAt: null },
       include: {
         merchant: { select: { id: true, businessName: true, website: true } },
         pricing: { select: { configuration: true } },
-        redemption: { select: { redemptionType: true, configuration: true } },
+        redemption: {
+          select: {
+            redemptionType: true,
+            configuration: true,
+            maxRedemptions: true,
+            currentRedemptions: true,
+          },
+        },
       },
     });
     if (!offer) return notFound("Offer not found");
 
-    const offerRedeem = await prisma.redemption.findFirst({
-      where: { offerId, employeeId: employee.id },
-    });
-    if (offerRedeem) {
-      return badRequest("You have already redeemed this offer");
+    // Offer status & date window
+    if (offer.status !== "LIVE") {
+      return badRequest("This offer is no longer available.");
+    }
+    const now = new Date();
+    if (offer.startDate > now || offer.endDate <= now) {
+      return badRequest("This offer is no longer available.");
     }
 
     const redemptionType = offer.redemption?.redemptionType ?? null;
@@ -160,11 +181,30 @@ export async function POST(request: NextRequest) {
     const redemptionConfig =
       (offer.redemption?.configuration as Record<string, unknown>) ?? {};
 
-    // Branch validation (required for IN_STORE_QR, optional for others)
-    let validBranch: any = null;
+    // ONLINE_CODE: validate submitted code matches the configured code
+    if (redemptionType === "ONLINE_CODE") {
+      const configuredCode =
+        typeof redemptionConfig.code === "string" ? redemptionConfig.code : "";
+      if (!configuredCode) {
+        return badRequest("This offer does not have a valid offer code");
+      }
+      if (typeof code !== "string" || code.trim() === "") {
+        return badRequest("Please enter the offer code");
+      }
+      if (normalizeOfferCode(code) !== normalizeOfferCode(configuredCode)) {
+        return badRequest("Invalid offer code.");
+      }
+    }
+    if (redemptionType === "BOOKING_LINK" && !redemptionConfig.bookingUrl) {
+      return badRequest("This offer does not have a booking link");
+    }
+
+    // Branch validation
+    let validBranch: { id: string } | null = null;
     if (branchId) {
       const branch = await prisma.merchantBranch.findFirst({
         where: { id: branchId, merchantId: offer.merchantId, deletedAt: null },
+        select: { id: true },
       });
       if (!branch) return badRequest("Invalid branchId for this offer");
       validBranch = branch;
@@ -173,14 +213,7 @@ export async function POST(request: NextRequest) {
       return badRequest("Branch is required for in-store QR redemptions");
     }
 
-    // Type-specific validation
-    if (redemptionType === "ONLINE_CODE" && !redemptionConfig.code) {
-      return badRequest("This offer does not have a valid offer code");
-    }
-    if (redemptionType === "BOOKING_LINK" && !redemptionConfig.bookingUrl) {
-      return badRequest("This offer does not have a booking link");
-    }
-
+    const maxRedemptions = offer.redemption?.maxRedemptions ?? null;
     const discountAmount = Number(
       pricingConfig.amount ?? pricingConfig.percent ?? 0,
     );
@@ -189,9 +222,7 @@ export async function POST(request: NextRequest) {
       redemptionType === "IN_STORE_QR"
         ? discountAmount
         : Math.max(0, discountAmount - spent);
-
     const status = redemptionType === "IN_STORE_QR" ? "PENDING" : "CONFIRMED";
-
     const method =
       redemptionType === "ONLINE_CODE"
         ? ("ONLINE" as const)
@@ -199,94 +230,146 @@ export async function POST(request: NextRequest) {
           ? ("ONLINE" as const)
           : ("IN_STORE" as const);
 
-    // console.log('offer',offer,offer?.offerCode)
-    const redemption = await prisma.redemption.create({
-      data: {
-        merchantId: offer.merchantId,
-        offerId: offer.id,
-        employeeId: employee.id,
-        companyId: employee.companyId,
-        redemptionCode:
-          redemptionType === "ONLINE_CODE"
-            ? String(redemptionConfig.code ?? "")
-            : "OO000000", // Placeholder code for in-store redemptions
-        discountAmount,
-        spentAmount: spent || null,
-        savingsAmount: savings,
-        branchId: validBranch?.id ?? null,
-        merchantNotes: encodeMethod(method),
-        employeeNotes: notes ?? null,
-        isVerified: status === "CONFIRMED",
-        verifiedAt: status === "CONFIRMED" ? new Date() : null,
-        redeemedAt: new Date(),
-      },
-    });
+    // ── Transaction: claim → reserve capacity → create redemption
+    let reservationToken: string | null = null;
+    try {
+      const result = await prisma.$transaction(
+        async (tx) => {
+          const claim = await claimAttempt(tx, offer.id, employee.id);
+          if (!claim.ok) {
+            throw new AlreadyRedeemedError();
+          }
 
-    await prisma.offerRedemption.update({
-      where: { offerId },
-      data: { currentRedemptions: { increment: 1 } },
-    });
+          await ensureCapacityRow(tx, offer.id, maxRedemptions);
 
-    // await createAuditLog({
-    //   actorType: 'employee',
-    //   actorId: employee.id,
-    //   action: `REDEMPTION_CREATED_${redemptionType}`,
-    //   entityType: 'redemption',
-    //   entityId: redemption.id,
-    //   metadata: {
-    //     offerId,
-    //     merchantId: offer.merchantId,
-    //     method,
-    //     branchId: validBranch?.id ?? null,
-    //     redemptionType,
-    //     offerCode: redemptionType === 'ONLINE_CODE' ? offer.offerCode : null,
-    //   },
-    // })
+          const reserve = await reserveCapacity(tx, offer.id);
+          if (!reserve.ok) {
+            throw new OfferLimitReachedError();
+          }
 
-    // Build type-specific response data
-    const data: Record<string, unknown> = {
-      id: redemption.id,
-      type: redemptionType,
-      status,
-    };
+          const redemption = await tx.redemption.create({
+            data: {
+              merchantId: offer.merchantId,
+              offerId: offer.id,
+              employeeId: employee.id,
+              companyId: employee.companyId,
+              redemptionCode:
+                redemptionType === "ONLINE_CODE"
+                  ? String(redemptionConfig.code ?? "")
+                  : "OO000000",
+              discountAmount,
+              spentAmount: spent || null,
+              savingsAmount: savings,
+              branchId: validBranch?.id ?? null,
+              merchantNotes: encodeMethod(method),
+              employeeNotes: notes ?? null,
+              isVerified: status === "CONFIRMED",
+              verifiedAt: status === "CONFIRMED" ? new Date() : null,
+              redeemedAt: new Date(),
+            },
+          });
 
-    if (redemptionType === "IN_STORE_QR" && validBranch) {
-      const lat = validBranch.latitude ? Number(validBranch.latitude) : null;
-      const lng = validBranch.longitude ? Number(validBranch.longitude) : null;
-      data.merchant = {
-        businessName: offer.merchant.businessName,
-        website: offer.merchant.website,
+          await linkAttemptToRedemption(tx, claim.attemptId!, redemption.id);
+
+          // Keep the existing denormalized counter in sync for non-atomic reads.
+          await tx.offerRedemption.update({
+            where: { offerId: offer.id },
+            data: { currentRedemptions: { increment: 1 } },
+          });
+
+          await tx.offerAnalytics.upsert({
+            where: { offerId: offer.id },
+            create: { offerId: offer.id, clickCount: 1 },
+            update: { clickCount: { increment: 1 } },
+          });
+
+          reservationToken = claim.attemptId ?? null;
+          return redemption;
+        },
+        { timeout: 15000, maxWait: 5000 },
+      );
+
+      // Build response
+      const data: Record<string, unknown> = {
+        id: result.id,
+        type: redemptionType,
+        status,
       };
-      data.branch = {
-        name: validBranch.name,
-        addressLine1: validBranch.addressLine1,
-        addressLine2: validBranch.addressLine2,
-        city: validBranch.city,
-        state: validBranch.state,
-        postalCode: validBranch.postalCode,
-        phone: validBranch.phone,
-        latitude: lat,
-        longitude: lng,
-        openingHours: validBranch.openingHours,
-        googleMapsUrl:
-          lat && lng ? `https://www.google.com/maps?q=${lat},${lng}` : null,
-      };
-      data.instructions = redemptionConfig.instructions ?? null;
-    }
 
-    if (redemptionType === "ONLINE_CODE") {
-      data.offerCode = redemptionConfig.code ?? null;
-      data.merchantWebsite = redemptionConfig.bookingUrl ?? null;
-      data.instructions = redemptionConfig.instructions ?? null;
-    }
+      if (redemptionType === "IN_STORE_QR" && validBranch) {
+        const branch = await prisma.merchantBranch.findFirst({
+          where: { id: validBranch.id },
+          select: {
+            name: true,
+            addressLine1: true,
+            addressLine2: true,
+            city: true,
+            state: true,
+            postalCode: true,
+            phone: true,
+            latitude: true,
+            longitude: true,
+            openingHours: true,
+          },
+        });
+        if (branch) {
+          const lat = branch.latitude ? Number(branch.latitude) : null;
+          const lng = branch.longitude ? Number(branch.longitude) : null;
+          data.merchant = {
+            businessName: offer.merchant.businessName,
+            website: offer.merchant.website,
+          };
+          data.branch = {
+            name: branch.name,
+            addressLine1: branch.addressLine1,
+            addressLine2: branch.addressLine2,
+            city: branch.city,
+            state: branch.state,
+            postalCode: branch.postalCode,
+            phone: branch.phone,
+            latitude: lat,
+            longitude: lng,
+            openingHours: branch.openingHours,
+            googleMapsUrl:
+              lat && lng ? `https://www.google.com/maps?q=${lat},${lng}` : null,
+          };
+          data.instructions = redemptionConfig.instructions ?? null;
+        }
+      }
 
-    if (redemptionType === "BOOKING_LINK") {
-      data.bookingUrl = redemptionConfig.bookingUrl ?? null;
-      data.instructions = redemptionConfig.instructions ?? null;
-    }
+      if (redemptionType === "ONLINE_CODE") {
+        data.offerCode = redemptionConfig.code ?? null;
+        data.merchantWebsite = redemptionConfig.bookingUrl ?? null;
+        data.instructions = redemptionConfig.instructions ?? null;
+      }
 
-    return NextResponse.json({ success: true, data }, { status: 201 });
+      if (redemptionType === "BOOKING_LINK") {
+        data.bookingUrl = redemptionConfig.bookingUrl ?? null;
+        data.instructions = redemptionConfig.instructions ?? null;
+      }
+
+      return NextResponse.json({ success: true, data }, { status: 201 });
+    } catch (err: unknown) {
+      // Roll back reserved capacity if the transaction failed after reserve.
+      if (err instanceof OfferLimitReachedError) {
+        return badRequest(err.message);
+      }
+      if (err instanceof AlreadyRedeemedError) {
+        return badRequest(err.message);
+      }
+      if (err instanceof OfferNotActiveError) {
+        return badRequest(err.message);
+      }
+      if (reservationToken) {
+        await releaseCapacity(prisma, offer.id).catch(() => {});
+      }
+      throw err;
+    }
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      // unique violation on Attempt shouldn't escape — handled above
+      return internalError(error);
+    }
     return internalError(error);
   }
 }

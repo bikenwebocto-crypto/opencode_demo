@@ -13,6 +13,7 @@ import { ImageUploader } from '@/components/shared/ImageUploader'
 import type { DeferredFile } from '@/components/shared/ImageUploader'
 import { uploadImage, MERCHANT_LOGO_OPTIONS, MERCHANT_COVER_OPTIONS } from '@/lib/upload/image'
 import type { UploadImageOptions } from '@/lib/upload/image'
+import { BusinessOverview } from '@/components/shared/business-overview'
 
 interface Category {
   id: string
@@ -299,6 +300,12 @@ export default function MerchantProfilePage() {
           </div>
         </div>
       </Card>
+
+      {/* ─── Business Overview ─── */}
+      <div>
+        <h3 className="mb-3 text-lg font-semibold tracking-tight">Business Overview</h3>
+        <BusinessOverview merchantId={profile.id} scope="merchant" />
+      </div>
 
       {/* ─── Pending Approval Banner ─── */}
       {isPendingApproval && (

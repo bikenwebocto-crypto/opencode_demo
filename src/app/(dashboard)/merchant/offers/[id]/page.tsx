@@ -160,8 +160,8 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
   const redemptionInstructions = redemptionConfig.instructions as string | undefined
   const bookingUrl = redemptionConfig.bookingUrl as string | undefined
   const qrCodeUrl = redemptionConfig.qrCodeUrl as string | undefined
-  const discountProgress = offer.redemption?.maxRedemptions
-    ? Math.min(100, ((offer.redemption?.currentRedemptions ?? 0) / offer.redemption.maxRedemptions) * 100)
+  const discountProgress = offer.capacity?.maxRedemptions
+    ? Math.min(100, ((offer.capacity?.redeemedCount ?? 0) / offer.capacity.maxRedemptions) * 100)
     : 0
 
   return (
@@ -300,10 +300,10 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
           icon={Receipt}
           gradient="from-emerald-500 to-teal-600"
           label="Redemptions"
-          value={offer.redemption?.currentRedemptions ?? 0}
+          value={offer.capacity?.redeemedCount ?? 0}
           sublabel={
-            offer.redemption?.maxRedemptions
-              ? `of ${offer.redemption.maxRedemptions} max`
+            offer.capacity?.maxRedemptions
+              ? `of ${offer.capacity.maxRedemptions} max`
               : 'unlimited'
           }
           progress={discountProgress}
@@ -516,7 +516,7 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest opacity-90">Discount</p>
                 <p className="mt-1 text-3xl font-black leading-none">
-                  {amount != null ? `£${Number(amount).toFixed(2)}` : percent != null ? `${percent}%` : '—'}
+                  {amount != null ? `€${Number(amount).toFixed(2)}` : percent != null ? `${percent}%` : '—'}
                 </p>
                 <p className="mt-1 text-xs font-medium opacity-90">{typeConfig.label}</p>
               </div>
@@ -528,7 +528,7 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
                 <DetailRow
                   icon={DollarSign}
                   label="Discount Value"
-                  value={`£${Number(amount).toFixed(2)}`}
+                  value={`€${Number(amount).toFixed(2)}`}
                 />
               )}
               {offer.offerType === 'percentage' && percent != null && (
@@ -542,14 +542,14 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
                 <DetailRow
                   icon={ShoppingBag}
                   label="Minimum Spend"
-                  value={`£${Number(minimumSpend).toFixed(2)}`}
+                  value={`€${Number(minimumSpend).toFixed(2)}`}
                 />
               )}
               {maximumDiscount != null && Number(maximumDiscount) > 0 && (
                 <DetailRow
                   icon={TrendingUp}
                   label="Maximum Discount"
-                  value={`£${Number(maximumDiscount).toFixed(2)}`}
+                  value={`€${Number(maximumDiscount).toFixed(2)}`}
                 />
               )}
               <Separator />
@@ -558,11 +558,11 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
                 label="Offer Type"
                 value={typeConfig.label}
               />
-              {offer.redemption?.maxRedemptions != null && (
+              {offer.capacity?.maxRedemptions != null && (
                 <DetailRow
                   icon={Receipt}
                   label="Max Redemptions"
-                  value={offer.redemption.maxRedemptions.toString()}
+                  value={offer.capacity.maxRedemptions.toString()}
                 />
               )}
             </div>

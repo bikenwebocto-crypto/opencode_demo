@@ -90,7 +90,7 @@ function formatDiscount(o: EmployeeOffer): string {
     case 'FLAT':
     case 'flat_rate':
     case 'fixed_amount':
-      return `£${Number(o.discountValue).toFixed(2)} OFF`
+      return `€${Number(o.discountValue).toFixed(2)} OFF`
     default:
       return `${o.discountValue ?? ''}`
   }
@@ -785,7 +785,7 @@ export function RedeemModal({
                 )}
 
               {/* ── Review this merchant ─────────────────── */}
-              <Card>
+              {/* <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
                     <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
@@ -846,7 +846,7 @@ export function RedeemModal({
                     </p>
                   )}
                 </CardContent>
-              </Card>
+              </Card> */}
             </>
           )}
         </div>

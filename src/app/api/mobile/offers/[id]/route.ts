@@ -24,7 +24,8 @@ export async function GET(
       include: {
         content: { select: { description: true, shortDescription: true, termsAndConditions: true, imageUrls: true } },
         pricing: { select: { configuration: true } },
-        redemption: { select: { redemptionType: true, configuration: true, maxRedemptions: true, currentRedemptions: true, daysOfWeek: true } },
+        redemption: { select: { redemptionType: true, configuration: true, daysOfWeek: true } },
+        capacity: { select: { maxRedemptions: true, redeemedCount: true } },
         analytics: { select: { viewCount: true, clickCount: true, saveCount: true } },
         merchant: {
           select: {
@@ -80,8 +81,8 @@ export async function GET(
         minimumSpend: pricingConfig.minimumSpend ?? null,
         discountMax: pricingConfig.maximumDiscount ?? null,
         redemptionType: offer.redemption?.redemptionType ?? null,
-        maxRedemptions: offer.redemption?.maxRedemptions ?? null,
-        currentRedemptions: offer.redemption?.currentRedemptions ?? 0,
+        maxRedemptions: offer.capacity?.maxRedemptions ?? null,
+        currentRedemptions: offer.capacity?.redeemedCount ?? 0,
         daysOfWeek: offer.redemption?.daysOfWeek ?? null,
         offerCode: redemptionConfig.code ?? null,
         bookingUrl: redemptionConfig.bookingUrl ?? null,

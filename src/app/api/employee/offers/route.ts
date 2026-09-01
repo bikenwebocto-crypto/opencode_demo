@@ -71,9 +71,13 @@ export async function GET(request: NextRequest) {
             select: {
               redemptionType: true,
               configuration: true,
-              maxRedemptions: true,
-              currentRedemptions: true,
               daysOfWeek: true,
+            },
+          },
+          capacity: {
+            select: {
+              maxRedemptions: true,
+              redeemedCount: true,
             },
           },
           merchant: {

@@ -579,7 +579,7 @@ function OfferPreviewSection({ entity }: { entity: any }) {
                     displayText = 'BOGO'
                     displaySuffix = 'FREE'
                   } else {
-                    displayText = `£${Number(amt ?? 0).toFixed(0)}`
+                    displayText = `€${Number(amt ?? 0).toFixed(0)}`
                   }
                   return displayText ? (
                     <div className="absolute right-3 top-3 flex flex-col items-center justify-center rounded-2xl bg-white px-4 py-2 shadow-xl">

@@ -368,6 +368,16 @@ export async function POST(
             }),
           },
         });
+
+        if (body.maxRedemptions !== undefined) {
+          const normalizedMaxRedemptions =
+            body.maxRedemptions === null || body.maxRedemptions === '' ? null : Number(body.maxRedemptions);
+          await tx.offerRedemptionCapacity.upsert({
+            where: { offerId: id },
+            create: { offerId: id, maxRedemptions: normalizedMaxRedemptions, redeemedCount: 0 },
+            update: { maxRedemptions: normalizedMaxRedemptions },
+          });
+        }
       }
 
       const merchantOfferUpdatable: Record<string, unknown> = {};

@@ -64,13 +64,14 @@ function currentUserFromContext(ctx: any): CurrentUser {
     COMPANY_ADMIN: 'company_admin',
     EMPLOYEE: 'employee',
   }
+
   return {
     id: ctx.user.id,
     email: ctx.user.email!,
     role: ctx.account.role,
     userType: userTypeMap[ctx.account.role] ?? 'employee',
     companyId: ctx.companyId,
-    city: ctx.city,
+    city: ctx.profile?.city ?? null,
     companyName: getCompanyName(ctx),
     companyStatus: ctx.companyStatus,
     profileType: ctx.profileType,

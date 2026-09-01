@@ -550,13 +550,13 @@ async function buildMostRequested(now: Date): Promise<MobileHomeOffer[]> {
 }
 
 // Most Redeemed — ranked by completed redemption count.
-// Uses currentRedemptions from offer_redemptions (the cached counter that
-// increments on each successful Redemption record).
+// Uses redeemedCount from offer_redemption_capacity (the atomically
+// maintained counter that increments on each successful Redemption record).
 async function buildMostRedeemed(now: Date): Promise<MobileHomeOffer[]> {
   const rows = await prisma.merchantOffer.findMany({
     where: liveOfferWhere(now),
     orderBy: [
-      { redemption: { currentRedemptions: 'desc' } },
+      { capacity: { redeemedCount: 'desc' } },
       { isFeatured: 'desc' },
       { createdAt: 'desc' },
     ],

@@ -38,7 +38,7 @@ function formatValue(o: any): string {
     return 'Buy X Get Y'
   }
   const amount = Number(cfg.amount ?? 0)
-  return `£${amount.toFixed(2)} OFF`
+  return `€${amount.toFixed(2)} OFF`
 }
 
 export default function MerchantOffersPage() {
@@ -89,7 +89,7 @@ export default function MerchantOffersPage() {
         const cfg = (o.pricing?.configuration as Record<string, any>) ?? {}
         const amount = Number(cfg.amount ?? cfg.percent ?? 0)
         const suffix = o.offerType === 'percentage' || o.offerType === 'PERCENTAGE' ? '%' : ''
-        return <span>{o.offerType === 'percentage' || o.offerType === 'PERCENTAGE' ? `${amount}%` : `£${amount.toFixed(2)}`}</span>
+        return <span>{o.offerType === 'percentage' || o.offerType === 'PERCENTAGE' ? `${amount}%` : `€${amount.toFixed(2)}`}</span>
       },
     },
     {
@@ -111,8 +111,8 @@ export default function MerchantOffersPage() {
       header: 'Redemptions',
       align: 'center',
       render: (o: any) => {
-        const max = o.redemption?.maxRedemptions ?? '∞'
-        return <span>{o.redemption?.currentRedemptions ?? 0}/{max}</span>
+        const max = o.capacity?.maxRedemptions ?? '∞'
+        return <span>{o.capacity?.redeemedCount ?? 0}/{max}</span>
       },
     },
     {

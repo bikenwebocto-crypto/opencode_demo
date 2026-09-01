@@ -69,6 +69,7 @@ async function getOwnOffer(merchantId: string, offerId: string) {
       content: true,
       pricing: true,
       redemption: true,
+      capacity: true,
       review: true,
       analytics: true,
     },

@@ -306,7 +306,7 @@ export default function AdminBannersPage() {
                   </div>
                   <div className="grid gap-3 sm:grid-cols-3">
                     <div>
-                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Price Per Day (£) *</label>
+                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Price Per Day (€) *</label>
                       <Input type="number" step="0.01" min="0" value={createForm.pricePerDay} onChange={(e) => setCreateForm((f) => ({ ...f, pricePerDay: e.target.value }))} required />
                     </div>
                     <div>
@@ -353,7 +353,7 @@ export default function AdminBannersPage() {
                           <span className="rounded-full bg-muted px-2 py-0.5 text-xs">{POSITION_LABELS[b.position] ?? b.position}</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="font-semibold">£{Number(b.pricePerDay).toFixed(2)}/day</span>
+                          <span className="font-semibold">€{Number(b.pricePerDay).toFixed(2)}/day</span>
                           <Button size="sm" variant="outline" onClick={() => openEdit(b)}>Edit</Button>
                           <LoadingButton size="sm" variant="outline" loading={toggleMutation.isPending} onClick={() => toggleMutation.mutate({ id: b.id, isActive: !b.isActive })}>
                             {b.isActive ? <ToggleRight className="h-4 w-4 text-green-600" /> : <ToggleLeft className="h-4 w-4 text-gray-400" />}
@@ -400,7 +400,7 @@ export default function AdminBannersPage() {
                   </div>
                   <div className="grid gap-3 sm:grid-cols-3">
                     <div>
-                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Price Per Day (£)</label>
+                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Price Per Day (€)</label>
                       <Input type="number" step="0.01" min="0" value={editForm.pricePerDay} onChange={(e) => setEditForm((f) => ({ ...f, pricePerDay: e.target.value }))} required />
                     </div>
                     <div>
@@ -463,7 +463,7 @@ export default function AdminBannersPage() {
                       <div className="flex items-center gap-2">
                         {statusBadge(b.status)}
                         {derivedBadges(b)}
-                        <span className="font-semibold">£{Number(b.totalPrice).toFixed(2)}</span>
+                        <span className="font-semibold">€{Number(b.totalPrice).toFixed(2)}</span>
                       </div>
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">
