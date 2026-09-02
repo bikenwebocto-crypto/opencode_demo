@@ -22,7 +22,7 @@ export async function PATCH(
 
     const { id } = await params
     const body = await request.json()
-    const { billAmount, loggedSavingAmount } = body ?? {}
+    const { billAmount, loggedSavingAmount, quantityPurchased } = body ?? {}
 
     const bill = Number(billAmount)
     const saving = Number(loggedSavingAmount)
@@ -31,6 +31,15 @@ export async function PATCH(
     }
     if (!Number.isFinite(saving) || saving < 0 || saving > bill) {
       return badRequest('loggedSavingAmount must be a non-negative number and cannot exceed billAmount')
+    }
+    // Optional — only meaningful for buy_x_get_y offers (BOGO savings math
+    // needs the actual units bought). Irrelevant for percentage/flat.
+    if (
+      quantityPurchased !== undefined &&
+      quantityPurchased !== null &&
+      (!Number.isInteger(quantityPurchased) || quantityPurchased <= 0)
+    ) {
+      return badRequest('quantityPurchased must be a positive whole number')
     }
 
     const redemption = await prisma.redemption.findFirst({
@@ -63,6 +72,7 @@ export async function PATCH(
       redemption.offer.pricing?.configuration as Record<string, unknown> | undefined,
       bill,
       saving,
+      quantityPurchased ?? undefined,
     )
 
     const now = new Date()
@@ -71,6 +81,7 @@ export async function PATCH(
       data: {
         billAmount: bill,
         loggedSavingAmount: saving,
+        quantityPurchased: quantityPurchased ?? null,
         savingMethod: 'MANUAL',
         savingLoggedAt: redemption.savingLoggedAt ?? now,
         savingEditedAt: redemption.savingLoggedAt ? now : null,
@@ -85,6 +96,7 @@ export async function PATCH(
         id: updated.id,
         billAmount: updated.billAmount,
         loggedSavingAmount: updated.loggedSavingAmount,
+        quantityPurchased: updated.quantityPurchased,
         savingMethod: updated.savingMethod,
         savingLoggedAt: updated.savingLoggedAt,
         savingEditedAt: updated.savingEditedAt,

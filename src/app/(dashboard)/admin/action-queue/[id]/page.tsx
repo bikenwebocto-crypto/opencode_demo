@@ -148,6 +148,7 @@ export default function UnifiedReviewPage({ params }: { params: Promise<{ id: st
         setQueueItem(null)
         return
       }
+    
       setQueueItem(json.data.queueItem)
       setEntity(json.data.entity ?? null)
       setAuditLogs(json.data.auditLogs ?? [])
@@ -166,8 +167,12 @@ export default function UnifiedReviewPage({ params }: { params: Promise<{ id: st
   const displayType = useMemo(() => resolveDisplayType(queueItem), [queueItem])
   const ReviewComponent = REVIEW_COMPONENT_MAP[reviewComponentKey]
   const editableFields = EDITABLE_FIELDS_MAP[reviewComponentKey] ?? []
-  const entityKind = useMemo(() => getEntityKindFromReferenceType(queueItem?.referenceType), [queueItem])
-
+  const entityKind = useMemo(() => {
+  if (queueItem?.type === 'FIRST_OFFER_APPROVAL' || queueItem?.type === 'OFFER_REPLACEMENT') {
+    return 'MERCHANT_OFFER'
+  }
+  return getEntityKindFromReferenceType(queueItem?.referenceType)
+}, [queueItem])
   const isFinalized = queueItem?.status === 'COMPLETED' || queueItem?.status === 'FAILED'
   const canEdit = !isFinalized && (editableFields.length > 0)
 

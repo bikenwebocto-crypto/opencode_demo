@@ -13,12 +13,15 @@ import { type RedemptionStatus } from '@/lib/redemption-status'
 export interface RedemptionSavingsModalRedemption {
   id: string
   status: RedemptionStatus
-  offer: { title: string }
+  offer: { title: string; offerType?: string }
   merchant: { businessName: string }
   discountAmount: number | string
   billAmount: number | string | null
   loggedSavingAmount: number | string | null
+  quantityPurchased: number | null
   savingLoggedAt: string | null
+  savingValidationStatus: 'VALID' | 'INVALID' | 'NOT_VERIFIABLE' | 'SKIPPED' | null
+  savingValidationMessage: string | null
 }
 
 interface Props {
@@ -31,9 +34,13 @@ export function RedemptionSavingsModal({ redemption, open, onOpenChange }: Props
   const queryClient = useQueryClient()
   const [billAmount, setBillAmount] = useState('')
   const [savingAmount, setSavingAmount] = useState('')
+  const [quantity, setQuantity] = useState('')
   const [editing, setEditing] = useState(false)
 
   const alreadyLogged = !!redemption?.savingLoggedAt
+  const isBogo = redemption?.offer.offerType === 'buy_x_get_y'
+  const isValid = redemption?.savingValidationStatus === 'VALID'
+  const isInvalid = redemption?.savingValidationStatus === 'INVALID'
 
   useEffect(() => {
     if (!redemption) return
@@ -41,7 +48,11 @@ export function RedemptionSavingsModal({ redemption, open, onOpenChange }: Props
     setSavingAmount(
       redemption.loggedSavingAmount != null ? String(redemption.loggedSavingAmount) : '',
     )
-    setEditing(!redemption.savingLoggedAt)
+    setQuantity(
+      redemption.quantityPurchased != null ? String(redemption.quantityPurchased) : '',
+    )
+
+    setEditing(!redemption.savingLoggedAt || redemption.savingValidationStatus === 'INVALID' ? !redemption.savingLoggedAt : false)
   }, [redemption])
 
   const saveMutation = useMutation({
@@ -53,6 +64,9 @@ export function RedemptionSavingsModal({ redemption, open, onOpenChange }: Props
         body: JSON.stringify({
           billAmount: Number(billAmount),
           loggedSavingAmount: Number(savingAmount),
+          ...(quantity.trim() !== ''
+            ? { quantityPurchased: Number(quantity) }
+            : {}),
         }),
       })
       const json = await res.json()
@@ -62,6 +76,7 @@ export function RedemptionSavingsModal({ redemption, open, onOpenChange }: Props
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employee-redemptions'] })
       setEditing(false)
+      onOpenChange(false);
       showToast({ type: 'success', title: 'Savings logged' })
     },
     onError: (err: any) =>
@@ -78,6 +93,10 @@ export function RedemptionSavingsModal({ redemption, open, onOpenChange }: Props
   const canLog = r.status === 'CONFIRMED'
   const billValid = billAmount.trim() !== '' && Number(billAmount) >= 0
   const savingValid = savingAmount.trim() !== '' && Number(savingAmount) >= 0
+  // Optional — must be a positive whole number when filled (matches the API).
+  const quantityValid =
+    quantity.trim() === '' ||
+    (Number.isInteger(Number(quantity)) && Number(quantity) > 0)
 
   return (
     <div
@@ -151,10 +170,33 @@ export function RedemptionSavingsModal({ redemption, open, onOpenChange }: Props
                         onChange={(e) => setSavingAmount(e.target.value)}
                       />
                     </div>
+                    {isBogo && (
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-muted-foreground">
+                          Quantity purchased
+                        </label>
+                        <Input
+                          type="number"
+                          min="1"
+                          step="1"
+                          placeholder="How many did you buy?"
+                          value={quantity}
+                          onChange={(e) => setQuantity(e.target.value)}
+                        />
+                        <p className="text-[11px] text-muted-foreground">
+                          Used to verify your savings on Buy X Get Y offers.
+                        </p>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2 pt-1">
                       <Button
                         size="sm"
-                        disabled={!billValid || !savingValid || saveMutation.isPending}
+                        disabled={
+                          !billValid ||
+                          !savingValid ||
+                          !quantityValid ||
+                          saveMutation.isPending
+                        }
                         onClick={() => saveMutation.mutate()}
                       >
                         {saveMutation.isPending ? (
@@ -177,6 +219,11 @@ export function RedemptionSavingsModal({ redemption, open, onOpenChange }: Props
                                 ? String(r.loggedSavingAmount)
                                 : '',
                             )
+                            setQuantity(
+                              r.quantityPurchased != null
+                                ? String(r.quantityPurchased)
+                                : '',
+                            )
                             setEditing(false)
                           }}
                         >
@@ -196,10 +243,48 @@ export function RedemptionSavingsModal({ redemption, open, onOpenChange }: Props
                         <p className="text-xs text-muted-foreground">Savings amount</p>
                         <p className="font-medium">€{Number(r.loggedSavingAmount).toFixed(2)}</p>
                       </div>
+                      {isBogo && r.quantityPurchased != null && (
+                        <div className="rounded-md border p-2">
+                          <p className="text-xs text-muted-foreground">Quantity purchased</p>
+                          <p className="font-medium">{r.quantityPurchased}</p>
+                        </div>
+                      )}
                     </div>
-                    <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-                      Edit
-                    </Button>
+
+                    {isValid && (
+                      <div className="flex items-start gap-2 rounded-md bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300">
+                        <span className="mt-0.5">✓</span>
+                        <div>
+                          <p className="font-medium">Savings validated</p>
+                          {r.savingValidationMessage && (
+                            <p className="text-xs">{r.savingValidationMessage}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {isInvalid && (
+                      <>
+                        <div className="flex items-start gap-2 rounded-md bg-red-50 p-3 text-sm text-red-800 dark:bg-red-900/20 dark:text-red-300">
+                          <span className="mt-0.5">⚠</span>
+                          <div>
+                            <p className="font-medium">This doesn&apos;t look right</p>
+                            {r.savingValidationMessage && (
+                              <p className="text-xs">{r.savingValidationMessage}</p>
+                            )}
+                          </div>
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+                          Edit
+                        </Button>
+                      </>
+                    )}
+
+                    {!isValid && !isInvalid && (
+                      <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+                        Edit
+                      </Button>
+                    )}
                   </>
                 )}
               </CardContent>

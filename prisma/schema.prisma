@@ -580,6 +580,7 @@ model Redemption {
   savingValidationMessage String?
   savingLoggedAt          DateTime?
   savingEditedAt          DateTime?
+  quantityPurchased       Int? // actual units bought (BOGO savings validation); no index — nothing filters/sorts by it
 
   @@index([merchantId])
   @@index([offerId])

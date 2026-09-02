@@ -174,7 +174,10 @@ export async function POST(
     const branch = offer.merchant.branches.find((b) => b.id === validBranchId)!
 
     const pricingConfig = (offer.pricing?.configuration as Record<string, unknown>) ?? {}
+    const isPercentageOffer =
+      offer.offerType === 'PERCENTAGE' || offer.offerType === 'percentage'
     const discountValue = Number(pricingConfig.amount ?? pricingConfig.percent ?? 0)
+    const savingsValue = isPercentageOffer ? 0 : discountValue
 
     let reservationToken: string | null = null
     try {
@@ -195,7 +198,7 @@ export async function POST(
             branchId: validBranchId,
             discountAmount: discountValue,
             spentAmount: null,
-            savingsAmount: discountValue,
+            savingsAmount: savingsValue,
             merchantNotes: encodeMethod('IN_STORE'),
             employeeNotes: null,
             isVerified: true,

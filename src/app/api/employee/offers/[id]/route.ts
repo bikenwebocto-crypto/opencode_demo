@@ -23,7 +23,7 @@ export async function GET(
         merchant: {
           include: {
             category: { select: { id: true, name: true, icon: true } },
-            branches: { where: { deletedAt: null, status: 'ACTIVE' }, select: { id: true, name: true, branchType: true, addressLine1: true, city: true, state: true } },
+            branches: { where: { deletedAt: null, status: 'ACTIVE' }, select: { id: true, name: true, branchType: true, isActive: true, addressLine1: true, city: true, state: true } },
           },
         },
       },

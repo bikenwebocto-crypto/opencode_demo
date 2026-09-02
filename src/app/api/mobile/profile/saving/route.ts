@@ -53,6 +53,7 @@ export async function PATCH(request: NextRequest) {
       redemptionId,
       billAmount,
       loggedSavingAmount,
+      quantityPurchased,
     } = body ?? {}
 
     if (!redemptionId || typeof redemptionId !== 'string') {
@@ -72,6 +73,16 @@ export async function PATCH(request: NextRequest) {
 
     if (saving > bill) {
       return badRequest('Saving amount cannot be greater than the bill amount.')
+    }
+
+    // Optional — only meaningful for buy_x_get_y offers (BOGO savings math
+    // needs the actual units bought). Irrelevant for percentage/flat.
+    if (
+      quantityPurchased !== undefined &&
+      quantityPurchased !== null &&
+      (!Number.isInteger(quantityPurchased) || quantityPurchased <= 0)
+    ) {
+      return badRequest('quantityPurchased must be a positive whole number')
     }
 
     console.log(` ** # ** Employee ${auth.employee.id} is updating redemption ${redemptionId} with bill ${bill} and saving ${saving}.`,
@@ -116,6 +127,7 @@ export async function PATCH(request: NextRequest) {
         | undefined,
       bill,
       saving,
+      quantityPurchased ?? undefined,
     )
 
     const now = new Date()
@@ -127,6 +139,7 @@ export async function PATCH(request: NextRequest) {
       data: {
         billAmount: bill,
         loggedSavingAmount: saving,
+        quantityPurchased: quantityPurchased ?? null,
         savingMethod: 'MANUAL',
         savingLoggedAt: redemption.savingLoggedAt ?? now,
         savingEditedAt: redemption.savingLoggedAt ? now : null,
@@ -141,6 +154,7 @@ export async function PATCH(request: NextRequest) {
         redemptionId: updated.id,
         billAmount: updated.billAmount,
         loggedSavingAmount: updated.loggedSavingAmount,
+        quantityPurchased: updated.quantityPurchased,
         validation: {
           status: validation.status,
           message: validation.message,

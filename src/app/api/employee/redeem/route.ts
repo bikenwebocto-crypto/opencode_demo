@@ -9,7 +9,7 @@ import {
   notFound,
   badRequest,
 } from "@/lib/employee-session";
-import { normalizeOfferCode } from "@/lib/offer-code";
+import { generateRedemptionCode } from "@/lib/redemption-code";
 import {
   AlreadyRedeemedError,
   OfferLimitReachedError,
@@ -99,14 +99,23 @@ export async function GET(request: NextRequest) {
       offerId: r.offerId,
       employeeId: r.employeeId,
       companyId: r.companyId,
+
+      redemptionCode: r.redemptionCode,
       discountAmount: r.discountAmount,
       spentAmount: r.spentAmount,
       savingsAmount: r.savingsAmount,
       billAmount: r.billAmount,
       loggedSavingAmount: r.loggedSavingAmount,
+      quantityPurchased: r.quantityPurchased,
+
       savingMethod: r.savingMethod,
       savingLoggedAt: r.savingLoggedAt,
       savingEditedAt: r.savingEditedAt,
+
+      // ADD THESE
+      savingValidationStatus: r.savingValidationStatus,
+      savingValidationMessage: r.savingValidationMessage,
+
       branchId: r.branchId,
       merchantNotes: r.merchantNotes,
       employeeNotes: r.employeeNotes,
@@ -115,11 +124,14 @@ export async function GET(request: NextRequest) {
       verifiedAt: r.verifiedAt,
       redeemedAt: r.redeemedAt,
       createdAt: r.createdAt,
+
       offer: r.offer,
       merchant: r.merchant,
       company: r.company,
       branch: r.branchId ? (branchMap.get(r.branchId) ?? null) : null,
+
       status: deriveStatus(r),
+
       method: ((): RedemptionMethod | null => {
         const m = r.merchantNotes?.match(/^METHOD:(\w+)/);
         return (m?.[1] as RedemptionMethod) ?? null;
@@ -139,7 +151,7 @@ export async function POST(request: NextRequest) {
     if ("inactive" in employee) return companyInactive(employee.companyStatus);
 
     const body = await request.json();
-    const { offerId, branchId, notes, spentAmount, code } = body ?? {};
+    const { offerId, branchId, notes, spentAmount } = body ?? {};
 
     if (!offerId) return badRequest("offerId is required");
 
@@ -181,20 +193,9 @@ export async function POST(request: NextRequest) {
     const redemptionConfig =
       (offer.redemption?.configuration as Record<string, unknown>) ?? {};
 
-    // ONLINE_CODE: validate submitted code matches the configured code
-    if (redemptionType === "ONLINE_CODE") {
-      const configuredCode =
-        typeof redemptionConfig.code === "string" ? redemptionConfig.code : "";
-      if (!configuredCode) {
-        return badRequest("This offer does not have a valid offer code");
-      }
-      if (typeof code !== "string" || code.trim() === "") {
-        return badRequest("Please enter the offer code");
-      }
-      if (normalizeOfferCode(code) !== normalizeOfferCode(configuredCode)) {
-        return badRequest("Invalid offer code.");
-      }
-    }
+    // ONLINE_CODE: the server generates a fresh unique per-redemption code
+    // at redemption time (proof-of-redemption identifier). The employee no
+    // longer needs to know or submit a pre-existing code.
     if (redemptionType === "BOOKING_LINK" && !redemptionConfig.bookingUrl) {
       return badRequest("This offer does not have a booking link");
     }
@@ -214,15 +215,23 @@ export async function POST(request: NextRequest) {
     }
 
     const maxRedemptions = offer.redemption?.maxRedemptions ?? null;
+    const isPercentageOffer =
+      offer.offerType === "PERCENTAGE" || offer.offerType === "percentage";
     const discountAmount = Number(
       pricingConfig.amount ?? pricingConfig.percent ?? 0,
     );
     const spent = spentAmount ? Number(spentAmount) : 0;
-    const savings =
-      redemptionType === "IN_STORE_QR"
-        ? discountAmount
-        : Math.max(0, discountAmount - spent);
-    const status = redemptionType === "IN_STORE_QR" ? "PENDING" : "CONFIRMED";
+
+    // For flat/fixed discounts, the savings amount is known immediately —
+    // it's just the discount value. For percentage-based offers, real
+    // savings can't be computed without knowing what the employee actually
+    // spent (which isn't collected at redemption time), so leave it
+    // unresolved until the employee logs their bill via the Savings
+    // Tracker flow.
+    const savings = isPercentageOffer
+      ? 0 // unresolved — awaits billAmount/loggedSavingAmount entry
+      : discountAmount; // FLAT/fixed/BOGO: known at redemption time
+    const status = redemptionType === "ONLINE_CODE" ? "PENDING" : "CONFIRMED";
     const method =
       redemptionType === "ONLINE_CODE"
         ? ("ONLINE" as const)
@@ -253,13 +262,12 @@ export async function POST(request: NextRequest) {
               offerId: offer.id,
               employeeId: employee.id,
               companyId: employee.companyId,
-              redemptionCode:
-                redemptionType === "ONLINE_CODE"
-                  ? String(redemptionConfig.code ?? "")
-                  : "OO000000",
+              // Unique per-redemption proof-of-redemption code — generated
+              // fresh for every redemption, regardless of type.
+              redemptionCode: generateRedemptionCode(),
               discountAmount,
               spentAmount: spent || null,
-              savingsAmount: savings,
+              savingsAmount: savings ?? 0,
               branchId: validBranch?.id ?? null,
               merchantNotes: encodeMethod(method),
               employeeNotes: notes ?? null,
@@ -338,7 +346,9 @@ export async function POST(request: NextRequest) {
       }
 
       if (redemptionType === "ONLINE_CODE") {
-        data.offerCode = redemptionConfig.code ?? null;
+        // The employee's own unique code from the created record — not the
+        // offer's shared config code.
+        data.offerCode = result.redemptionCode;
         data.merchantWebsite = redemptionConfig.bookingUrl ?? null;
         data.instructions = redemptionConfig.instructions ?? null;
       }
