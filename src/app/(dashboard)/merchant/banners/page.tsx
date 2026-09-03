@@ -12,16 +12,27 @@ import { ImageUpload, uploadDeferredImage } from '@/components/ui/image-upload'
 import type { DeferredFile } from '@/components/shared/ImageUploader'
 import { BANNER_IMAGE_OPTIONS } from '@/lib/upload/image'
 import { showToast } from '@/hooks/use-toast'
-import { Plus, X, Calendar, Image } from 'lucide-react'
+import { Plus, X, Calendar } from 'lucide-react'
 
-interface BannerSlot {
-  id: string
-  name: string
+interface SlotInfo {
+  slotNumber: number
+  status: 'AVAILABLE' | 'PENDING' | 'APPROVED'
+  bookingId?: string
+  startDate?: string
+  bookedUntil?: string
+  merchantName?: string
+  isOwnBooking?: boolean
+}
+
+interface PositionSlots {
+  bannerId: string
   position: string
   pricePerDay: number
   minDays: number
   maxDays: number
-  description: string | null
+  slotCount: number
+  availableCount: number
+  slots: SlotInfo[]
 }
 
 interface Booking {
@@ -69,9 +80,8 @@ function derivedBadges(booking: Booking) {
 }
 
 const POSITION_LABELS: Record<string, string> = {
-  HOME_TOP: 'Home Top',
-  SIDEBAR: 'Sidebar',
-  OFFERS_TOP: 'Offers Top',
+  TOP: 'Top',
+  BOTTOM: 'Bottom',
 }
 
 export default function MerchantBannersPage() {
@@ -82,6 +92,8 @@ export default function MerchantBannersPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [pendingBannerFile, setPendingBannerFile] = useState<DeferredFile | null>(null)
 
+  const [selectedPosition, setSelectedPosition] = useState('TOP')
+  const [selectedSlotNumber, setSelectedSlotNumber] = useState<number | null>(null)
   const [form, setForm] = useState({
     bannerId: '',
     startDate: '',
@@ -90,6 +102,10 @@ export default function MerchantBannersPage() {
     altText: '',
     redirectUrl: '',
   })
+
+  const [editBooking, setEditBooking] = useState<Booking | null>(null)
+  const [editForm, setEditForm] = useState({ imageUrl: '', altText: '', redirectUrl: '' })
+  const [editPendingFile, setEditPendingFile] = useState<DeferredFile | null>(null)
 
   const params = new URLSearchParams()
   params.set('page', String(page))
@@ -106,31 +122,30 @@ export default function MerchantBannersPage() {
     },
   })
 
-  const { data: positionsData, isLoading: positionsLoading } = useQuery({
-    queryKey: ['banner-positions'],
+  const { data: slotsData, isLoading: slotsLoading } = useQuery({
+    queryKey: ['merchant-banner-slots', selectedPosition],
     queryFn: async () => {
-      const res = await fetch('/api/banners/positions')
+      const res = await fetch(`/api/merchant/banners/slots?position=${selectedPosition}`)
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to load positions')
-      return json as { success: boolean; data: BannerSlot[] }
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to load slots')
+      return json as { success: boolean; data: PositionSlots }
     },
     enabled: showBook,
   })
 
-  const selectedSlot = positionsData?.data?.find((s) => s.id === form.bannerId)
+  const positionSlots = slotsData?.data
 
   useEffect(() => {
-    const slots = positionsData?.data
-    if (slots && slots.length > 0 && !form.bannerId) {
-      setForm((f) => ({ ...f, bannerId: slots[0]!.id }))
+    if (positionSlots?.bannerId) {
+      setForm((f) => ({ ...f, bannerId: positionSlots.bannerId }))
     }
-  }, [positionsData, form.bannerId])
+  }, [positionSlots?.bannerId])
 
   const days = form.startDate && form.endDate
     ? Math.ceil((new Date(form.endDate).getTime() - new Date(form.startDate).getTime()) / (1000 * 60 * 60 * 24))
     : 0
 
-  const totalPrice = selectedSlot && days > 0 ? Number(selectedSlot.pricePerDay) * days : 0
+  const totalPrice = positionSlots && days > 0 ? Number(positionSlots.pricePerDay) * days : 0
 
   const bookMutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
@@ -145,13 +160,59 @@ export default function MerchantBannersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['merchant-banners'] })
+      queryClient.invalidateQueries({ queryKey: ['merchant-banner-slots'] })
       setShowBook(false)
       setPendingBannerFile(null)
+      setSelectedSlotNumber(null)
       setForm({ bannerId: '', startDate: '', endDate: '', imageUrl: '', altText: '', redirectUrl: '' })
       showToast({ type: 'success', title: 'Booking submitted', description: 'Your banner booking is pending approval.' })
     },
     onError: (e: any) => showToast({ type: 'error', title: 'Failed', description: e?.message }),
   })
+
+  const editMutation = useMutation({
+    mutationFn: async ({ id, ...body }: Record<string, unknown>) => {
+      const res = await fetch(`/api/merchant/banners/bookings/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to update booking')
+      return json
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['merchant-banners'] })
+      setEditBooking(null)
+      setEditPendingFile(null)
+      showToast({ type: 'success', title: 'Booking updated' })
+    },
+    onError: (e: any) => showToast({ type: 'error', title: 'Failed', description: e?.message }),
+  })
+
+  function openEdit(b: Booking) {
+    setEditBooking(b)
+    setEditForm({
+      imageUrl: b.content?.imageUrl ?? '',
+      altText: b.content?.altText ?? '',
+      redirectUrl: b.content?.redirectUrl ?? '',
+    })
+  }
+
+  async function handleEdit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editBooking) return
+    let imageUrl = editForm.imageUrl
+    if (editPendingFile) {
+      try {
+        imageUrl = await uploadDeferredImage(editPendingFile, BANNER_IMAGE_OPTIONS) ?? ''
+      } catch (err: any) {
+        showToast({ type: 'error', title: 'Image upload failed', description: err?.message })
+        return
+      }
+    }
+    editMutation.mutate({ id: editBooking.id, imageUrl, altText: editForm.altText || undefined, redirectUrl: editForm.redirectUrl || undefined })
+  }
 
   async function handleBook(e: React.FormEvent) {
     e.preventDefault()
@@ -190,33 +251,83 @@ export default function MerchantBannersPage() {
             <CardTitle className="text-base">Book a Banner Slot</CardTitle>
           </CardHeader>
           <CardContent>
-            {positionsLoading ? (
-              <Skeleton className="h-48 w-full" />
-            ) : !positionsData?.data?.length ? (
-              <p className="text-sm text-muted-foreground">No banner positions available at this time.</p>
-            ) : (
+            {(
               <form onSubmit={handleBook} className="space-y-3">
                 <div>
                   <label className="mb-1 block text-xs font-medium text-muted-foreground">Position</label>
                   <select
                     className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    value={form.bannerId}
-                    onChange={(e) => setForm((f) => ({ ...f, bannerId: e.target.value }))}
-                    required
+                    value={selectedPosition}
+                    onChange={(e) => {
+                      setSelectedPosition(e.target.value)
+                      setSelectedSlotNumber(null)
+                    }}
                   >
-                    {positionsData.data.map((slot) => (
-                      <option key={slot.id} value={slot.id}>
-                        {slot.name} ({POSITION_LABELS[slot.position] ?? slot.position}) - €{Number(slot.pricePerDay).toFixed(2)}/day
-                      </option>
-                    ))}
+                    <option value="TOP">Top</option>
+                    <option value="BOTTOM">Bottom</option>
                   </select>
                 </div>
 
-                {selectedSlot && (
-                  <div className="rounded-md bg-muted/30 p-3 text-sm text-muted-foreground">
-                    <p>{selectedSlot.description}</p>
-                    <p className="mt-1 text-xs">Min: {selectedSlot.minDays} days · Max: {selectedSlot.maxDays} days</p>
-                  </div>
+                {slotsLoading ? (
+                  <Skeleton className="h-24 w-full" />
+                ) : !positionSlots ? (
+                  <p className="text-sm text-muted-foreground">No active banner slot for this position.</p>
+                ) : (
+                  <>
+                    <div className="rounded-md bg-muted/30 p-3 text-sm text-muted-foreground">
+                      <p>
+                        ₹{Number(positionSlots.pricePerDay).toFixed(2)}/day · {positionSlots.availableCount} of{' '}
+                        {positionSlots.slotCount} slot{positionSlots.slotCount !== 1 ? 's' : ''} available
+                      </p>
+                      <p className="mt-1 text-xs">
+                        Min: {positionSlots.minDays} days · Max: {positionSlots.maxDays} days
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted-foreground">Choose a slot</label>
+                      <div className="flex gap-2 overflow-x-auto pb-2">
+                        {positionSlots.slots.map((slot) => {
+                          const isAvailable = slot.status === 'AVAILABLE'
+                          const isSelected = selectedSlotNumber === slot.slotNumber
+                          return (
+                            <button
+                              type="button"
+                              key={slot.slotNumber}
+                              disabled={!isAvailable}
+                              onClick={() => setSelectedSlotNumber(slot.slotNumber)}
+                              className={`min-w-[110px] rounded-md border p-2 text-left text-xs transition-colors ${
+                                !isAvailable
+                                  ? 'cursor-not-allowed border-muted bg-muted/40 text-muted-foreground'
+                                  : isSelected
+                                    ? 'border-primary bg-primary/10 ring-1 ring-primary'
+                                    : 'hover:bg-muted/50'
+                              }`}
+                            >
+                              <p className="font-semibold">Slot {slot.slotNumber}</p>
+                              {isAvailable ? (
+                                <p className="mt-1 text-emerald-600">Available</p>
+                              ) : (
+                                <>
+                                  <p className="mt-1 text-amber-600">
+                                    {slot.status === 'PENDING' ? 'Pending' : 'Booked'}
+                                  </p>
+                                  {slot.merchantName && (
+                                    <p className="mt-0.5 truncate text-muted-foreground">{slot.merchantName}</p>
+                                  )}
+                                  {slot.bookedUntil && (
+                                    <p className="mt-0.5 text-muted-foreground">
+                                      until {new Date(slot.bookedUntil).toLocaleDateString()}
+                                    </p>
+                                  )}
+                                </>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </>
                 )}
 
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -233,9 +344,9 @@ export default function MerchantBannersPage() {
                 {days > 0 && (
                   <div className="rounded-md bg-primary/10 p-3 text-sm">
                     <p className="font-medium">
-                      {days} day{days !== 1 ? 's' : ''} × €{Number(selectedSlot?.pricePerDay ?? 0).toFixed(2)}/day
+                      {days} day{days !== 1 ? 's' : ''} × ₹{Number(positionSlots?.pricePerDay ?? 0).toFixed(2)}/day
                     </p>
-                    <p className="text-lg font-bold">Total: €{totalPrice.toFixed(2)}</p>
+                    <p className="text-lg font-bold">Total: ₹{totalPrice.toFixed(2)}</p>
                   </div>
                 )}
 
@@ -272,7 +383,7 @@ export default function MerchantBannersPage() {
                   <Button type="button" variant="outline" onClick={() => setShowBook(false)}>Cancel</Button>
                   <LoadingButton
                     type="submit"
-                    disabled={!pendingBannerFile && !form.imageUrl}
+                    disabled={(!pendingBannerFile && !form.imageUrl) || !selectedSlotNumber}
                     loading={bookMutation.isPending}
                     loadingText="Submitting…"
                   >
@@ -328,7 +439,7 @@ export default function MerchantBannersPage() {
                       <div className="flex items-center gap-2">
                         {statusBadge(b.status)}
                         {derivedBadges(b)}
-                        <span className="font-semibold">€{Number(b.totalPrice).toFixed(2)}</span>
+                        <span className="font-semibold">₹{Number(b.totalPrice).toFixed(2)}</span>
                       </div>
                     </div>
                     <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
@@ -338,6 +449,11 @@ export default function MerchantBannersPage() {
                         <img src={b.content.imageUrl} alt={b.content.altText ?? ''} className="h-16 w-28 cursor-pointer rounded object-cover transition-opacity hover:opacity-80" onClick={() => setPreviewUrl(b.content!.imageUrl)} />
                       )}
                     </div>
+                    {b.status === 'PENDING' && (
+                      <div className="mt-2">
+                        <Button size="sm" variant="outline" onClick={() => openEdit(b)}>Edit</Button>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -355,6 +471,54 @@ export default function MerchantBannersPage() {
           )}
         </CardContent>
       </Card>
+
+      {editBooking && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between text-base">
+              <span>Edit Booking — {editBooking.banner.name}</span>
+              <Button size="sm" variant="outline" onClick={() => setEditBooking(null)}><X className="h-3 w-3" /></Button>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleEdit} className="space-y-3">
+              <ImageUpload
+                value={editForm.imageUrl}
+                onChange={(url) => setEditForm((f) => ({ ...f, imageUrl: url }))}
+                onDeferredFile={(file) => setEditPendingFile(file)}
+                uploadMode="deferred"
+                label="Banner Image"
+                helperText="Recommended size: 1200×400 px, max 5 MB, PNG/JPG/WEBP"
+              />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Alt Text</label>
+                  <Input
+                    value={editForm.altText}
+                    onChange={(e) => setEditForm((f) => ({ ...f, altText: e.target.value }))}
+                    placeholder="Describe the banner image"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Redirect URL</label>
+                  <Input
+                    type="url"
+                    value={editForm.redirectUrl}
+                    onChange={(e) => setEditForm((f) => ({ ...f, redirectUrl: e.target.value }))}
+                    placeholder="https://example.com/landing"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setEditBooking(null)}>Cancel</Button>
+                <LoadingButton type="submit" loading={editMutation.isPending} loadingText="Saving…">
+                  Save Changes
+                </LoadingButton>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
       {previewUrl && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={() => setPreviewUrl(null)}>

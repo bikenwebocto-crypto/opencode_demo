@@ -312,13 +312,20 @@ async function buildBanners(now: Date): Promise<MobileHomeBanner[]> {
           paid: true,
           startDate: { lte: now },
           endDate: { gte: now },
+          banner: {
+            isActive: true,
+            OR: [
+              { expiresAt: null },
+              { expiresAt: { gt: now } },
+            ],
+          },
         },
         include: {
           content: true,
           banner: { select: { name: true, position: true } },
           merchant: { select: { businessName: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { banner: { displayOrder: 'asc' } },
         take: SECTION_LIMITS.banner,
       }),
     [],

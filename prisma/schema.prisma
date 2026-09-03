@@ -1324,17 +1324,20 @@ model DailyOfferAnalytics {
 // ─────────────────────────────────────────────────────────────
 
 model Banner {
-  id          String          @id @default(uuid()) @db.Uuid
-  name        String          @db.VarChar(255)
-  description String?         @db.VarChar(500)
-  position    String          @db.VarChar(50) // HOME_TOP, SIDEBAR, OFFERS_TOP
-  pricePerDay Decimal         @default(10.0) @db.Decimal(10, 2)
-  minDays     Int             @default(7)
-  maxDays     Int             @default(30)
-  isActive    Boolean         @default(true)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
-  bookings    BannerBooking[]
+  id           String          @id @default(uuid()) @db.Uuid
+  name         String          @db.VarChar(255)
+  description  String?         @db.VarChar(500)
+  position     String          @db.VarChar(50) // TOP, BOTTOM
+  displayOrder Int             @default(0)
+  pricePerDay  Decimal         @default(10.0) @db.Decimal(10, 2)
+  slotCount    Int             @default(1)
+  minDays      Int             @default(7)
+  maxDays      Int             @default(30)
+  isActive     Boolean         @default(true)
+  expiresAt    DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  bookings     BannerBooking[]
 
   @@index([position])
   @@index([isActive])

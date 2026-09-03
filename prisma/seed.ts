@@ -293,6 +293,66 @@ async function main() {
     ],
   });
 
+  // ── Banner Slots (TOP / BOTTOM) ────────────────────────
+  const topBanner = await prisma.banner.create({
+    data: {
+      name: 'Home Top Banner',
+      description: 'Premium top-of-page banner slot',
+      position: 'TOP',
+      displayOrder: 1,
+      pricePerDay: 100,
+      minDays: 3,
+      maxDays: 30,
+      isActive: true,
+      expiresAt: new Date('2026-12-31'),
+    },
+  });
+
+  const bottomBanner = await prisma.banner.create({
+    data: {
+      name: 'Home Bottom Banner',
+      description: 'Bottom-of-page banner slot',
+      position: 'BOTTOM',
+      displayOrder: 1,
+      pricePerDay: 75,
+      minDays: 3,
+      maxDays: 30,
+      isActive: true,
+      expiresAt: new Date('2026-12-31'),
+    },
+  });
+
+  // Sequential bookings for TOP (non-overlapping)
+  if (activeMerchantIds.length >= 3) {
+    const [m0, m1, m2] = activeMerchantIds;
+    const topBookings = [
+      { bannerId: topBanner.id, merchantId: m0!, startDate: new Date('2026-09-01'), endDate: new Date('2026-09-05'), status: 'APPROVED' as const, paid: true },
+      { bannerId: topBanner.id, merchantId: m1!, startDate: new Date('2026-09-06'), endDate: new Date('2026-09-10'), status: 'APPROVED' as const, paid: true },
+      { bannerId: topBanner.id, merchantId: m2!, startDate: new Date('2026-09-11'), endDate: new Date('2026-09-15'), status: 'PENDING' as const, paid: false },
+    ];
+    for (const b of topBookings) {
+      const booking = await prisma.bannerBooking.create({ data: b });
+      await prisma.bannerContent.create({
+        data: { bookingId: booking.id, imageUrl: `https://images.unsplash.com/banner-${b.merchantId.slice(0, 8)}`, altText: 'Banner image' },
+      });
+    }
+  }
+
+  // Sequential bookings for BOTTOM (non-overlapping)
+  if (activeMerchantIds.length >= 2) {
+    const [m0, m1] = activeMerchantIds;
+    const bottomBookings = [
+      { bannerId: bottomBanner.id, merchantId: m0!, startDate: new Date('2026-09-01'), endDate: new Date('2026-09-07'), status: 'APPROVED' as const, paid: true },
+      { bannerId: bottomBanner.id, merchantId: m1!, startDate: new Date('2026-09-08'), endDate: new Date('2026-09-14'), status: 'APPROVED' as const, paid: true },
+    ];
+    for (const b of bottomBookings) {
+      const booking = await prisma.bannerBooking.create({ data: b });
+      await prisma.bannerContent.create({
+        data: { bookingId: booking.id, imageUrl: `https://images.unsplash.com/banner-${b.merchantId.slice(0, 8)}`, altText: 'Banner image' },
+      });
+    }
+  }
+
   // ── Notification Events ────────────────────────────────
   await prisma.notificationEvent.createMany({
     data: [

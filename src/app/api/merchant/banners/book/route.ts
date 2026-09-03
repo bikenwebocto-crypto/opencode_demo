@@ -57,9 +57,48 @@ export async function POST(request: NextRequest) {
       return badRequest('Invalid date format')
     }
 
+    if (start >= end) return badRequest('End date must be after start date')
+
     const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
     if (days < banner.minDays) return badRequest(`Minimum booking period is ${banner.minDays} days`)
     if (days > banner.maxDays) return badRequest(`Maximum booking period is ${banner.maxDays} days`)
+
+    if (banner.expiresAt && end > banner.expiresAt) {
+      return badRequest(`Booking cannot extend beyond banner expiry (${banner.expiresAt.toLocaleDateString()})`)
+    }
+
+    const overlapping = await prisma.bannerBooking.findFirst({
+      where: {
+        bannerId,
+        status: 'APPROVED',
+        paid: true,
+        startDate: { lt: end },
+        endDate: { gt: start },
+      },
+    })
+    if (overlapping) {
+      return badRequest('This banner slot is already booked for the requested dates')
+    }
+
+    const positionSlots = await prisma.banner.findMany({
+      where: { position: banner.position, isActive: true },
+      select: { id: true },
+    })
+    const bookedSlotIds = await prisma.bannerBooking.findMany({
+      where: {
+        bannerId: { in: positionSlots.map((s) => s.id) },
+        status: 'APPROVED',
+        paid: true,
+        startDate: { lt: end },
+        endDate: { gt: start },
+      },
+      select: { bannerId: true },
+    })
+    if (bookedSlotIds.length >= positionSlots.length) {
+      return badRequest(
+        `All ${banner.position} slots are booked for these dates. Please choose different dates or check back later.`,
+      )
+    }
 
     const totalPrice = Number(banner.pricePerDay) * days
 

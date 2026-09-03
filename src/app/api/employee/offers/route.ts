@@ -122,13 +122,20 @@ export async function GET(request: NextRequest) {
             paid: true,
             startDate: { lte: now },
             endDate: { gte: now },
+            banner: {
+              isActive: true,
+              OR: [
+                { expiresAt: null },
+                { expiresAt: { gt: now } },
+              ],
+            },
           },
           include: {
             content: true,
             banner: { select: { name: true, position: true } },
             merchant: { select: { businessName: true } },
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { banner: { displayOrder: 'asc' } },
         }),
       [],
       { context: 'BannerBooking.findMany:employee-offers' },
