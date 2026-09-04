@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { showToast } from '@/hooks/use-toast'
 import { ArrowLeft, Clock, FileText, Link2, XCircle } from 'lucide-react'
+import { PRIORITY_STYLES } from '@/features/complaints/constants'
 
 interface ComplaintAction {
   id: string
@@ -42,12 +43,6 @@ const STATUS_STYLES: Record<string, string> = {
   ESCALATED: 'bg-orange-100 text-orange-800',
   RESOLVED: 'bg-green-100 text-green-800',
   REJECTED: 'bg-red-100 text-red-800',
-}
-
-const PRIORITY_STYLES: Record<string, string> = {
-  HIGH: 'bg-red-100 text-red-800',
-  MEDIUM: 'bg-yellow-100 text-yellow-800',
-  LOW: 'bg-gray-100 text-gray-800',
 }
 
 const ACTION_LABELS: Record<string, string> = {

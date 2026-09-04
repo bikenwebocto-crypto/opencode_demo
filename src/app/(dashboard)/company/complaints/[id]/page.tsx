@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { showToast } from '@/hooks/use-toast'
 import { ArrowLeft, FileText, Loader2, Link2, Clock, XCircle, AlertTriangle } from 'lucide-react'
+import { PRIORITY_STYLES } from '@/features/complaints/constants'
 
 interface ComplaintAction {
   id: string
@@ -19,6 +20,7 @@ interface ComplaintAction {
 interface ComplaintDetail {
   id: string
   complaintType: string
+  category: string | null
   status: string
   priority: string
   description: string
@@ -43,10 +45,11 @@ const STATUS_STYLES: Record<string, string> = {
   REJECTED: 'bg-red-100 text-red-800',
 }
 
-const PRIORITY_STYLES: Record<string, string> = {
-  HIGH: 'bg-red-100 text-red-800',
-  MEDIUM: 'bg-yellow-100 text-yellow-800',
-  LOW: 'bg-gray-100 text-gray-800',
+const CATEGORY_LABELS: Record<string, string> = {
+  BILLING: 'Billing',
+  TECHNICAL: 'Technical',
+  ACCOUNT: 'Account',
+  OTHER: 'Other',
 }
 
 const ACTION_LABELS: Record<string, string> = {
@@ -186,6 +189,12 @@ export default function CompanyComplaintDetailPage({ params }: { params: Promise
               <p className="text-xs font-medium text-muted-foreground">Complaint Type</p>
               <p className="mt-0.5 text-sm capitalize">{c.complaintType.replace(/_/g, ' ').toLowerCase()}</p>
             </div>
+            {c.category && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Category</p>
+                <p className="mt-0.5 text-sm">{CATEGORY_LABELS[c.category] ?? c.category}</p>
+              </div>
+            )}
             <div>
               <p className="text-xs font-medium text-muted-foreground">Offer</p>
               <p className="mt-0.5 text-sm font-medium">{c.offer?.title ?? '—'}</p>

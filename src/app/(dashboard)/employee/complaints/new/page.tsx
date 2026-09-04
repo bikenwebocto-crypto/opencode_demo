@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -10,13 +10,25 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { showToast } from '@/hooks/use-toast'
 import { ArrowLeft, Loader2, Sparkles } from 'lucide-react'
 import Link from 'next/link'
-import { getPriorityForType } from '@/features/complaints/constants'
+import {
+  getPriorityForType,
+  getPriorityForCategory,
+  APPLICATION_SUPPORT_CATEGORIES,
+  PRIORITY_STYLES,
+} from '@/features/complaints/constants'
 
 interface Offer {
   id: string
   title: string
   merchant: { businessName: string }
 }
+
+const COMPLAINT_KINDS = [
+  { value: 'OFFER', label: 'Offer Complaint' },
+  { value: 'APPLICATION_SUPPORT', label: 'Application Support' },
+] as const
+
+type ComplaintKind = typeof COMPLAINT_KINDS[number]['value']
 
 const COMPLAINT_TYPES = [
   { value: 'MISLEADING', label: 'Misleading' },
@@ -25,28 +37,29 @@ const COMPLAINT_TYPES = [
   { value: 'POLICY_VIOLATION', label: 'Policy Violation' },
 ]
 
-const PRIORITIES = [
-  { value: 'LOW', label: 'Low' },
-  { value: 'MEDIUM', label: 'Medium' },
-  { value: 'HIGH', label: 'High' },
-]
-
 export default function NewComplaintPage() {
   const router = useRouter()
+  const [complaintKind, setComplaintKind] = useState<ComplaintKind>('OFFER')
   const [offerId, setOfferId] = useState('')
   const [complaintType, setComplaintType] = useState('MISLEADING')
-  const [priority, setPriority] = useState('MEDIUM')
+  const [category, setCategory] = useState('')
   const [description, setDescription] = useState('')
   const [evidenceUrls, setEvidenceUrls] = useState('')
 
-  useEffect(() => {
-    setPriority(getPriorityForType(complaintType))
-  }, [complaintType])
+  const [offerError, setOfferError] = useState(false)
+  const [categoryError, setCategoryError] = useState(false)
+  const [descriptionError, setDescriptionError] = useState(false)
 
-  const isAutoSet = priority === getPriorityForType(complaintType)
+  const offerRef = useRef<HTMLSelectElement>(null)
+  const categoryRef = useRef<HTMLSelectElement>(null)
+  const descriptionRef = useRef<HTMLTextAreaElement>(null)
+
+  const isOfferMode = complaintKind === 'OFFER'
+  const priority = isOfferMode ? getPriorityForType(complaintType) : getPriorityForCategory(category)
 
   const { data: offersData, isLoading: offersLoading } = useQuery({
     queryKey: ['employee-offers-list'],
+    enabled: isOfferMode,
     queryFn: async () => {
       const res = await fetch('/api/employee/offers?pageSize=200')
       const json = await res.json()
@@ -55,7 +68,7 @@ export default function NewComplaintPage() {
     },
   })
 
-  const createComplaint = useMutation({
+  const createOfferComplaint = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
       const res = await fetch('/api/complaints', {
         method: 'POST',
@@ -73,27 +86,67 @@ export default function NewComplaintPage() {
     onError: (e: Error) => showToast({ type: 'error', title: 'Failed', description: e.message }),
   })
 
+  const createAppSupport = useMutation({
+    mutationFn: async (body: Record<string, unknown>) => {
+      const res = await fetch('/api/complaints/application-support', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error?.message ?? 'Failed to submit')
+      return json
+    },
+    onSuccess: () => {
+      showToast({ type: 'success', title: 'Request submitted', description: 'Your application support request has been filed.' })
+      router.push('/employee/complaints')
+    },
+    onError: (e: Error) => showToast({ type: 'error', title: 'Failed', description: e.message }),
+  })
+
+  const isSubmitting = createOfferComplaint.isPending || createAppSupport.isPending
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!offerId) {
-      showToast({ type: 'error', title: 'Required', description: 'Please select an offer.' })
+
+    const missingOffer = isOfferMode && !offerId
+    const missingCategory = !isOfferMode && !category
+    const missingDescription = !description.trim()
+
+    setOfferError(missingOffer)
+    setCategoryError(missingCategory)
+    setDescriptionError(missingDescription)
+
+    if (missingOffer || missingCategory || missingDescription) {
+      const firstInvalidRef = missingOffer ? offerRef : missingCategory ? categoryRef : descriptionRef
+      firstInvalidRef.current?.focus()
+      firstInvalidRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      showToast({
+        type: 'error',
+        title: 'Required',
+        description: missingOffer
+          ? 'Please select an offer.'
+          : missingCategory
+            ? 'Please select a category.'
+            : 'Please provide a description.',
+      })
       return
     }
-    if (!description.trim()) {
-      showToast({ type: 'error', title: 'Required', description: 'Please provide a description.' })
-      return
+
+    if (isOfferMode) {
+      const urls = evidenceUrls.split(',').map((u) => u.trim()).filter(Boolean)
+      createOfferComplaint.mutate({
+        offerId,
+        complaintType,
+        description: description.trim(),
+        ...(urls.length > 0 ? { evidenceUrls: urls } : {}),
+      })
+    } else {
+      createAppSupport.mutate({
+        description: description.trim(),
+        category,
+      })
     }
-    const urls = evidenceUrls
-      .split(',')
-      .map((u) => u.trim())
-      .filter(Boolean)
-    createComplaint.mutate({
-      offerId,
-      complaintType,
-      priority,
-      description: description.trim(),
-      ...(urls.length > 0 ? { evidenceUrls: urls } : {}),
-    })
   }
 
   return (
@@ -111,98 +164,177 @@ export default function NewComplaintPage() {
           <CardTitle>File a Complaint</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Offer *</label>
-              {offersLoading ? (
-                <Skeleton className="h-9 w-full" />
-              ) : (
-                <select
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  value={offerId}
-                  onChange={(e) => setOfferId(e.target.value)}
-                  required
+          <div className="mb-6">
+            <label className="mb-2 block text-xs font-medium text-muted-foreground">Complaint Kind</label>
+            <div className="flex gap-1 rounded-lg border bg-muted p-1">
+              {COMPLAINT_KINDS.map((k) => (
+                <button
+                  key={k.value}
+                  type="button"
+                  onClick={() => {
+                    setComplaintKind(k.value)
+                    setOfferId('')
+                    setComplaintType('MISLEADING')
+                    setCategory('')
+                    setEvidenceUrls('')
+                    setOfferError(false)
+                    setCategoryError(false)
+                  }}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    complaintKind === k.value
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
                 >
-                  <option value="">Select an offer…</option>
-                  {(offersData?.data ?? []).map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.title} — {o.merchant?.businessName ?? ''}
-                    </option>
-                  ))}
-                </select>
-              )}
+                  {k.label}
+                </button>
+              ))}
             </div>
+          </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {isOfferMode && (
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Complaint Type *</label>
-                <select
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  value={complaintType}
-                  onChange={(e) => setComplaintType(e.target.value)}
-                >
-                  {COMPLAINT_TYPES.map((t) => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Priority *</label>
-                <div className="relative">
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Offer *</label>
+                {offersLoading ? (
+                  <Skeleton className="h-9 w-full" />
+                ) : (
                   <select
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    value={priority}
-                    onChange={(e) => setPriority(e.target.value)}
+                    ref={offerRef}
+                    className={`w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                      offerError ? 'border-red-500 ring-2 ring-red-500 animate-pulse' : ''
+                    }`}
+                    value={offerId}
+                    onChange={(e) => {
+                      setOfferId(e.target.value)
+                      if (offerError) setOfferError(false)
+                    }}
+                    required
                   >
-                    {PRIORITIES.map((p) => (
-                      <option key={p.value} value={p.value}>{p.label}</option>
+                    <option value="">Select an offer…</option>
+                    {(offersData?.data ?? []).map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.title} — {o.merchant?.businessName ?? ''}
+                      </option>
                     ))}
                   </select>
-                  {isAutoSet && (
-                    <span className="pointer-events-none absolute right-8 top-1/2 -translate-y-1/2" title="Auto-set based on type">
-                      <Sparkles className="h-3.5 w-3.5 text-muted-foreground/50" />
-                    </span>
-                  )}
-                </div>
-                {isAutoSet && (
-                  <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                    <Sparkles className="h-3 w-3" /> Auto-set based on complaint type
-                  </p>
+                )}
+                {offerError && (
+                  <p className="mt-1 text-xs font-medium text-red-600">An offer is required.</p>
                 )}
               </div>
-            </div>
+            )}
+
+            {isOfferMode && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Complaint Type *</label>
+                  <select
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    value={complaintType}
+                    onChange={(e) => setComplaintType(e.target.value)}
+                  >
+                    {COMPLAINT_TYPES.map((t) => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Priority</label>
+                  <div className="flex h-9 items-center gap-2 rounded-md border bg-muted/30 px-3">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_STYLES[priority]}`}>
+                      {priority}
+                    </span>
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Sparkles className="h-3 w-3" /> Auto-set based on complaint type
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {!isOfferMode && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Category *</label>
+                  <select
+                    ref={categoryRef}
+                    className={`w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                      categoryError ? 'border-red-500 ring-2 ring-red-500 animate-pulse' : ''
+                    }`}
+                    value={category}
+                    onChange={(e) => {
+                      setCategory(e.target.value)
+                      if (categoryError) setCategoryError(false)
+                    }}
+                  >
+                    <option value="">Select a category…</option>
+                    {APPLICATION_SUPPORT_CATEGORIES.map((cat) => (
+                      <option key={cat.value} value={cat.value}>{cat.label}</option>
+                    ))}
+                  </select>
+                  {categoryError && (
+                    <p className="mt-1 text-xs font-medium text-red-600">A category is required.</p>
+                  )}
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-muted-foreground">Priority</label>
+                  <div className="flex h-9 items-center gap-2 rounded-md border bg-muted/30 px-3">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_STYLES[priority]}`}>
+                      {priority}
+                    </span>
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Sparkles className="h-3 w-3" /> Auto-set based on category
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="mb-1 block text-xs font-medium text-muted-foreground">Description *</label>
               <textarea
+                ref={descriptionRef}
                 rows={5}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className={`w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  descriptionError ? 'border-red-500 ring-2 ring-red-500 animate-pulse' : ''
+                }`}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe the issue in detail..."
+                onChange={(e) => {
+                  setDescription(e.target.value)
+                  if (descriptionError) setDescriptionError(false)
+                }}
+                placeholder={isOfferMode ? 'Describe the issue in detail...' : 'Describe your application support request...'}
                 required
               />
+              {descriptionError && (
+                <p className="mt-1 text-xs font-medium text-red-600">A description is required.</p>
+              )}
             </div>
 
-            <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Evidence URLs (optional)</label>
-              <Input
-                value={evidenceUrls}
-                onChange={(e) => setEvidenceUrls(e.target.value)}
-                placeholder="https://example.com/image1.jpg, https://example.com/image2.jpg"
-              />
-              <p className="mt-1 text-xs text-muted-foreground">Comma-separated URLs to supporting evidence (screenshots, documents, etc.)</p>
-            </div>
+            {isOfferMode && (
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Evidence URLs (optional)</label>
+                <Input
+                  value={evidenceUrls}
+                  onChange={(e) => setEvidenceUrls(e.target.value)}
+                  placeholder="https://example.com/image1.jpg, https://example.com/image2.jpg"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">Comma-separated URLs to supporting evidence (screenshots, documents, etc.)</p>
+              </div>
+            )}
 
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => router.push('/employee/complaints')}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={createComplaint.isPending}>
-                {createComplaint.isPending ? (
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? (
                   <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Submitting…</>
-                ) : (
+                ) : isOfferMode ? (
                   'Submit Complaint'
+                ) : (
+                  'Submit Request'
                 )}
               </Button>
             </div>

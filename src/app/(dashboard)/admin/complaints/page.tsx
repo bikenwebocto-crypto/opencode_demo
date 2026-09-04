@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/shared/page-header'
 import { FilterBar } from '@/components/shared/filter-bar'
 import { useTablePagination } from '@/hooks/use-table-pagination'
 import { Search, AlertTriangle, RefreshCw } from 'lucide-react'
+import { PRIORITY_STYLES } from '@/features/complaints/constants'
 
 interface Complaint {
   id: string
@@ -37,12 +38,6 @@ const STATUS_STYLES: Record<string, string> = {
   ESCALATED: 'bg-orange-100 text-orange-800',
   RESOLVED: 'bg-green-100 text-green-800',
   REJECTED: 'bg-red-100 text-red-800',
-}
-
-const PRIORITY_STYLES: Record<string, string> = {
-  HIGH: 'bg-red-100 text-red-800',
-  MEDIUM: 'bg-yellow-100 text-yellow-800',
-  LOW: 'bg-gray-100 text-gray-800',
 }
 
 export default function AdminComplaintsPage() {

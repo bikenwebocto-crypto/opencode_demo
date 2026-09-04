@@ -2,16 +2,19 @@
 
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import Link from 'next/link'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/page-header'
 import { useTablePagination } from '@/hooks/use-table-pagination'
-import { AlertTriangle } from 'lucide-react'
+import { Plus, AlertTriangle } from 'lucide-react'
+import { PRIORITY_STYLES } from '@/features/complaints/constants'
 
 interface Complaint {
   id: string
   complaintType: string
+  category: string | null
   status: string
   priority: string
   createdAt: string
@@ -45,10 +48,11 @@ const STATUS_STYLES: Record<string, string> = {
   REJECTED: 'bg-red-100 text-red-800',
 }
 
-const PRIORITY_STYLES: Record<string, string> = {
-  HIGH: 'bg-red-100 text-red-800',
-  MEDIUM: 'bg-yellow-100 text-yellow-800',
-  LOW: 'bg-gray-100 text-gray-800',
+const CATEGORY_LABELS: Record<string, string> = {
+  BILLING: 'Billing',
+  TECHNICAL: 'Technical',
+  ACCOUNT: 'Account',
+  OTHER: 'Other',
 }
 
 export default function CompanyComplaintsPage() {
@@ -81,6 +85,13 @@ export default function CompanyComplaintsPage() {
       <PageHeader
         title="Complaints"
         description="Complaints filed by employees of your company"
+        actions={
+          <Link href="/company/complaints/new">
+            <Button>
+              <Plus className="mr-1 h-4 w-4" /> File Application Support
+            </Button>
+          </Link>
+        }
       />
 
       <div className="flex items-center gap-2">
@@ -119,6 +130,7 @@ export default function CompanyComplaintsPage() {
                   <th className="px-4 py-3">Offer</th>
                   <th className="px-4 py-3">Merchant</th>
                   <th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Category</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Priority</th>
                   <th className="px-4 py-3">Date</th>
@@ -135,6 +147,7 @@ export default function CompanyComplaintsPage() {
                     <td className="px-4 py-3">{c.offer?.title ?? '—'}</td>
                     <td className="px-4 py-3 text-muted-foreground">{c.merchant?.businessName ?? '—'}</td>
                     <td className="px-4 py-3 capitalize">{c.complaintType?.replace(/_/g, ' ').toLowerCase()}</td>
+                    <td className="px-4 py-3 capitalize">{c.category ? (CATEGORY_LABELS[c.category] ?? c.category) : '—'}</td>
                     <td className="px-4 py-3">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[c.status] ?? ''}`}>
                         {c.status.replace(/_/g, ' ')}

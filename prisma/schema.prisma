@@ -1225,11 +1225,12 @@ enum BranchStatus {
 
 model Complaint {
   id              String            @id @default(uuid()) @db.Uuid
-  offerId         String            @db.Uuid
-  employeeId      String            @db.Uuid
-  merchantId      String            @db.Uuid
-  companyId       String            @db.Uuid
+  offerId         String?            @db.Uuid
+  employeeId      String?            @db.Uuid
+  merchantId      String?            @db.Uuid
+  companyId       String?            @db.Uuid
   complaintType   ComplaintType
+  category        String?           @db.VarChar(50)
   description     String
   evidenceUrls    Json?
   status          ComplaintStatus   @default(OPEN)
@@ -1240,10 +1241,10 @@ model Complaint {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
-  offer       MerchantOffer         @relation(fields: [offerId], references: [id])
-  employee    Employee              @relation(fields: [employeeId], references: [id])
-  merchant    Merchant              @relation(fields: [merchantId], references: [id])
-  company     Company               @relation(fields: [companyId], references: [id])
+  offer       MerchantOffer?         @relation(fields: [offerId], references: [id])
+  employee    Employee?              @relation(fields: [employeeId], references: [id])
+  merchant    Merchant?              @relation(fields: [merchantId], references: [id])
+  company     Company?               @relation(fields: [companyId], references: [id])
   escalations ComplaintEscalation[]
   actions     ComplaintAction[]
 
@@ -1255,6 +1256,7 @@ model Complaint {
   @@index([companyId, status])
   @@map("complaints")
 }
+
 
 model ComplaintEscalation {
   id             String    @id @default(uuid()) @db.Uuid
@@ -1389,6 +1391,7 @@ enum ComplaintType {
   INVALID_TERMS
   NON_FUNCTIONAL
   POLICY_VIOLATION
+  APPLICATION_SUPPORT
 }
 
 enum ComplaintStatus {
