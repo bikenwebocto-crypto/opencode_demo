@@ -55,13 +55,17 @@ export async function GET(request: NextRequest) {
 
     if (!banner) return notFound('No active banner slot for this position')
 
+    // Only bookings with a real slotNumber matter here — legacy rows
+    // created before this column existed will have slotNumber: null and
+    // are intentionally excluded from availability display.
     const activeBookings = await prisma.bannerBooking.findMany({
       where: {
         bannerId: banner.id,
         status: { in: ['PENDING', 'APPROVED'] },
         endDate: { gte: now },
+        slotNumber: { not: null },
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { startDate: 'asc' },
       include: {
         merchant: { select: { businessName: true } },
         content: { select: { imageUrl: true, altText: true, redirectUrl: true } },
@@ -69,19 +73,36 @@ export async function GET(request: NextRequest) {
     })
 
     const slots = Array.from({ length: banner.slotCount }, (_, i) => {
-      const booking = activeBookings[i]
-      if (!booking) {
-        return { slotNumber: i + 1, status: 'AVAILABLE' as const }
+      const slotNumber = i + 1
+      const slotBookings = activeBookings.filter((b) => b.slotNumber === slotNumber)
+
+      // "Occupied today" = a booking on this slot covering the current
+      // moment, for the card's cosmetic status label only.
+      const currentBooking = slotBookings.find(
+        (b) => b.startDate <= now && b.endDate >= now,
+      )
+
+      const mappedBookings = slotBookings.map((b) => ({
+        startDate: b.startDate,
+        endDate: b.endDate,
+        status: b.status as 'PENDING' | 'APPROVED',
+        isOwnBooking: b.merchantId === merchant.id,
+      }))
+
+      if (!currentBooking) {
+        return { slotNumber, status: 'AVAILABLE' as const, bookings: mappedBookings }
       }
+
       return {
-        slotNumber: i + 1,
-        status: booking.status as 'PENDING' | 'APPROVED',
-        bookingId: booking.id,
-        startDate: booking.startDate,
-        bookedUntil: booking.endDate,
-        merchantName: booking.merchant.businessName,
-        isOwnBooking: booking.merchantId === merchant.id,
-        content: booking.content,
+        slotNumber,
+        status: currentBooking.status as 'PENDING' | 'APPROVED',
+        bookingId: currentBooking.id,
+        startDate: currentBooking.startDate,
+        bookedUntil: currentBooking.endDate,
+        merchantName: currentBooking.merchant.businessName,
+        isOwnBooking: currentBooking.merchantId === merchant.id,
+        content: currentBooking.content,
+        bookings: mappedBookings,
       }
     })
 
@@ -94,7 +115,7 @@ export async function GET(request: NextRequest) {
         minDays: banner.minDays,
         maxDays: banner.maxDays,
         slotCount: banner.slotCount,
-        availableCount: banner.slotCount - activeBookings.length,
+        availableCount: slots.filter((s) => s.status === 'AVAILABLE').length,
         slots,
       },
     })

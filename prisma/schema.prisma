@@ -1350,6 +1350,7 @@ model BannerBooking {
   id             String        @id @default(uuid()) @db.Uuid
   bannerId       String        @db.Uuid
   merchantId     String        @db.Uuid
+  slotNumber     Int?          // NEW — persisted, 1..banner.slotCount, null on legacy rows
   startDate      DateTime      @db.Date
   endDate        DateTime      @db.Date
   totalPrice     Decimal       @default(0) @db.Decimal(12, 2)
@@ -1369,6 +1370,7 @@ model BannerBooking {
   @@index([merchantId])
   @@index([status])
   @@index([status, paid, startDate, endDate])
+  @@index([bannerId, slotNumber, startDate, endDate])  // NEW
   @@map("banner_bookings")
 }
 
