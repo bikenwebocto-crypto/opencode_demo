@@ -9,8 +9,24 @@ import { LoadingButton } from "@/components/ui/loading-button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/shared/page-header";
 import { showToast } from "@/hooks/use-toast";
-import { Plus, X, Check, Ban, ToggleLeft, ToggleRight } from "lucide-react";
-
+import {
+  Plus,
+  X,
+  Check,
+  Ban,
+  ToggleLeft,
+  ToggleRight,
+  Trash2,
+  ImageOff,
+} from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 interface Banner {
   id: string;
   name: string;
@@ -36,6 +52,7 @@ interface Booking {
   totalPrice: number;
   status: string;
   paid: boolean;
+  slotNumber: number | null;
   rejectedReason: string | null;
   createdAt: string;
   banner: { id: string; name: string; position: string };
@@ -109,8 +126,13 @@ export default function AdminBannersPage() {
 
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState({
-  position: 'TOP', slotCount: '5', pricePerDay: '', minDays: '7', maxDays: '30', expiresAt: '',
-})
+    position: "TOP",
+    slotCount: "5",
+    pricePerDay: "",
+    minDays: "7",
+    maxDays: "30",
+    expiresAt: "",
+  });
 
   const [editBanner, setEditBanner] = useState<Banner | null>(null);
   const [editForm, setEditForm] = useState({
@@ -122,6 +144,8 @@ export default function AdminBannersPage() {
     maxDays: "",
     expiresAt: "",
   });
+  const [deleteBooking, setDeleteBooking] = useState<Booking | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
 
   const [reviewBooking, setReviewBooking] = useState<Booking | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -244,19 +268,38 @@ export default function AdminBannersPage() {
       showToast({ type: "error", title: "Failed", description: e?.message }),
   });
 
- 
+  const deleteMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      const res = await fetch(`/api/admin/banners/bookings/${id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error?.message ?? "Failed to delete");
+      return json;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-banner-bookings"] });
+      setDeleteBooking(null);
+      setDeleteReason("");
+      showToast({ type: "success", title: "Booking deleted" });
+    },
+    onError: (e: any) =>
+      showToast({ type: "error", title: "Failed", description: e?.message }),
+  });
 
-function handleCreate(e: React.FormEvent) {
-  e.preventDefault()
-  createMutation.mutate({
-    position: createForm.position,
-    slotCount: parseInt(createForm.slotCount) || 1,
-    pricePerDay: parseFloat(createForm.pricePerDay),
-    minDays: parseInt(createForm.minDays),
-    maxDays: parseInt(createForm.maxDays),
-    expiresAt: createForm.expiresAt || undefined,
-  })
-}
+  function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    createMutation.mutate({
+      position: createForm.position,
+      slotCount: parseInt(createForm.slotCount) || 1,
+      pricePerDay: parseFloat(createForm.pricePerDay),
+      minDays: parseInt(createForm.minDays),
+      maxDays: parseInt(createForm.maxDays),
+      expiresAt: createForm.expiresAt || undefined,
+    });
+  }
 
   function handleEdit(e: React.FormEvent) {
     e.preventDefault();
@@ -300,7 +343,13 @@ function handleCreate(e: React.FormEvent) {
       rejectedReason: rejectReason || undefined,
     });
   }
-
+  function handleDelete() {
+    if (!deleteBooking || !deleteReason.trim()) return;
+    deleteMutation.mutate({
+      id: deleteBooking.id,
+      reason: deleteReason.trim(),
+    });
+  }
   const banners = bannersData?.data ?? [];
   const bannersMeta = bannersData?.meta;
   const bookings = bookingsData?.data ?? [];
@@ -833,73 +882,163 @@ function handleCreate(e: React.FormEvent) {
                 No bookings found.
               </p>
             ) : (
-              <div className="space-y-2">
-                {bookings.map((b: Booking) => (
-                  <div key={b.id} className="rounded-md border p-3 text-sm">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">
-                          {b.banner.name}{" "}
-                          <span className="text-xs text-muted-foreground">
-                            (
-                            {POSITION_LABELS[b.banner.position] ??
-                              b.banner.position}
-                            )
-                          </span>
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {b.merchant.businessName}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {statusBadge(b.status)}
-                        {derivedBadges(b)}
-                        <span className="font-semibold">
-                          €{Number(b.totalPrice).toFixed(2)}
-                        </span>
+              <div className="space-y-6">
+                {(["TOP", "BOTTOM"] as const).map((pos) => {
+                  const group = bookings.filter(
+                    (b: Booking) => b.banner.position === pos,
+                  );
+                  if (group.length === 0) return null;
+
+                  // Group by slotNumber (the actual per-slot identifier), not banner.id —
+                  // banner.id/name is shared across ALL slots in a position ("BOTTOM Slots"),
+                  // so grouping by it would merge unrelated slots together.
+                  const bySlot = new Map<string, Booking[]>();
+                  for (const b of group) {
+                    const key =
+                      b.slotNumber != null
+                        ? String(b.slotNumber)
+                        : "unassigned";
+                    const existing = bySlot.get(key);
+                    if (existing) existing.push(b);
+                    else bySlot.set(key, [b]);
+                  }
+
+                  // Sort numerically by slot number, "unassigned" last.
+                  const sortedEntries = Array.from(bySlot.entries()).sort(
+                    (a, b) => {
+                      if (a[0] === "unassigned") return 1;
+                      if (b[0] === "unassigned") return -1;
+                      return Number(a[0]) - Number(b[0]);
+                    },
+                  );
+
+                  return (
+                    <div key={pos}>
+                      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {POSITION_LABELS[pos]} Position
+                      </h3>
+
+                      <div className="space-y-5">
+                        {sortedEntries.map(([slotKey, slotBookings]) => (
+                          <div key={slotKey}>
+                            <div className="mb-2 flex items-center gap-2">
+                              <span className="text-sm font-medium">
+                                {slotKey === "unassigned"
+                                  ? "Unassigned Slot"
+                                  : `Slot ${slotKey}`}
+                              </span>
+                              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                                {slotBookings.length} booking
+                                {slotBookings.length === 1 ? "" : "s"}
+                              </span>
+                            </div>
+
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                              {slotBookings.map((b: Booking) => (
+                                <div
+                                  key={b.id}
+                                  className="overflow-hidden rounded-lg border"
+                                >
+                                  {b.content?.imageUrl ? (
+                                    <img
+                                      src={b.content.imageUrl}
+                                      alt={b.content.altText ?? ""}
+                                      className="h-32 w-full cursor-pointer object-cover transition-opacity hover:opacity-80"
+                                      onClick={() =>
+                                        setPreviewUrl(b.content!.imageUrl)
+                                      }
+                                    />
+                                  ) : (
+                                    <div className="flex h-32 w-full items-center justify-center bg-muted">
+                                      <ImageOff className="h-6 w-6 text-muted-foreground" />
+                                    </div>
+                                  )}
+
+                                  <div className="space-y-2 p-3 text-sm">
+                                    <div className="flex items-start justify-between gap-2">
+                                      <div className="min-w-0">
+                                        <p className="truncate font-medium">
+                                          {b.banner.name}
+                                        </p>
+                                        <p className="truncate text-xs text-muted-foreground">
+                                          {b.merchant.businessName}
+                                        </p>
+                                      </div>
+                                      <span className="shrink-0 font-semibold">
+                                        €{Number(b.totalPrice).toFixed(2)}
+                                      </span>
+                                    </div>
+
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      {statusBadge(b.status)}
+                                      {derivedBadges(b)}
+                                    </div>
+
+                                    <p className="text-xs text-muted-foreground">
+                                      {new Date(
+                                        b.startDate,
+                                      ).toLocaleDateString()}{" "}
+                                      —{" "}
+                                      {new Date(b.endDate).toLocaleDateString()}
+                                    </p>
+
+                                    {b.rejectedReason && (
+                                      <p className="text-xs text-red-600">
+                                        Reason: {b.rejectedReason}
+                                      </p>
+                                    )}
+
+                                    {b.status === "PENDING" && (
+                                      <div className="flex gap-2 pt-1">
+                                        <LoadingButton
+                                          size="sm"
+                                          loading={reviewMutation.isPending}
+                                          onClick={() => handleApprove(b)}
+                                        >
+                                          <Check className="mr-1 h-3 w-3" />{" "}
+                                          Approve
+                                        </LoadingButton>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="text-destructive border-destructive/50"
+                                          onClick={() => {
+                                            setReviewBooking(b);
+                                            setRejectReason("");
+                                          }}
+                                        >
+                                          <Ban className="mr-1 h-3 w-3" />{" "}
+                                          Reject
+                                        </Button>
+                                      </div>
+                                    )}
+
+                                    {b.status === "APPROVED" && (
+                                      <div className="pt-1">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          className="text-destructive border-destructive/50"
+                                          onClick={() => {
+                                            setDeleteBooking(b);
+                                            setDeleteReason("");
+                                          }}
+                                        >
+                                          <Trash2 className="mr-1 h-3 w-3" />{" "}
+                                          Delete
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
-                      {new Date(b.startDate).toLocaleDateString()} -{" "}
-                      {new Date(b.endDate).toLocaleDateString()}
-                    </div>
-                    {b.content?.imageUrl && (
-                      <img
-                        src={b.content.imageUrl}
-                        alt={b.content.altText ?? ""}
-                        className="mt-2 h-20 w-full cursor-pointer rounded object-cover transition-opacity hover:opacity-80"
-                        onClick={() => setPreviewUrl(b.content!.imageUrl)}
-                      />
-                    )}
-                    {b.status === "PENDING" && (
-                      <div className="mt-2 flex gap-2">
-                        <LoadingButton
-                          size="sm"
-                          loading={reviewMutation.isPending}
-                          onClick={() => handleApprove(b)}
-                        >
-                          <Check className="mr-1 h-3 w-3" /> Approve
-                        </LoadingButton>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-destructive border-destructive/50"
-                          onClick={() => {
-                            setReviewBooking(b);
-                            setRejectReason("");
-                          }}
-                        >
-                          <Ban className="mr-1 h-3 w-3" /> Reject
-                        </Button>
-                      </div>
-                    )}
-                    {b.rejectedReason && (
-                      <p className="mt-1 text-xs text-red-600">
-                        Reason: {b.rejectedReason}
-                      </p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -1008,6 +1147,57 @@ function handleCreate(e: React.FormEvent) {
           </div>
         </div>
       )}
+
+      <Dialog
+        open={!!deleteBooking}
+        onOpenChange={(open) => !open && setDeleteBooking(null)}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Banner Booking</DialogTitle>
+            <DialogDescription>
+              This permanently deletes the booking for{" "}
+              <strong>{deleteBooking?.banner.name}</strong> by{" "}
+              {deleteBooking?.merchant.businessName}. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                Reason for deletion *
+              </label>
+              <textarea
+                rows={3}
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="Required — recorded in the audit log"
+                disabled={deleteMutation.isPending}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteBooking(null)}
+              disabled={deleteMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <LoadingButton
+              variant="destructive"
+              onClick={handleDelete}
+              loading={deleteMutation.isPending}
+              loadingText="Deleting…"
+              disabled={!deleteReason.trim()}
+            >
+              Delete Booking
+            </LoadingButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
