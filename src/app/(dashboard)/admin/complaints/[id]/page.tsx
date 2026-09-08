@@ -122,7 +122,10 @@ export default function AdminComplaintDetailPage({
     if (!resolutionNotes.trim()) {
       setResolutionError(true);
       resolutionRef.current?.focus();
-      resolutionRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      resolutionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
       showToast({
         type: "error",
         title: "Required",
@@ -142,7 +145,10 @@ export default function AdminComplaintDetailPage({
     if (!rejectReason.trim()) {
       setRejectError(true);
       rejectRef.current?.focus();
-      rejectRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      rejectRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
       showToast({
         type: "error",
         title: "Required",
@@ -182,6 +188,7 @@ export default function AdminComplaintDetailPage({
   }
 
   const c = data.data;
+  const isUnderReview = c.status === "UNDER_REVIEW";
   const isTerminal = c.status === "RESOLVED" || c.status === "REJECTED";
 
   return (
@@ -319,7 +326,7 @@ export default function AdminComplaintDetailPage({
         </CardContent>
       </Card>
 
-      {!isTerminal && (
+      {isUnderReview && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Admin Actions</CardTitle>
@@ -346,7 +353,9 @@ export default function AdminComplaintDetailPage({
               />
               <p
                 className={`mt-1 text-xs ${
-                  resolutionError ? "font-medium text-red-600" : "text-muted-foreground"
+                  resolutionError
+                    ? "font-medium text-red-600"
+                    : "text-muted-foreground"
                 }`}
               >
                 {resolutionError
@@ -376,7 +385,9 @@ export default function AdminComplaintDetailPage({
               />
               <p
                 className={`mt-1 text-xs ${
-                  rejectError ? "font-medium text-red-600" : "text-muted-foreground"
+                  rejectError
+                    ? "font-medium text-red-600"
+                    : "text-muted-foreground"
                 }`}
               >
                 {rejectError
@@ -411,6 +422,16 @@ export default function AdminComplaintDetailPage({
                 Resolve
               </Button>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {c.status === "CLARIFICATION_REQ" && (
+        <Card className="border-muted-foreground/20 bg-muted/20">
+          <CardContent className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+            <Clock className="h-4 w-4" />
+            Waiting on the employee to respond. This complaint returns to Under
+            Review once they reply.
           </CardContent>
         </Card>
       )}
