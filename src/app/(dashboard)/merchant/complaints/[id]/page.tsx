@@ -7,8 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { showToast } from '@/hooks/use-toast'
-import { ArrowLeft, FileText, Loader2, Link2, Clock, XCircle, MessageSquare } from 'lucide-react'
+import { ArrowLeft, FileText, Loader2, Clock, XCircle, MessageSquare } from 'lucide-react'
 import { PRIORITY_STYLES } from '@/features/complaints/constants'
+import { TicketAttachmentsButton } from '@/components/ui/ticket-attachments-button'
+import { TicketStatusStepper } from '@/components/ui/ticket-status-stepper'
 
 interface ComplaintAction {
   id: string
@@ -151,6 +153,8 @@ export default function MerchantComplaintDetailPage({ params }: { params: Promis
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <TicketStatusStepper status={c.status} />
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <p className="text-xs font-medium text-muted-foreground">Employee</p>
@@ -185,18 +189,7 @@ export default function MerchantComplaintDetailPage({ params }: { params: Promis
             <p className="mt-1 whitespace-pre-wrap rounded-lg bg-muted/30 p-3 text-sm">{c.description}</p>
           </div>
 
-          {c.evidenceUrls && c.evidenceUrls.length > 0 && (
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Evidence</p>
-              <div className="mt-1 space-y-1">
-                {c.evidenceUrls.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm text-primary hover:underline">
-                    <Link2 className="h-3 w-3" /> {url}
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
+          <TicketAttachmentsButton urls={c.evidenceUrls} />
 
           {c.escalationNote && (
             <div className="rounded-lg border border-orange-200 bg-orange-50 p-3">

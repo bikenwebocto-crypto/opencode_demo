@@ -13,6 +13,7 @@ import { getCurrentUser } from "@/lib/supabase/server";
 import { createPerfTimer } from "@/lib/perf";
 import { BUSINESS_NOTIFICATION_TEMPLATES, channels, publishBusinessToAdmins } from '@/services/business-notification.service';
 import { getPriorityForType } from '@/features/complaints/constants';
+import { sanitizeEvidenceUrls } from '@/features/complaints/evidence';
 
 const VALID_TYPES = [
   "MISLEADING",
@@ -28,7 +29,8 @@ export async function POST(request: NextRequest) {
     if ("inactive" in employee) return companyInactive(employee.companyStatus);
 
     const body = await request.json();
-    const { offerId, complaintType, description, evidenceUrls } = body;
+    const { offerId, complaintType, description } = body;
+    const evidenceUrls = sanitizeEvidenceUrls(body.evidenceUrls);
 
     if (!offerId || !complaintType || !description) {
       return badRequest(
@@ -63,7 +65,7 @@ export async function POST(request: NextRequest) {
           companyId: employee.companyId,
           complaintType,
           description,
-          evidenceUrls: evidenceUrls ?? null,
+          ...(evidenceUrls.length > 0 ? { evidenceUrls } : {}),
           priority,
         },
       });

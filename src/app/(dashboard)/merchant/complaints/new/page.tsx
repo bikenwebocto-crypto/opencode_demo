@@ -4,6 +4,10 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { EvidenceUpload } from '@/components/ui/evidence-upload'
+import type { DeferredFile } from '@/components/shared/ImageUploader'
+import { uploadDeferredImage } from '@/components/ui/image-upload'
+import { TICKET_EVIDENCE_OPTIONS } from '@/lib/upload/image'
 import { showToast } from '@/hooks/use-toast'
 import { Loader2 } from 'lucide-react'
 import {
@@ -25,6 +29,8 @@ export default function NewMerchantComplaintPage() {
 
   const [category, setCategory] = useState('TECHNICAL')
   const [description, setDescription] = useState('')
+  const [evidenceFiles, setEvidenceFiles] = useState<DeferredFile[]>([])
+  const [uploadingEvidence, setUploadingEvidence] = useState(false)
 
   // Priority is automatically determined by the selected category.
   const priority = getPriorityForCategory(category)
@@ -69,7 +75,7 @@ export default function NewMerchantComplaintPage() {
     },
   })
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!description.trim()) {
       showToast({
         type: 'error',
@@ -79,9 +85,30 @@ export default function NewMerchantComplaintPage() {
       return
     }
 
+    let urls: string[] = []
+    if (evidenceFiles.length > 0) {
+      setUploadingEvidence(true)
+      try {
+        for (const deferred of evidenceFiles) {
+          const url = await uploadDeferredImage(deferred, TICKET_EVIDENCE_OPTIONS)
+          if (url) urls.push(url)
+        }
+      } catch (uploadErr) {
+        setUploadingEvidence(false)
+        showToast({
+          type: 'error',
+          title: 'Upload failed',
+          description: uploadErr instanceof Error ? uploadErr.message : 'Could not upload evidence images.',
+        })
+        return
+      }
+      setUploadingEvidence(false)
+    }
+
     createAppSupport.mutate({
       category,
       description: description.trim(),
+      ...(urls.length > 0 ? { evidenceUrls: urls } : {}),
     })
   }
 
@@ -156,10 +183,19 @@ export default function NewMerchantComplaintPage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Describe your issue..."
-                disabled={createAppSupport.isPending}
+                disabled={createAppSupport.isPending || uploadingEvidence}
                 required
               />
             </div>
+
+            {/* Evidence */}
+            <EvidenceUpload
+              files={evidenceFiles}
+              onChange={setEvidenceFiles}
+              disabled={createAppSupport.isPending || uploadingEvidence}
+              label="Evidence Screenshots (optional)"
+              helperText="Screenshots are uploaded to S3 when you submit. Max 5."
+            />
 
           </div>
 
@@ -170,7 +206,7 @@ export default function NewMerchantComplaintPage() {
               onClick={() =>
                 router.push('/merchant/complaints')
               }
-              disabled={createAppSupport.isPending}
+              disabled={createAppSupport.isPending || uploadingEvidence}
             >
               Cancel
             </Button>
@@ -180,13 +216,14 @@ export default function NewMerchantComplaintPage() {
               onClick={handleSubmit}
               disabled={
                 createAppSupport.isPending ||
+                uploadingEvidence ||
                 !description.trim()
               }
             >
-              {createAppSupport.isPending ? (
+              {uploadingEvidence || createAppSupport.isPending ? (
                 <>
                   <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                  Submitting…
+                  {uploadingEvidence ? 'Uploading…' : 'Submitting…'}
                 </>
               ) : (
                 'Submit Ticket'

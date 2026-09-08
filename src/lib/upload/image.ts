@@ -163,3 +163,12 @@ export const EMPLOYEE_AVATAR_OPTIONS: UploadImageOptions = {
   bucket: 'offer-images',
   folder: 'employee-avatars',
 }
+
+// ---------------------------------------------------------------------------
+// Preset: Ticket/Complaint Evidence (employee complaint screenshots)
+// ---------------------------------------------------------------------------
+
+export const TICKET_EVIDENCE_OPTIONS: UploadImageOptions = {
+  bucket: 'offer-images',
+  folder: 'tickets',
+}

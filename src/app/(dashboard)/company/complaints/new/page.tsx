@@ -4,6 +4,10 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { EvidenceUpload } from '@/components/ui/evidence-upload'
+import type { DeferredFile } from '@/components/shared/ImageUploader'
+import { uploadDeferredImage } from '@/components/ui/image-upload'
+import { TICKET_EVIDENCE_OPTIONS } from '@/lib/upload/image'
 import { showToast } from '@/hooks/use-toast'
 import { Loader2 } from 'lucide-react'
 import {
@@ -24,6 +28,8 @@ export default function NewCompanyComplaintPage() {
   const router = useRouter()
   const [category, setCategory] = useState('TECHNICAL')
   const [description, setDescription] = useState('')
+  const [evidenceFiles, setEvidenceFiles] = useState<DeferredFile[]>([])
+  const [uploadingEvidence, setUploadingEvidence] = useState(false)
 
   const priority = getPriorityForCategory(category)
 
@@ -45,14 +51,36 @@ export default function NewCompanyComplaintPage() {
     onError: (e: Error) => showToast({ type: 'error', title: 'Failed', description: e.message }),
   })
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!description.trim()) {
       showToast({ type: 'error', title: 'Required', description: 'Please describe your issue.' })
       return
     }
+
+    let urls: string[] = []
+    if (evidenceFiles.length > 0) {
+      setUploadingEvidence(true)
+      try {
+        for (const deferred of evidenceFiles) {
+          const url = await uploadDeferredImage(deferred, TICKET_EVIDENCE_OPTIONS)
+          if (url) urls.push(url)
+        }
+      } catch (uploadErr) {
+        setUploadingEvidence(false)
+        showToast({
+          type: 'error',
+          title: 'Upload failed',
+          description: uploadErr instanceof Error ? uploadErr.message : 'Could not upload evidence images.',
+        })
+        return
+      }
+      setUploadingEvidence(false)
+    }
+
     createAppSupport.mutate({
       category,
       description: description.trim(),
+      ...(urls.length > 0 ? { evidenceUrls: urls } : {}),
     })
   }
 
@@ -102,10 +130,18 @@ export default function NewCompanyComplaintPage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Describe your issue..."
-                disabled={createAppSupport.isPending}
+                disabled={createAppSupport.isPending || uploadingEvidence}
                 required
               />
             </div>
+
+            <EvidenceUpload
+              files={evidenceFiles}
+              onChange={setEvidenceFiles}
+              disabled={createAppSupport.isPending || uploadingEvidence}
+              label="Evidence Screenshots (optional)"
+              helperText="Screenshots are uploaded to S3 when you submit. Max 5."
+            />
           </div>
 
           <DialogFooter>
@@ -113,17 +149,17 @@ export default function NewCompanyComplaintPage() {
               type="button"
               variant="outline"
               onClick={() => router.push('/company/complaints')}
-              disabled={createAppSupport.isPending}
+              disabled={createAppSupport.isPending || uploadingEvidence}
             >
               Cancel
             </Button>
             <Button
               type="button"
               onClick={handleSubmit}
-              disabled={createAppSupport.isPending}
+              disabled={createAppSupport.isPending || uploadingEvidence}
             >
-              {createAppSupport.isPending ? (
-                <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Submitting…</>
+              {uploadingEvidence || createAppSupport.isPending ? (
+                <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> {uploadingEvidence ? 'Uploading…' : 'Submitting…'}</>
               ) : (
                 'Submit Ticket'
               )}

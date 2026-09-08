@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/supabase/server'
 import { createAuditLog, fromCurrentUser } from '@/services/audit-log.service'
 import { BUSINESS_NOTIFICATION_TEMPLATES, publishBusinessToAdmins, channels } from '@/services/business-notification.service'
 import { getPriorityForCategory } from '@/features/complaints/constants'
+import { sanitizeEvidenceUrls } from '@/features/complaints/evidence'
 
 function unauthorized() {
   return NextResponse.json(
@@ -39,6 +40,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const { description, category } = body
+    const evidenceUrls = sanitizeEvidenceUrls(body.evidenceUrls)
     if (!description) return badRequest('description is required')
 
     const validCategory = category && VALID_CATEGORIES.includes(category)
@@ -87,6 +89,7 @@ export async function POST(request: NextRequest) {
           complaintType: 'APPLICATION_SUPPORT',
           category: validCategory,
           description,
+          ...(evidenceUrls.length > 0 ? { evidenceUrls } : {}),
           priority: priority as 'LOW' | 'MEDIUM' | 'HIGH',
           status: 'OPEN',
         } as any,
