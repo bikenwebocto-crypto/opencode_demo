@@ -44,6 +44,7 @@ interface ComplaintDetail {
   employee: { id: string; firstName: string; lastName: string };
   company: { id: string; name: string };
   actions: ComplaintAction[];
+  escalations?: { status: string }[];
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -188,7 +189,7 @@ export default function AdminComplaintDetailPage({
   }
 
   const c = data.data;
-  const isUnderReview = c.status === "UNDER_REVIEW";
+  const canResolve = c.status === "UNDER_REVIEW" || c.status === "ESCALATED";
   const isTerminal = c.status === "RESOLVED" || c.status === "REJECTED";
 
   return (
@@ -326,7 +327,7 @@ export default function AdminComplaintDetailPage({
         </CardContent>
       </Card>
 
-      {isUnderReview && (
+      {canResolve && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Admin Actions</CardTitle>
@@ -395,6 +396,13 @@ export default function AdminComplaintDetailPage({
                   : "Used when marking this complaint as Rejected."}
               </p>
             </div>
+
+            {canResolve && c.escalations?.some((e) => e.status === "PENDING") && (
+              <p className="text-xs text-muted-foreground">
+                This complaint was escalated by a company admin. Resolving or
+                rejecting it will notify them of the outcome.
+              </p>
+            )}
 
             <div className="flex justify-end gap-2">
               <Button

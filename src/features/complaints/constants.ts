@@ -1,11 +1,13 @@
-export const COMPLAINT_TYPE_PRIORITY_MAP: Record<string, string> = {
+import type { ComplaintPriority } from '@prisma/client'
+
+export const COMPLAINT_TYPE_PRIORITY_MAP: Record<string, ComplaintPriority> = {
   MISLEADING: 'HIGH',
   POLICY_VIOLATION: 'HIGH',
   INVALID_TERMS: 'MEDIUM',
   NON_FUNCTIONAL: 'MEDIUM',
 }
 
-export function getPriorityForType(complaintType: string): string {
+export function getPriorityForType(complaintType: string): ComplaintPriority {
   return COMPLAINT_TYPE_PRIORITY_MAP[complaintType] ?? 'MEDIUM'
 }
 

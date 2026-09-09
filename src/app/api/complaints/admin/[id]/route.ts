@@ -97,7 +97,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return internalError(error);
   }
 }
-
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -116,13 +115,21 @@ export async function PATCH(
 
     const complaint = await prisma.complaint.findUnique({ where: { id } });
     if (!complaint) return notFound("Complaint");
-    
-    if (complaint.status !== "UNDER_REVIEW") {
+
+    if (complaint.status !== "UNDER_REVIEW" && complaint.status !== "ESCALATED") {
       return badRequest(
         `Cannot ${status.toLowerCase()} a complaint from status ${complaint.status}. ` +
-          `Only complaints in UNDER_REVIEW can be resolved or rejected.`,
+          `Only complaints in UNDER_REVIEW or ESCALATED can be resolved or rejected.`,
       );
     }
+
+    // Capture which company admin(s), if any, escalated this ticket —
+    // needed to notify them after resolution. Read before the escalations
+    // get closed out below, since updateMany doesn't return affected rows.
+    const pendingEscalations = await prisma.complaintEscalation.findMany({
+      where: { complaintId: id, status: "PENDING" },
+      select: { companyAdminId: true },
+    });
 
     const result = await prisma.$transaction(async (tx) => {
       const updated = await tx.complaint.update({
@@ -135,11 +142,13 @@ export async function PATCH(
         },
       });
 
-      if (status === "RESOLVED") {
+      // Close out pending escalations on EITHER outcome, not just RESOLVED —
+      // a rejected complaint's escalation shouldn't stay PENDING forever.
+      if (pendingEscalations.length > 0) {
         await tx.complaintEscalation.updateMany({
           where: { complaintId: id, status: "PENDING" },
           data: {
-            status: "RESOLVED",
+            status: status === "RESOLVED" ? "RESOLVED" : "REJECTED",
             superAdminId: user.profileId ?? user.id,
             resolvedAt: new Date(),
           },
@@ -180,6 +189,33 @@ export async function PATCH(
             : "Your complaint was reviewed and closed.",
         priority: "NORMAL",
         recipients: [{ role: "employee", id: result.employeeId }],
+        channels: channels("IN_APP", "PUSH"),
+        referenceType: "complaint",
+        referenceId: result.id,
+        metadata: { status, resolutionNotes: resolutionNotes ?? null },
+      });
+    }
+
+    // Notify the company admin(s) who escalated this ticket, if any.
+    // ASSUMPTION — unverified: business-notification.service may or may
+    // not support role: 'company_admin' as a recipient. Confirm against
+    // the real service file before relying on this in production.
+    const uniqueCompanyAdminIds = [
+      ...new Set(pendingEscalations.map((e) => e.companyAdminId)),
+    ];
+    for (const companyAdminId of uniqueCompanyAdminIds) {
+      await publishBusinessNotification({
+        type: "COMPLAINT_UPDATED",
+        title:
+          status === "RESOLVED"
+            ? "Escalated complaint resolved"
+            : "Escalated complaint rejected",
+        message:
+          status === "RESOLVED"
+            ? "The complaint you escalated has been resolved by an admin."
+            : "The complaint you escalated has been reviewed and rejected.",
+        priority: "NORMAL",
+        recipients: [{ role: "company_admin", id: companyAdminId }],
         channels: channels("IN_APP", "PUSH"),
         referenceType: "complaint",
         referenceId: result.id,
