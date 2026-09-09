@@ -3,9 +3,16 @@ import { prisma } from "@/lib/prisma";
 import { internalError, notFound, badRequest } from "@/lib/employee-helpers";
 import { getAuthenticatedMobileEmployee } from "@/lib/mobile-auth";
 import { createAuditLog } from "@/services/audit-log.service";
-import { uploadImage, EMPLOYEE_AVATAR_OPTIONS } from '@/lib/upload/image'
+import { uploadImage, EMPLOYEE_AVATAR_OPTIONS } from "@/lib/upload/image";
 
-const ADDRESS_FIELDS = ['addressLine1', 'addressLine2', 'city', 'state', 'postalCode', 'country'] as const
+const ADDRESS_FIELDS = [
+  "addressLine1",
+  "addressLine2",
+  "city",
+  "state",
+  "postalCode",
+  "country",
+] as const;
 
 // GET /api/mobile/profile — lightweight employee profile for the mobile Profile tab.
 export async function GET(request: NextRequest) {
@@ -13,18 +20,39 @@ export async function GET(request: NextRequest) {
     const auth = await getAuthenticatedMobileEmployee(request);
     if (!auth.ok) return auth.response;
 
-    const [countOfRedemption, merchantRedemptions, address] = await Promise.all([
-      prisma.redemption.count({ where: { employeeId: auth.employee.id } }),
-      prisma.redemption.findMany({
-        where: { employeeId: auth.employee.id },
-        select: { merchantId: true },
-        distinct: ["merchantId"],
-      }),
-      prisma.employeeAddress.findUnique({
-        where: { employeeId: auth.employee.id },
-      }),
-    ]);
+    const [countOfRedemption, merchantRedemptions, address, savedOffers] =
+      await Promise.all([
+        prisma.redemption.count({
+          where: {
+            employeeId: auth.employee.id,
+          },
+        }),
 
+        prisma.redemption.findMany({
+          where: {
+            employeeId: auth.employee.id,
+          },
+          select: {
+            merchantId: true,
+          },
+          distinct: ["merchantId"],
+        }),
+
+        prisma.employeeAddress.findUnique({
+          where: {
+            employeeId: auth.employee.id,
+          },
+        }),
+
+        prisma.notificationEvent.count({
+          where: {
+            employeeId: auth.employee.id,
+            referenceType: "saved_offer",
+          },
+        }),
+      ]);
+    console.log("AUTH EMPLOYEE ID:", auth.employee.id);
+    console.log("SAVED OFFERS:", savedOffers);
     return NextResponse.json({
       success: true,
       data: {
@@ -39,6 +67,7 @@ export async function GET(request: NextRequest) {
         phone: auth.employee?.phone,
         count_of_redemption: countOfRedemption,
         count_of_merchant_itredeemed: merchantRedemptions.length,
+        offerSavedCount: savedOffers,
         address: address
           ? {
               addressLine1: address.addressLine1,
@@ -110,13 +139,15 @@ export async function PATCH(request: NextRequest) {
 
     if (
       personalUpdate.firstName !== undefined &&
-      (!personalUpdate.firstName || String(personalUpdate.firstName).trim().length < 1)
+      (!personalUpdate.firstName ||
+        String(personalUpdate.firstName).trim().length < 1)
     ) {
       return badRequest("First name is required");
     }
     if (
       personalUpdate.lastName !== undefined &&
-      (!personalUpdate.lastName || String(personalUpdate.lastName).trim().length < 1)
+      (!personalUpdate.lastName ||
+        String(personalUpdate.lastName).trim().length < 1)
     ) {
       return badRequest("Last name is required");
     }
