@@ -48,6 +48,7 @@ interface SidebarProps {
   userRole?: string | null
   companyName?: string | null
   branding?: PublicBranding | null
+  avatarUrl?: string | null
   onLogout?: () => void
 }
 
@@ -109,7 +110,7 @@ const navConfig: Record<string, NavItem[]> = {
   ],
 }
 
-export function Sidebar({ userType, userName, userEmail, userRole, companyName, branding }: SidebarProps) {
+export function Sidebar({ userType, userName, userEmail, userRole, companyName, branding ,avatarUrl}: SidebarProps) {
   const pathname = usePathname()
   const navItems = navConfig[userType] ?? []
   const router = useRouter()
@@ -160,7 +161,11 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName, 
           className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-medium"
           style={{ backgroundColor: `hsl(var(--sidebar-active-bg) / 0.1)`, color: `hsl(var(--sidebar-active-text))` }}
         >
-          {initials}
+          { avatarUrl ? (
+            <img src={avatarUrl} alt="User Avatar" className="h-full w-full rounded-full object-cover" />
+          ) : (
+            initials
+          )}
         </div>
         <div className="flex-1 overflow-hidden">
           <p className="truncate text-sm font-medium" style={{ color: `hsl(var(--sidebar-text))` }}>{displayName ?? 'NA'}</p>
@@ -173,7 +178,7 @@ export function Sidebar({ userType, userName, userEmail, userRole, companyName, 
               className="mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium"
               style={{ backgroundColor: `hsl(var(--sidebar-active-bg) / 0.1)`, color: `hsl(var(--sidebar-active-text))` }}
             >
-              {userRole.replace(/_/g, ' ')}
+              {userRole.replace(/_/g, ' ')} 
             </span>
           )}
         </div>

@@ -68,7 +68,7 @@ export function LoginClient({ branding }: LoginClientProps) {
         return;
       }
 
-      const redirectPath = body.redirectTo || "/employee";
+      const redirectPath = body.redirectTo || "/login";
       router.push(redirectPath);
       router.refresh();
     } catch {

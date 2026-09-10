@@ -52,6 +52,7 @@ export default function AdminDashboard() {
         if (!res.ok) throw new Error('Failed to fetch admin overview')
         const response = await res.json()
         const { summary, recentActivity, pendingApprovals } = response.data
+        console.log('Admin overview data:', response.data)
         setSummary(summary)
         setRecentActivity(recentActivity ?? [])
         setPendingApprovals(pendingApprovals ?? [])

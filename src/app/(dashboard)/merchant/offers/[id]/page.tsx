@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useMerchantOfferById, useDeleteMerchantOffer, useRevokeMerchantOffer } from '@/hooks/queries/use-merchant-offers'
 import { StatusBadge } from '@/components/shared/status-badge'
 import { OfferStatusTimeline } from '@/components/shared/offer-status-timeline'
+import { OfferPreviewSection } from '@/components/merchant/offers/OfferPreviewSection'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -282,6 +283,8 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
         </div>
       </div>
 
+      
+
       {/* Quick stats row */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile
@@ -456,7 +459,7 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
           </CardContent>
         </Card>
       </div>
-
+       <OfferPreviewSection entity={offer} />         
       {/* Main content: Description + Discount */}
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="overflow-hidden border-0 shadow-sm">
@@ -499,7 +502,6 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
             )}
           </CardContent>
         </Card>
-
         <Card className="relative overflow-hidden border-0 shadow-sm">
           <div className={`absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r ${typeConfig.gradient}`} />
           <CardHeader className="border-b bg-muted/30 pb-3">
@@ -618,7 +620,7 @@ export default function OfferDetailPage({ params }: { params: Promise<{ id: stri
           </CardContent>
         </Card>
       )}
-
+      
       {/* In-Store QR */}
       {offer.redemption?.redemptionType === 'IN_STORE_QR' && (
         <Card className="overflow-hidden border-0 shadow-sm">

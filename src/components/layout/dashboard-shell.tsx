@@ -67,6 +67,7 @@ export function DashboardShell({ children, branding }: DashboardShellProps) {
         ? 'employee'
         : 'admin'
 
+  console.log('userType', userType, 'pathname', pathname, 'user', user)
   const title = Object.entries(pageTitles).find(([path]) => pathname.startsWith(path))?.[1] ?? 'Dashboard'
 
   return (
@@ -90,6 +91,7 @@ export function DashboardShell({ children, branding }: DashboardShellProps) {
           userRole={user?.role}
           companyName={user?.companyName}
           branding={branding}
+          avatarUrl={user?.avatarUrl}
         />
       </div>
 
