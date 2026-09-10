@@ -198,7 +198,7 @@ export default function NewComplaintPage() {
       return;
     }
 
-    let urls: string[] = [];
+    const urls: string[] = [];
 
     if (evidenceFiles.length > 0) {
       setUploadingEvidence(true);

@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
+    "@prisma/adapter-pg": "^5.22.0",
     "@prisma/client": "^5.22.0",
     "@radix-ui/react-accordion": "^1.2.0",
     "@radix-ui/react-alert-dialog": "^1.1.1",
@@ -68,6 +69,7 @@
     "nanoid": "^6.0.1",
     "next": "^15.3.2",
     "nodemailer": "^9.0.1",
+    "pg": "^8.23.0",
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",
     "qrcode": "^1.5.4",
@@ -92,6 +94,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.9.0",
     "@types/nodemailer": "^8.0.1",
+    "@types/pg": "^8.23.1",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.0-rc-f1e5d9f9-20241017",
     "@types/react-dom": "^19.0.0-rc-f1e5d9f9-20241017",
