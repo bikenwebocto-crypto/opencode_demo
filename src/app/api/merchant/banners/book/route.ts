@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/supabase/server";
 import { getMerchantFromSession } from "@/lib/merchant-session";
+import { assignFreeSlot } from "@/lib/banner-slots";
 
 function unauthorized() {
   return NextResponse.json(
@@ -72,27 +73,7 @@ export async function POST(request: NextRequest) {
     const totalPrice = Number(banner.pricePerDay) * days;
 
     const result = await prisma.$transaction(async (tx) => {
-      // Find every slotNumber currently held by an active (PENDING or
-      // APPROVED) booking whose date range overlaps the requested window.
-      const conflicting = await tx.bannerBooking.findMany({
-        where: {
-          bannerId,
-          status: { in: ["PENDING", "APPROVED"] },
-          startDate: { lt: end },
-          endDate: { gt: start },
-        },
-        select: { slotNumber: true },
-      });
-
-      const takenSlots = new Set(conflicting.map((b) => b.slotNumber));
-
-      let assignedSlot: number | null = null;
-      for (let i = 1; i <= banner.slotCount; i++) {
-        if (!takenSlots.has(i)) {
-          assignedSlot = i;
-          break;
-        }
-      }
+      const assignedSlot = await assignFreeSlot(tx, bannerId, banner.slotCount, start, end);
 
       if (assignedSlot === null) {
         throw new Error(

@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
     const where = { employeeId: auth.employee.id }
 
-    const [rows, total] = await Promise.all([
+    const [rows, total, merchantGroups, totals] = await Promise.all([
       prisma.redemption.findMany({
         where,
         orderBy: { redeemedAt: 'desc' },
@@ -68,6 +68,19 @@ export async function GET(request: NextRequest) {
         },
       }),
       prisma.redemption.count({ where }),
+      // Distinct merchants this employee has redeemed from
+      prisma.redemption.groupBy({
+        by: ['merchantId'],
+        where,
+      }),
+      // Total amounts across ALL redemptions (not just current page)
+      prisma.redemption.aggregate({
+        where,
+        _sum: {
+          savingsAmount: true,
+          discountAmount: true,
+        },
+      }),
     ])
 
     const items = rows.map((r) => ({
@@ -110,6 +123,9 @@ export async function GET(request: NextRequest) {
         pageSize,
         total,
         totalPages: Math.ceil(total / pageSize),
+        merchantsRedeemedCount: merchantGroups.length,
+        totalSavingsAmount: Number(totals._sum.savingsAmount ?? 0),
+        totalDiscountAmount: Number(totals._sum.discountAmount ?? 0),
       },
     })
   } catch (error) {

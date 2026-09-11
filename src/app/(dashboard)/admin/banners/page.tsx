@@ -18,6 +18,7 @@ import {
   ToggleRight,
   Trash2,
   ImageOff,
+  Pencil,
 } from "lucide-react";
 import {
   Dialog,
@@ -27,6 +28,9 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { ImageUpload, uploadDeferredImage } from "@/components/ui/image-upload";
+import type { DeferredFile } from "@/components/shared/ImageUploader";
+import { BANNER_IMAGE_OPTIONS } from "@/lib/upload/image";
 interface Banner {
   id: string;
   name: string;
@@ -150,6 +154,19 @@ export default function AdminBannersPage() {
   const [reviewBooking, setReviewBooking] = useState<Booking | null>(null);
   const [rejectReason, setRejectReason] = useState("");
 
+  const [editBooking, setEditBooking] = useState<Booking | null>(null);
+  const [editBookingForm, setEditBookingForm] = useState({
+    position: "TOP",
+    startDate: "",
+    endDate: "",
+    slotNumber: "",
+    imageUrl: "",
+    altText: "",
+    redirectUrl: "",
+  });
+  const [editBookingPendingFile, setEditBookingPendingFile] =
+    useState<DeferredFile | null>(null);
+
   const { data: bannersData, isLoading: bannersLoading } = useQuery({
     queryKey: ["admin-banners", page],
     queryFn: async () => {
@@ -163,6 +180,8 @@ export default function AdminBannersPage() {
       return json;
     },
   });
+
+  const banners = bannersData?.data ?? [];
 
   const bParams = new URLSearchParams();
   bParams.set("page", String(bookingsPage));
@@ -268,6 +287,58 @@ export default function AdminBannersPage() {
       showToast({ type: "error", title: "Failed", description: e?.message }),
   });
 
+  const editBookingBanner = banners.find(
+    (b: Banner) => b.position === editBookingForm.position && b.isActive,
+  );
+
+  const { data: editSlotsData } = useQuery({
+    queryKey: [
+      "admin-booking-slots",
+      editBookingBanner?.id,
+      editBookingForm.startDate,
+      editBookingForm.endDate,
+      editBooking?.id,
+    ],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        bannerId: editBookingBanner!.id,
+        startDate: editBookingForm.startDate,
+        endDate: editBookingForm.endDate,
+        excludeBookingId: editBooking!.id,
+      });
+      const res = await fetch(`/api/admin/banners/slots?${params}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error?.message ?? "Failed to load slots");
+      return json;
+    },
+    enabled:
+      !!editBooking &&
+      !!editBookingBanner?.id &&
+      !!editBookingForm.startDate &&
+      !!editBookingForm.endDate,
+  });
+
+  const editBookingMutation = useMutation({
+    mutationFn: async ({ id, ...body }: Record<string, unknown>) => {
+      const res = await fetch(`/api/admin/banners/bookings/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "edit", ...body }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error?.message ?? "Failed to update booking");
+      return json;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-banner-bookings"] });
+      setEditBooking(null);
+      setEditBookingPendingFile(null);
+      showToast({ type: "success", title: "Booking updated" });
+    },
+    onError: (e: any) =>
+      showToast({ type: "error", title: "Failed", description: e?.message }),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
       const res = await fetch(`/api/admin/banners/bookings/${id}`, {
@@ -350,7 +421,51 @@ export default function AdminBannersPage() {
       reason: deleteReason.trim(),
     });
   }
-  const banners = bannersData?.data ?? [];
+
+  function openEditBooking(booking: Booking) {
+    setEditBooking(booking);
+    setEditBookingPendingFile(null);
+    setEditBookingForm({
+      position: booking.banner.position,
+      startDate: booking.startDate.split("T")[0] ?? "",
+      endDate: booking.endDate.split("T")[0] ?? "",
+      slotNumber: booking.slotNumber != null ? String(booking.slotNumber) : "",
+      imageUrl: booking.content?.imageUrl ?? "",
+      altText: booking.content?.altText ?? "",
+      redirectUrl: booking.content?.redirectUrl ?? "",
+    });
+  }
+
+  async function handleEditBooking(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editBooking || !editBookingBanner) return;
+
+    let imageUrl = editBookingForm.imageUrl;
+    if (editBookingPendingFile) {
+      try {
+        imageUrl =
+          (await uploadDeferredImage(editBookingPendingFile, BANNER_IMAGE_OPTIONS)) ??
+          "";
+      } catch (err: any) {
+        showToast({
+          type: "error",
+          title: "Image upload failed",
+          description: err?.message,
+        });
+        return;
+      }
+    }
+
+    editBookingMutation.mutate({
+      id: editBooking.id,
+      bannerId: editBookingBanner.id,
+      startDate: editBookingForm.startDate,
+      endDate: editBookingForm.endDate,
+      imageUrl,
+      altText: editBookingForm.altText || undefined,
+      redirectUrl: editBookingForm.redirectUrl || undefined,
+    });
+  }
   const bannersMeta = bannersData?.meta;
   const bookings = bookingsData?.data ?? [];
   const bookingsMeta = bookingsData?.meta;
@@ -1010,11 +1125,27 @@ export default function AdminBannersPage() {
                                           <Ban className="mr-1 h-3 w-3" />{" "}
                                           Reject
                                         </Button>
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => openEditBooking(b)}
+                                        >
+                                          <Pencil className="mr-1 h-3 w-3" />{" "}
+                                          Edit
+                                        </Button>
                                       </div>
                                     )}
 
                                     {b.status === "APPROVED" && (
-                                      <div className="pt-1">
+                                      <div className="flex gap-2 pt-1">
+                                        <Button
+                                          size="sm"
+                                          variant="outline"
+                                          onClick={() => openEditBooking(b)}
+                                        >
+                                          <Pencil className="mr-1 h-3 w-3" />{" "}
+                                          Edit
+                                        </Button>
                                         <Button
                                           size="sm"
                                           variant="outline"
@@ -1123,6 +1254,152 @@ export default function AdminBannersPage() {
                 </CardContent>
               </Card>
             )}
+
+            <Dialog
+              open={!!editBooking}
+              onOpenChange={(open) => !open && setEditBooking(null)}
+            >
+              <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
+                <DialogHeader>
+                  <DialogTitle>
+                    Edit Booking: {editBooking?.banner.name} —{" "}
+                    {editBooking?.merchant.businessName}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Adjust position, dates, or image. Slot availability is
+                    re-checked on save.
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleEditBooking} className="space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                          Position *
+                        </label>
+                        <select
+                          className="w-full rounded-md border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          value={editBookingForm.position}
+                          onChange={(e) =>
+                            setEditBookingForm((f) => ({
+                              ...f,
+                              position: e.target.value,
+                            }))
+                          }
+                        >
+                          <option value="TOP">Top</option>
+                          <option value="BOTTOM">Bottom</option>
+                        </select>
+                        {!editBookingBanner && (
+                          <p className="mt-1 text-xs text-destructive">
+                            No active banner for this position.
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                          Available Slots
+                        </label>
+                        <p className="rounded-md border bg-muted px-3 py-2 text-sm text-muted-foreground">
+                          {editSlotsData?.data
+                            ? editSlotsData.data.slots
+                                .filter((s: { available: boolean }) => s.available)
+                                .map((s: { slotNumber: number }) => s.slotNumber)
+                                .join(", ") || "None free for these dates"
+                            : "Select dates to check availability"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                          Start Date *
+                        </label>
+                        <Input
+                          type="date"
+                          value={editBookingForm.startDate}
+                          onChange={(e) =>
+                            setEditBookingForm((f) => ({
+                              ...f,
+                              startDate: e.target.value,
+                            }))
+                          }
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                          End Date *
+                        </label>
+                        <Input
+                          type="date"
+                          value={editBookingForm.endDate}
+                          onChange={(e) =>
+                            setEditBookingForm((f) => ({
+                              ...f,
+                              endDate: e.target.value,
+                            }))
+                          }
+                          required
+                        />
+                      </div>
+                    </div>
+                    <ImageUpload
+                      value={editBookingForm.imageUrl}
+                      onChange={(url) =>
+                        setEditBookingForm((f) => ({ ...f, imageUrl: url }))
+                      }
+                      uploadMode="deferred"
+                      onDeferredFile={(file) => setEditBookingPendingFile(file)}
+                      label="Banner Image"
+                    />
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                        Alt Text
+                      </label>
+                      <Input
+                        value={editBookingForm.altText}
+                        onChange={(e) =>
+                          setEditBookingForm((f) => ({
+                            ...f,
+                            altText: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                        Redirect URL
+                      </label>
+                      <Input
+                        value={editBookingForm.redirectUrl}
+                        onChange={(e) =>
+                          setEditBookingForm((f) => ({
+                            ...f,
+                            redirectUrl: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setEditBooking(null)}
+                      >
+                        Cancel
+                      </Button>
+                      <LoadingButton
+                        type="submit"
+                        loading={editBookingMutation.isPending}
+                        loadingText="Saving…"
+                        disabled={!editBookingBanner}
+                      >
+                        Save
+                      </LoadingButton>
+                    </DialogFooter>
+                  </form>
+              </DialogContent>
+            </Dialog>
           </CardContent>
         </Card>
       )}
