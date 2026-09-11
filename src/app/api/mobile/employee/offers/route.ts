@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthenticatedMobileEmployee } from '@/lib/mobile-auth'
-import {  getMobileHomeLight, type Location } from '@/services/mobile-home.service'
+import {  getMobileHomeHeavy, type Location } from '@/services/mobile-home.service'
 import { createAuditLog } from '@/services/audit-log.service'
 import { internalError } from '@/lib/employee-helpers'
 
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     const { employee, company } = auth
 
     const location = parseLocation(request.nextUrl.searchParams)
-    const data = await getMobileHomeLight({ employee, location })
+    const data = await getMobileHomeHeavy({ employee, location })
 
     return NextResponse.json({ success: true, data })
   } catch (error) {

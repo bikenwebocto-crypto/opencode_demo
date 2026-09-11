@@ -318,10 +318,14 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
     const q = searchParams.get("q");
     const scope = searchParams.get("scope");
+    const search = searchParams.get("search")?.trim();
 
     const where: any = { merchantId: merchant.id, deletedAt: null };
     if (status) where.status = status;
-    if (q)
+    if (search) {
+      // Offer selector search: title-only, case-insensitive, capped at 10.
+      where.title = { contains: search, mode: "insensitive" };
+    } else if (q)
       where.OR = [
         { title: { contains: q, mode: "insensitive" } },
         { content: { is: { description: { contains: q, mode: "insensitive" } } } },
@@ -334,12 +338,14 @@ export async function GET(request: NextRequest) {
       where.status = "ARCHIVED";
     }
 
+    const take = search ? Math.min(pageSize, 10) : pageSize;
+
     const [offers, total, currentLive] = await Promise.all([
       prisma.merchantOffer.findMany({
         where,
         orderBy: { createdAt: "desc" },
         skip: (page - 1) * pageSize,
-        take: pageSize,
+        take,
         select: {
           id: true,
           title: true,
