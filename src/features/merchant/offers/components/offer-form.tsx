@@ -22,7 +22,7 @@ import { OfferMobilePreview } from "@/components/merchant/offers/OfferMobilePrev
 import { OfferBannerInfo } from "@/components/merchant/offers/OfferBannerInfo";
 import { showToast } from "@/hooks/use-toast";
 import { useCategories } from "@/hooks/queries/use-categories";
-import { uploadImage, OFFER_IMAGE_OPTIONS } from '@/lib/upload/image'
+import { uploadImage, OFFER_IMAGE_OPTIONS } from "@/lib/upload/image";
 import { deleteOfferImage } from "@/lib/upload-offer-image";
 
 interface FormData {
@@ -37,6 +37,8 @@ interface FormData {
   discountPercent: string;
   minimumSpend: string;
   maxRedemptions: string;
+  isFeatured: boolean;
+  isExclusive: boolean;
   buyQuantity: string;
   buyItem: string;
   getQuantity: string;
@@ -76,20 +78,20 @@ const ACCEPTED_TYPES = [
 const MAX_SIZE = 5 * 1024 * 1024;
 
 const OFFER_TYPE_MAP: Record<string, string> = {
-  FLAT: 'flat_rate',
-  PERCENTAGE: 'percentage',
-  BUY_X_GET_Y: 'buy_x_get_y',
-}
+  FLAT: "flat_rate",
+  PERCENTAGE: "percentage",
+  BUY_X_GET_Y: "buy_x_get_y",
+};
 
 const DAYS_OF_WEEK = [
-  { value: 0, short: 'Sun', full: 'Sunday' },
-  { value: 1, short: 'Mon', full: 'Monday' },
-  { value: 2, short: 'Tue', full: 'Tuesday' },
-  { value: 3, short: 'Wed', full: 'Wednesday' },
-  { value: 4, short: 'Thu', full: 'Thursday' },
-  { value: 5, short: 'Fri', full: 'Friday' },
-  { value: 6, short: 'Sat', full: 'Saturday' },
-] as const
+  { value: 0, short: "Sun", full: "Sunday" },
+  { value: 1, short: "Mon", full: "Monday" },
+  { value: 2, short: "Tue", full: "Tuesday" },
+  { value: 3, short: "Wed", full: "Wednesday" },
+  { value: 4, short: "Thu", full: "Thursday" },
+  { value: 5, short: "Fri", full: "Friday" },
+  { value: 6, short: "Sat", full: "Saturday" },
+] as const;
 
 function parseInitialImageUrls(input: string | string[] | undefined): string[] {
   if (!input) return [];
@@ -125,16 +127,20 @@ export function OfferForm({
   const [errors, setErrors] = useState<FormErrors>({});
   const [showStrength, setShowStrength] = useState(false);
   const { data: categories } = useCategories();
-  const [lastEditedField, setLastEditedField] = useState<'discountValue' | 'minimumSpend' | 'discountMax' | 'discountPercent' | null>(null);
+  const [lastEditedField, setLastEditedField] = useState<
+    "discountValue" | "minimumSpend" | "discountMax" | "discountPercent" | null
+  >(null);
 
-  useEffect(()=>{
-    if(categories && initialData?.categoryId){
-      const categoryExits= categories.some(c => c.id === initialData.categoryId)
-      if(categoryExits){
-        setForm( prev => ({...prev, categoryId: initialData.categoryId!}))
+  useEffect(() => {
+    if (categories && initialData?.categoryId) {
+      const categoryExits = categories.some(
+        (c) => c.id === initialData.categoryId,
+      );
+      if (categoryExits) {
+        setForm((prev) => ({ ...prev, categoryId: initialData.categoryId! }));
       }
     }
-  }, [categories, initialData?.categoryId])
+  }, [categories, initialData?.categoryId]);
   const initialImageUrls = useMemo(
     () => parseInitialImageUrls(initialData?.imageUrls),
     [initialData?.imageUrls],
@@ -145,7 +151,7 @@ export function OfferForm({
   );
 
   const initialFormImageUrls = useMemo(() => initialImageUrls, []);
-  
+
   const [form, setForm] = useState<FormData>({
     title: initialData?.title ?? "",
     description: initialData?.description ?? "",
@@ -159,6 +165,8 @@ export function OfferForm({
     minimumSpend: initialData?.minimumSpend ?? "",
     maxRedemptions: initialData?.maxRedemptions ?? "",
     buyQuantity: initialData?.buyQuantity ?? "",
+    isExclusive: initialData?.isExclusive ?? false,
+    isFeatured: initialData?.isFeatured ?? false,
     buyItem: initialData?.buyItem ?? "",
     getQuantity: initialData?.getQuantity ?? "",
     freeItem: initialData?.freeItem ?? "",
@@ -195,14 +203,14 @@ export function OfferForm({
     };
 
   const handleLinkedFieldChange = (
-    field: 'discountValue' | 'minimumSpend' | 'discountMax' | 'discountPercent',
+    field: "discountValue" | "minimumSpend" | "discountMax" | "discountPercent",
     value: string,
   ) => {
     setLastEditedField(field);
     setForm((prev) => {
       const next = { ...prev, [field]: value };
 
-      if (next.offerType === 'PERCENTAGE') {
+      if (next.offerType === "PERCENTAGE") {
         const dv = Number(next.discountValue);
         const ms = Number(next.minimumSpend);
         const dm = Number(next.discountMax);
@@ -212,46 +220,59 @@ export function OfferForm({
         const hasDm = !isNaN(dm) && dm > 0;
         const hasDp = !isNaN(dp) && dp > 0;
 
-        if (field === 'discountValue') {
+        if (field === "discountValue") {
           if (hasDv && hasDp) {
             const calcMs = dv / (dp / 100);
             next.minimumSpend = String(Math.round(calcMs * 100) / 100);
             next.discountMax = String(dv);
           } else if (hasDv && hasMs) {
             const pct = (dv / ms) * 100;
-            next.discountPercent = Math.min(Math.round(pct * 100) / 100, 90).toString();
+            next.discountPercent = Math.min(
+              Math.round(pct * 100) / 100,
+              90,
+            ).toString();
             next.discountMax = String(dv);
           } else if (hasDv) {
             next.discountMax = String(dv);
           }
-        } else if (field === 'minimumSpend') {
+        } else if (field === "minimumSpend") {
           if (hasDv && hasDp) {
             const calcMs = dv / (dp / 100);
             next.minimumSpend = String(Math.round(calcMs * 100) / 100);
             next.discountMax = String(dv);
           } else if (hasMs && hasDp) {
-            next.discountMax = String(Math.round((ms * dp) / 100 * 100) / 100);
+            next.discountMax = String(
+              Math.round(((ms * dp) / 100) * 100) / 100,
+            );
           } else if (hasMs && hasDm) {
             const pct = (dm / ms) * 100;
-            next.discountPercent = Math.min(Math.round(pct * 100) / 100, 90).toString();
+            next.discountPercent = Math.min(
+              Math.round(pct * 100) / 100,
+              90,
+            ).toString();
           }
-        } else if (field === 'discountPercent') {
+        } else if (field === "discountPercent") {
           if (hasDv && hasMs) {
             const calcMs = dv / (dp / 100);
             next.minimumSpend = String(Math.round(calcMs * 100) / 100);
             next.discountMax = String(dv);
           } else if (hasMs && hasDm) {
-            next.discountMax = String(Math.round((ms * dp) / 100 * 100) / 100);
+            next.discountMax = String(
+              Math.round(((ms * dp) / 100) * 100) / 100,
+            );
           }
-        } else if (field === 'discountMax') {
+        } else if (field === "discountMax") {
           if (hasDv && hasMs) {
             const pct = (dm / ms) * 100;
-            next.discountPercent = Math.min(Math.round(pct * 100) / 100, 90).toString();
+            next.discountPercent = Math.min(
+              Math.round(pct * 100) / 100,
+              90,
+            ).toString();
           }
         }
-      } else if (next.offerType === 'FLAT') {
+      } else if (next.offerType === "FLAT") {
         const dv = Number(next.discountValue);
-        if (field === 'discountValue' && !isNaN(dv) && dv > 0) {
+        if (field === "discountValue" && !isNaN(dv) && dv > 0) {
           next.discountMax = String(dv);
         }
       }
@@ -273,21 +294,21 @@ export function OfferForm({
 
   const toggleDay = (day: number) => {
     setForm((prev) => {
-      const current = prev.daysOfWeek.split(',').filter(Boolean)
-      const str = String(day)
+      const current = prev.daysOfWeek.split(",").filter(Boolean);
+      const str = String(day);
       const next = current.includes(str)
         ? current.filter((d) => d !== str)
-        : [...current, str].sort()
-      return { ...prev, daysOfWeek: next.join(',') }
-    })
+        : [...current, str].sort();
+      return { ...prev, daysOfWeek: next.join(",") };
+    });
     if (errors.daysOfWeek) {
       setErrors((prev) => {
-        const n = { ...prev }
-        delete n.daysOfWeek
-        return n
-      })
+        const n = { ...prev };
+        delete n.daysOfWeek;
+        return n;
+      });
     }
-  }
+  };
 
   const validate = (): boolean => {
     const errs: FormErrors = {};
@@ -296,10 +317,13 @@ export function OfferForm({
       errs.title = "Title must be at least 5 characters";
     if (!form.offerType) errs.offerType = "Offer type is required";
 
-    if (form.offerType === 'FLAT') {
+    if (form.offerType === "FLAT") {
       if (!form.discountValue.trim())
         errs.discountValue = "Discount value is required";
-      else if (isNaN(Number(form.discountValue)) || Number(form.discountValue) <= 0)
+      else if (
+        isNaN(Number(form.discountValue)) ||
+        Number(form.discountValue) <= 0
+      )
         errs.discountValue = "Must be a positive number";
       if (form.discountPercent.trim()) {
         const dp = Number(form.discountPercent);
@@ -312,7 +336,7 @@ export function OfferForm({
         if (dm > Number(form.discountValue))
           errs.discountMax = "Maximum discount cannot exceed discount value";
       }
-    } else if (form.offerType === 'PERCENTAGE') {
+    } else if (form.offerType === "PERCENTAGE") {
       if (!form.discountPercent.trim())
         errs.discountPercent = "Discount percentage is required";
       else {
@@ -330,24 +354,24 @@ export function OfferForm({
         const ms = Number(form.minimumSpend);
         if (isNaN(ms) || ms <= 0) errs.minimumSpend = "Must be greater than 0";
         if (form.discountValue.trim() && ms < Number(form.discountValue))
-          errs.minimumSpend = "Minimum spend cannot be lower than discount value";
+          errs.minimumSpend =
+            "Minimum spend cannot be lower than discount value";
       }
-    } else if (form.offerType === 'BUY_X_GET_Y') {
+    } else if (form.offerType === "BUY_X_GET_Y") {
       if (!form.buyQuantity.trim())
         errs.buyQuantity = "Buy quantity is required";
       else if (isNaN(Number(form.buyQuantity)) || Number(form.buyQuantity) <= 0)
         errs.buyQuantity = "Must be a positive number";
-      if (!form.buyItem.trim())
-        errs.buyItem = "Buy item is required";
+      if (!form.buyItem.trim()) errs.buyItem = "Buy item is required";
       if (!form.getQuantity.trim())
         errs.getQuantity = "Get quantity is required";
       else if (isNaN(Number(form.getQuantity)) || Number(form.getQuantity) <= 0)
         errs.getQuantity = "Must be a positive number";
-      if (!form.freeItem.trim())
-        errs.freeItem = "Free item is required";
+      if (!form.freeItem.trim()) errs.freeItem = "Free item is required";
       if (form.maxFreeItems.trim()) {
         const mfi = Number(form.maxFreeItems);
-        if (isNaN(mfi) || mfi <= 0) errs.maxFreeItems = "Must be a positive number";
+        if (isNaN(mfi) || mfi <= 0)
+          errs.maxFreeItems = "Must be a positive number";
       }
     }
 
@@ -363,13 +387,15 @@ export function OfferForm({
         "Terms and conditions are required for replacement offers";
 
     // Days of week validation
-    const selectedDays = form.daysOfWeek.split(',').filter(Boolean)
+    const selectedDays = form.daysOfWeek.split(",").filter(Boolean);
     if (selectedDays.length === 0) {
-      errs.daysOfWeek = "Select at least one valid day"
+      errs.daysOfWeek = "Select at least one valid day";
     } else {
-      const invalid = selectedDays.filter((d) => !DAYS_OF_WEEK.map((day) => String(day.value)).includes(d))
+      const invalid = selectedDays.filter(
+        (d) => !DAYS_OF_WEEK.map((day) => String(day.value)).includes(d),
+      );
       if (invalid.length > 0) {
-        errs.daysOfWeek = "Select at least one valid day"
+        errs.daysOfWeek = "Select at least one valid day";
       }
     }
 
@@ -409,6 +435,8 @@ export function OfferForm({
     redemptionType: form.redemptionType || null,
     bookingUrl: form.bookingUrl || null,
     qrCodeUrl: form.qrCodeUrl || null,
+    isFeatured: form.isFeatured,
+    isExclusive: form.isExclusive,
     ...(isReplacement && currentLiveOffer
       ? { replacesOfferId: currentLiveOffer.id }
       : {}),
@@ -416,42 +444,45 @@ export function OfferForm({
 
   /** Upload any pending (not yet uploaded) images and return the complete image URL list. */
   const resolveAllImageUrls = async (): Promise<string[] | null> => {
-    const existingUrls = [...form.imageUrls]
-    const pendingItems = pendingImages.filter((p) => p.status === 'pending' && p.file?.size > 0)
+    const existingUrls = [...form.imageUrls];
+    const pendingItems = pendingImages.filter(
+      (p) => p.status === "pending" && p.file?.size > 0,
+    );
 
-    if (pendingItems.length === 0) return existingUrls
+    if (pendingItems.length === 0) return existingUrls;
 
     try {
       const newUrls = await Promise.all(
-        pendingItems.map((item) => uploadImage(item.file, OFFER_IMAGE_OPTIONS))
-      )
+        pendingItems.map((item) => uploadImage(item.file, OFFER_IMAGE_OPTIONS)),
+      );
       // Mark pending images as done
       setPendingImages((prev) =>
         prev.map((p) =>
-          p.status === 'pending' ? { ...p, status: 'done' as const } : p
-        )
-      )
-      return [...existingUrls, ...newUrls]
+          p.status === "pending" ? { ...p, status: "done" as const } : p,
+        ),
+      );
+      return [...existingUrls, ...newUrls];
     } catch (err: any) {
       showToast({
         type: "error",
         title: "Image upload failed",
-        description: err.message || "Failed to upload images. Changes not saved.",
-      })
-      return null
+        description:
+          err.message || "Failed to upload images. Changes not saved.",
+      });
+      return null;
     }
-  }
+  };
 
   const handleSaveDraft = async () => {
     if (!form.title.trim()) {
       showToast({ type: "error", title: "Title is required to save a draft" });
       return;
     }
-    const allUrls = await resolveAllImageUrls()
-    if (allUrls === null) return
+    const allUrls = await resolveAllImageUrls();
+    if (allUrls === null) return;
 
     try {
-      const body = { ...buildBody(true), imageUrls: allUrls }
+      const body = { ...buildBody(true), imageUrls: allUrls };
       if (isEdit) {
         await updateOffer.mutateAsync({ id: offerId, ...body });
         showToast({ type: "success", title: "Draft saved" });
@@ -473,10 +504,10 @@ export function OfferForm({
     e.preventDefault();
     if (!validate()) return;
 
-    const allUrls = await resolveAllImageUrls()
-    if (allUrls === null) return
+    const allUrls = await resolveAllImageUrls();
+    if (allUrls === null) return;
 
-    const body = { ...buildBody(false), imageUrls: allUrls }
+    const body = { ...buildBody(false), imageUrls: allUrls };
 
     if (isEdit) {
       try {
@@ -537,9 +568,9 @@ export function OfferForm({
       id: `pending-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
       file: f.file,
       previewUrl: f.previewUrl,
-      status: 'pending' as const,
-    }))
-    setPendingImages((prev) => [...prev, ...newImages])
+      status: "pending" as const,
+    }));
+    setPendingImages((prev) => [...prev, ...newImages]);
   };
 
   const handleRemoveImage = (id: string) => {
@@ -729,7 +760,93 @@ export function OfferForm({
                     maxLength={2000}
                   />
                 </div>
+                {/* Featured / Exclusive */}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {/* Featured */}
+                  <div className="rounded-lg border p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <label
+                          htmlFor="isFeatured"
+                          className="text-sm font-medium"
+                        >
+                          Featured Offer
+                        </label>
 
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Highlight this offer in featured sections.
+                        </p>
+                      </div>
+
+                      <button
+                        id="isFeatured"
+                        type="button"
+                        role="switch"
+                        aria-checked={form.isFeatured}
+                        onClick={() =>
+                          setForm((prev) => ({
+                            ...prev,
+                            isFeatured: !prev.isFeatured,
+                          }))
+                        }
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${
+                          form.isFeatured ? "bg-primary" : "bg-muted"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 translate-y-0.5 rounded-full bg-white shadow transition-transform ${
+                            form.isFeatured
+                              ? "translate-x-5"
+                              : "translate-x-0.5"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Exclusive */}
+                  <div className="rounded-lg border p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <label
+                          htmlFor="isExclusive"
+                          className="text-sm font-medium"
+                        >
+                          Exclusive Offer
+                        </label>
+
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Mark this offer as exclusive to your employees.
+                        </p>
+                      </div>
+
+                      <button
+                        id="isExclusive"
+                        type="button"
+                        role="switch"
+                        aria-checked={form.isExclusive}
+                        onClick={() =>
+                          setForm((prev) => ({
+                            ...prev,
+                            isExclusive: !prev.isExclusive,
+                          }))
+                        }
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${
+                          form.isExclusive ? "bg-primary" : "bg-muted"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 translate-y-0.5 rounded-full bg-white shadow transition-transform ${
+                            form.isExclusive
+                              ? "translate-x-5"
+                              : "translate-x-0.5"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {/* end */}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <label className={labelClass}>Category</label>
@@ -777,17 +894,22 @@ export function OfferForm({
                     <option value="BOOKING_LINK">Booking Link</option>
                   </select>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {form.redemptionType === 'ONLINE_CODE' && 'Employee gets a code to enter on merchant website'}
-                    {form.redemptionType === 'BOOKING_LINK' && 'Employee is redirected to merchant booking page'}
-                    {form.redemptionType === 'IN_STORE_QR' && 'Employee shows QR code at merchant location'}
+                    {form.redemptionType === "ONLINE_CODE" &&
+                      "Employee gets a code to enter on merchant website"}
+                    {form.redemptionType === "BOOKING_LINK" &&
+                      "Employee is redirected to merchant booking page"}
+                    {form.redemptionType === "IN_STORE_QR" &&
+                      "Employee shows QR code at merchant location"}
                   </p>
                 </div>
 
                 {/* Redemption Type Specific Fields */}
-                {form.redemptionType === 'ONLINE_CODE' && (
+                {form.redemptionType === "ONLINE_CODE" && (
                   <Card className="bg-muted/30">
                     <CardHeader>
-                      <CardTitle className="text-sm">Online Code Configuration</CardTitle>
+                      <CardTitle className="text-sm">
+                        Online Code Configuration
+                      </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div>
@@ -813,17 +935,20 @@ export function OfferForm({
                           maxLength={6}
                         />
                         <p className="mt-1 text-xs text-muted-foreground">
-                          6-character alphanumeric code. Leave empty to auto-generate.
+                          6-character alphanumeric code. Leave empty to
+                          auto-generate.
                         </p>
                       </div>
                     </CardContent>
                   </Card>
                 )}
 
-                {form.redemptionType === 'BOOKING_LINK' && (
+                {form.redemptionType === "BOOKING_LINK" && (
                   <Card className="bg-muted/30">
                     <CardHeader>
-                      <CardTitle className="text-sm">Booking Link Configuration</CardTitle>
+                      <CardTitle className="text-sm">
+                        Booking Link Configuration
+                      </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div>
@@ -843,20 +968,24 @@ export function OfferForm({
                   </Card>
                 )}
 
-                {form.redemptionType === 'IN_STORE_QR' && (
+                {form.redemptionType === "IN_STORE_QR" && (
                   <Card className="bg-muted/30">
                     <CardHeader>
-                      <CardTitle className="text-sm">In-Store QR Configuration</CardTitle>
+                      <CardTitle className="text-sm">
+                        In-Store QR Configuration
+                      </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <p className="text-sm text-muted-foreground">
-                        A unique QR code will be generated for this offer. Employees will scan it at the merchant location to receive their redemption code.
+                        A unique QR code will be generated for this offer.
+                        Employees will scan it at the merchant location to
+                        receive their redemption code.
                       </p>
                     </CardContent>
                   </Card>
                 )}
 
-                {form.offerType === 'FLAT' && (
+                {form.offerType === "FLAT" && (
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
                       <label className={labelClass}>Discount Amount *</label>
@@ -865,7 +994,12 @@ export function OfferForm({
                         type="number"
                         step="0.01"
                         value={form.discountValue}
-                        onChange={(e) => handleLinkedFieldChange("discountValue", e.target.value)}
+                        onChange={(e) =>
+                          handleLinkedFieldChange(
+                            "discountValue",
+                            e.target.value,
+                          )
+                        }
                         placeholder="e.g. 100"
                       />
                       {errors.discountValue && (
@@ -894,28 +1028,41 @@ export function OfferForm({
                 )}
 
                 {showStrength &&
-                  form.offerType === 'FLAT' &&
+                  form.offerType === "FLAT" &&
                   form.discountValue &&
                   Number(form.discountValue) > 0 && (
                     <OfferStrengthIndicator
                       discountValue={Number(form.discountValue)}
                       offerType={form.offerType}
                       categoryId={form.categoryId || null}
-                      minimumSpend={form.minimumSpend ? Number(form.minimumSpend) : undefined}
-                      discountMax={form.discountMax ? Number(form.discountMax) : undefined}
+                      minimumSpend={
+                        form.minimumSpend
+                          ? Number(form.minimumSpend)
+                          : undefined
+                      }
+                      discountMax={
+                        form.discountMax ? Number(form.discountMax) : undefined
+                      }
                     />
                   )}
 
-                {form.offerType === 'PERCENTAGE' && (
+                {form.offerType === "PERCENTAGE" && (
                   <>
                     <div className="grid gap-4 sm:grid-cols-3">
                       <div>
-                        <label className={labelClass}>Discount Percentage *</label>
+                        <label className={labelClass}>
+                          Discount Percentage *
+                        </label>
                         <Input
                           className={inputClass}
                           type="number"
                           value={form.discountPercent}
-                          onChange={(e) => handleLinkedFieldChange("discountPercent", e.target.value)}
+                          onChange={(e) =>
+                            handleLinkedFieldChange(
+                              "discountPercent",
+                              e.target.value,
+                            )
+                          }
                           placeholder="e.g. 20"
                         />
                         {errors.discountPercent && (
@@ -931,7 +1078,12 @@ export function OfferForm({
                           type="number"
                           step="0.01"
                           value={form.discountMax}
-                          onChange={(e) => handleLinkedFieldChange("discountMax", e.target.value)}
+                          onChange={(e) =>
+                            handleLinkedFieldChange(
+                              "discountMax",
+                              e.target.value,
+                            )
+                          }
                           placeholder="Cap amount"
                         />
                         {errors.discountMax && (
@@ -947,7 +1099,12 @@ export function OfferForm({
                           type="number"
                           step="0.01"
                           value={form.minimumSpend}
-                          onChange={(e) => handleLinkedFieldChange("minimumSpend", e.target.value)}
+                          onChange={(e) =>
+                            handleLinkedFieldChange(
+                              "minimumSpend",
+                              e.target.value,
+                            )
+                          }
                           placeholder="Minimum order amount"
                         />
                         {errors.minimumSpend && (
@@ -965,28 +1122,46 @@ export function OfferForm({
                           discountValue={Number(form.discountValue)}
                           offerType={form.offerType}
                           categoryId={form.categoryId || null}
-                          minimumSpend={form.minimumSpend ? Number(form.minimumSpend) : undefined}
-                          discountMax={form.discountMax ? Number(form.discountMax) : undefined}
+                          minimumSpend={
+                            form.minimumSpend
+                              ? Number(form.minimumSpend)
+                              : undefined
+                          }
+                          discountMax={
+                            form.discountMax
+                              ? Number(form.discountMax)
+                              : undefined
+                          }
                         />
                       )}
 
-                    {form.minimumSpend && form.discountMax && form.maxRedemptions && (
-                      <div className="rounded-lg border bg-muted/50 p-3 space-y-1">
-                        <h4 className="text-xs font-semibold text-muted-foreground">Campaign Liability Estimate</h4>
-                        <p className="text-sm font-medium">
-                          Total potential payout: ${(
-                            Number(form.discountMax) * Number(form.maxRedemptions)
-                          ).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Based on max {form.maxRedemptions} redemptions × ${Number(form.discountMax).toFixed(2)} max discount
-                        </p>
-                      </div>
-                    )}
+                    {form.minimumSpend &&
+                      form.discountMax &&
+                      form.maxRedemptions && (
+                        <div className="rounded-lg border bg-muted/50 p-3 space-y-1">
+                          <h4 className="text-xs font-semibold text-muted-foreground">
+                            Campaign Liability Estimate
+                          </h4>
+                          <p className="text-sm font-medium">
+                            Total potential payout: $
+                            {(
+                              Number(form.discountMax) *
+                              Number(form.maxRedemptions)
+                            ).toLocaleString("en-GB", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Based on max {form.maxRedemptions} redemptions × $
+                            {Number(form.discountMax).toFixed(2)} max discount
+                          </p>
+                        </div>
+                      )}
                   </>
                 )}
 
-                {form.offerType === 'BUY_X_GET_Y' && (
+                {form.offerType === "BUY_X_GET_Y" && (
                   <>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div>
@@ -1136,9 +1311,9 @@ export function OfferForm({
                   <div className="mt-2 flex flex-wrap gap-2">
                     {DAYS_OF_WEEK.map((day) => {
                       const selected = form.daysOfWeek
-                        .split(',')
+                        .split(",")
                         .map((s) => s.trim())
-                        .includes(String(day.value))
+                        .includes(String(day.value));
                       return (
                         <button
                           key={day.value}
@@ -1146,22 +1321,29 @@ export function OfferForm({
                           onClick={() => toggleDay(day.value)}
                           className={`
                             rounded-full px-3 py-1.5 text-xs font-medium transition-colors
-                            ${selected
-                              ? 'bg-primary text-primary-foreground'
-                              : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                            ${
+                              selected
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-muted text-muted-foreground hover:bg-muted/80"
                             }
                           `}
                         >
                           {day.short}
                         </button>
-                      )
+                      );
                     })}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {(() => {
-                      const sel = form.daysOfWeek.split(',').filter(Boolean)
-                      if (sel.length === 7) return 'Every day'
-                      return sel.map((s) => DAYS_OF_WEEK.find((d) => d.value === Number(s))?.short).join(' • ')
+                      const sel = form.daysOfWeek.split(",").filter(Boolean);
+                      if (sel.length === 7) return "Every day";
+                      return sel
+                        .map(
+                          (s) =>
+                            DAYS_OF_WEEK.find((d) => d.value === Number(s))
+                              ?.short,
+                        )
+                        .join(" • ");
                     })()}
                   </p>
                   {errors.daysOfWeek && (
@@ -1246,10 +1428,7 @@ export function OfferForm({
                     type="button"
                     variant="outline"
                     onClick={handleSaveDraft}
-                    disabled={
-                                            createOffer.isPending ||
-                      updateOffer.isPending
-                    }
+                    disabled={createOffer.isPending || updateOffer.isPending}
                   >
                     {createOffer.isPending ? (
                       <Loader2 className="mr-1 h-4 w-4 animate-spin" />
@@ -1260,10 +1439,7 @@ export function OfferForm({
                   </Button>
                   <Button
                     type="submit"
-                    disabled={
-                                            createOffer.isPending ||
-                      submitOffer.isPending
-                    }
+                    disabled={createOffer.isPending || submitOffer.isPending}
                   >
                     {submitOffer.isPending ? (
                       <Loader2 className="mr-1 h-4 w-4 animate-spin" />
@@ -1281,11 +1457,7 @@ export function OfferForm({
                 <>
                   <Button
                     type="submit"
-                    disabled={
-                                            updateOffer.isPending ||
-                      submitOffer.isPending
-                    }
-              
+                    disabled={updateOffer.isPending || submitOffer.isPending}
                   >
                     {updateOffer.isPending ? (
                       <Loader2 className="mr-1 h-4 w-4 animate-spin" />
@@ -1338,8 +1510,8 @@ export function OfferForm({
                   startDate={form.startDate}
                   endDate={form.endDate}
                   imageUrls={form.imageUrls}
-                  isFeatured={false}
-                  isExclusive={false}
+                  isFeatured={form.isFeatured}
+                  isExclusive={form.isExclusive}
                   merchantName="Your Business"
                   categoryName={categoryName}
                   redemptionType={form.redemptionType}
